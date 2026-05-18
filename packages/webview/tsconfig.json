@@ -1,0 +1,22 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "types": ["vite/client"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+
+    /* Linting */
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "paths": {
+      "#webview/*": ["./src/*"],
+      "#manager": ["../manager/src/index.ts"],
+      "#manager/*": ["../manager/src/*"],
+      "#contracts": ["../contracts/src/index.ts"],
+      "#contracts/*": ["../contracts/src/*"]
+    }
+  },
+  "include": ["src"]
+}

@@ -1,0 +1,32 @@
+{
+  "name": "@nuget-code/webview",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "compile": "vite build",
+    "build": "vite build",
+    "dev": "vite",
+    "lint": "eslint .",
+    "typecheck": "vue-tsc --noEmit",
+    "format": "prettier . --write"
+  },
+  "dependencies": {
+    "@nuget-code/contracts": "workspace:*",
+    "@nuget-code/manager": "workspace:*",
+    "@vscode/codicons": "^0.0.45",
+    "pinia": "^3.0.4",
+    "vue": "^3.5.34"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.0",
+    "@types/node": "^24.12.3",
+    "@vitejs/plugin-vue": "^6.0.6",
+    "@vue/tsconfig": "^0.9.1",
+    "eslint-plugin-vue": "^10.9.1",
+    "globals": "^17.6.0",
+    "tailwindcss": "^4.3.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.0.12",
+    "vue-tsc": "^3.2.8"
+  }
+}

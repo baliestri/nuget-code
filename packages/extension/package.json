@@ -1,0 +1,43 @@
+{
+  "name": "nuget-code",
+  "displayName": "NuGet Package Manager",
+  "description": "A NuGet Package Manager based on JetBrains Rider's UI and features.",
+  "version": "0.0.1",
+  "publisher": "baliestri",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "main": "dist/extension.js",
+  "scripts": {
+    "compile": "rolldown -c",
+    "build": "rolldown -c",
+    "dev": "rolldown -c -w",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "format": "prettier . --write",
+    "test": "vitest run",
+    "test:integration": "vscode-test"
+  },
+  "activationEvents": [
+    "workspaceContains:**/*.sln",
+    "workspaceContains:**/*.slnx",
+    "workspaceContains:**/*.csproj",
+    "workspaceContains:**/*.fsproj",
+    "workspaceContains:**/*.vbproj"
+  ],
+  "contributes": {},
+  "configuration": {},
+  "dependencies": {
+    "@nuget-code/client": "workspace:*",
+    "@nuget-code/contracts": "workspace:*",
+    "@nuget-code/manager": "workspace:*",
+    "@nuget-code/webview": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/vscode": "^1.118.0",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
+    "rolldown": "1.0.0-rc.18"
+  }
+}

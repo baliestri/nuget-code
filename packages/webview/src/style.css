@@ -1,0 +1,230 @@
+@import "tailwindcss";
+
+@theme {
+  /* ------------------------------------------------------------------ */
+  /* Fonts                                                              */
+  /* ------------------------------------------------------------------ */
+  --font-sans: var(--vscode-font-family);
+  --font-mono: var(--vscode-editor-font-family);
+
+  /* ------------------------------------------------------------------ */
+  /* App / editor surfaces                                               */
+  /* ------------------------------------------------------------------ */
+  --color-app: var(--vscode-editor-background);
+  --color-app-foreground: var(--vscode-foreground);
+
+  --color-surface-0: var(--vscode-editor-background);
+  --color-surface-1: var(--vscode-sideBar-background);
+  --color-surface-2: var(--vscode-panel-background);
+  --color-surface-3: var(--vscode-editorWidget-background);
+  --color-surface-4: var(--vscode-quickInput-background);
+
+  --color-surface-hover: var(--vscode-list-hoverBackground);
+  --color-surface-active: var(--vscode-list-activeSelectionBackground);
+  --color-surface-active-fg: var(--vscode-list-activeSelectionForeground);
+  --color-surface-inactive: var(--vscode-list-inactiveSelectionBackground);
+  --color-surface-inactive-fg: var(--vscode-list-inactiveSelectionForeground);
+
+  /* ------------------------------------------------------------------ */
+  /* Foregrounds                                                         */
+  /* ------------------------------------------------------------------ */
+  --color-fg: var(--vscode-foreground);
+  --color-fg-muted: var(--vscode-descriptionForeground);
+  --color-fg-subtle: var(--vscode-disabledForeground);
+  --color-fg-inverse: var(--vscode-editor-background);
+
+  --color-link: var(--vscode-textLink-foreground);
+  --color-link-active: var(--vscode-textLink-activeForeground);
+
+  /* ------------------------------------------------------------------ */
+  /* Borders / separators / focus                                        */
+  /* ------------------------------------------------------------------ */
+  --color-border-default: var(--vscode-panel-border);
+  --color-border-muted: var(--vscode-sideBar-border);
+  --color-border-strong: var(--vscode-contrastBorder);
+  --color-border-active: var(--vscode-focusBorder);
+
+  --color-focus: var(--vscode-focusBorder);
+  --color-shadow: var(--vscode-widget-shadow);
+
+  /* ------------------------------------------------------------------ */
+  /* Accent / primary actions                                            */
+  /* ------------------------------------------------------------------ */
+  --color-accent: var(--vscode-button-background);
+  --color-accent-fg: var(--vscode-button-foreground);
+  --color-accent-hover: var(--vscode-button-hoverBackground);
+  --color-accent-secondary: var(--vscode-button-secondaryBackground);
+  --color-accent-secondary-fg: var(--vscode-button-secondaryForeground);
+  --color-accent-secondary-hover: var(--vscode-button-secondaryHoverBackground);
+
+  /* Button aliases */
+  --color-button: var(--vscode-button-background);
+  --color-button-fg: var(--vscode-button-foreground);
+  --color-button-hover: var(--vscode-button-hoverBackground);
+
+  --color-button-secondary: var(--vscode-button-secondaryBackground);
+  --color-button-secondary-fg: var(--vscode-button-secondaryForeground);
+  --color-button-secondary-hover: var(--vscode-button-secondaryHoverBackground);
+
+  /* ------------------------------------------------------------------ */
+  /* Inputs / forms                                                      */
+  /* ------------------------------------------------------------------ */
+  --color-input: var(--vscode-input-background);
+  --color-input-fg: var(--vscode-input-foreground);
+  --color-input-placeholder: var(--vscode-input-placeholderForeground);
+  --color-input-border: var(--vscode-input-border);
+
+  --color-input-option-active: var(--vscode-inputOption-activeBackground);
+  --color-input-option-active-fg: var(--vscode-inputOption-activeForeground);
+  --color-input-option-active-border: var(--vscode-inputOption-activeBorder);
+
+  --color-dropdown: var(--vscode-dropdown-background);
+  --color-dropdown-fg: var(--vscode-dropdown-foreground);
+  --color-dropdown-border: var(--vscode-dropdown-border);
+
+  --color-checkbox: var(--vscode-checkbox-background);
+  --color-checkbox-fg: var(--vscode-checkbox-foreground);
+  --color-checkbox-border: var(--vscode-checkbox-border);
+
+  /* ------------------------------------------------------------------ */
+  /* Lists / trees / selectable rows                                     */
+  /* ------------------------------------------------------------------ */
+  --color-list-hover: var(--vscode-list-hoverBackground);
+  --color-list-hover-fg: var(--vscode-list-hoverForeground);
+
+  --color-list-active: var(--vscode-list-activeSelectionBackground);
+  --color-list-active-fg: var(--vscode-list-activeSelectionForeground);
+
+  --color-list-inactive: var(--vscode-list-inactiveSelectionBackground);
+  --color-list-inactive-fg: var(--vscode-list-inactiveSelectionForeground);
+
+  --color-list-focus: var(--vscode-list-focusBackground);
+  --color-list-focus-fg: var(--vscode-list-focusForeground);
+  --color-list-highlight: var(--vscode-list-highlightForeground);
+  --color-list-invalid: var(--vscode-list-invalidItemForeground);
+  --color-list-error: var(--vscode-list-errorForeground);
+  --color-list-warning: var(--vscode-list-warningForeground);
+
+  /* ------------------------------------------------------------------ */
+  /* Tabs / badges / activity-like UI                                    */
+  /* ------------------------------------------------------------------ */
+  --color-tab-active: var(--vscode-tab-activeBackground);
+  --color-tab-active-fg: var(--vscode-tab-activeForeground);
+  --color-tab-inactive: var(--vscode-tab-inactiveBackground);
+  --color-tab-inactive-fg: var(--vscode-tab-inactiveForeground);
+  --color-tab-border: var(--vscode-tab-border);
+
+  --color-badge: var(--vscode-badge-background);
+  --color-badge-fg: var(--vscode-badge-foreground);
+
+  /* ------------------------------------------------------------------ */
+  /* Notifications / status                                              */
+  /* ------------------------------------------------------------------ */
+  --color-info: var(--vscode-notificationsInfoIcon-foreground);
+  --color-warning: var(--vscode-notificationsWarningIcon-foreground);
+  --color-error: var(--vscode-notificationsErrorIcon-foreground);
+
+  --color-success: var(--vscode-testing-iconPassed);
+  --color-failed: var(--vscode-testing-iconFailed);
+  --color-skipped: var(--vscode-testing-iconSkipped);
+  --color-queued: var(--vscode-testing-iconQueued);
+  --color-unset: var(--vscode-testing-iconUnset);
+
+  /* ------------------------------------------------------------------ */
+  /* Text blocks                                                         */
+  /* ------------------------------------------------------------------ */
+  --color-text-blockquote-bg: var(--vscode-textBlockQuote-background);
+  --color-text-blockquote-border: var(--vscode-textBlockQuote-border);
+  --color-text-code-bg: var(--vscode-textCodeBlock-background);
+  --color-text-separator: var(--vscode-textSeparator-foreground);
+
+  /* ------------------------------------------------------------------ */
+  /* Editor-ish semantic tokens                                          */
+  /* ------------------------------------------------------------------ */
+  --color-code-bg: var(--vscode-textCodeBlock-background);
+  --color-code-fg: var(--vscode-editor-foreground);
+  --color-code-line-highlight: var(--vscode-editor-lineHighlightBackground);
+  --color-code-selection: var(--vscode-editor-selectionBackground);
+  --color-code-find-match: var(--vscode-editor-findMatchBackground);
+  --color-code-find-match-border: var(--vscode-editor-findMatchBorder);
+
+  /* ------------------------------------------------------------------ */
+  /* Scrollbars                                                          */
+  /* ------------------------------------------------------------------ */
+  --color-scrollbar-shadow: var(--vscode-scrollbar-shadow);
+  --color-scrollbar-slider: var(--vscode-scrollbarSlider-background);
+  --color-scrollbar-slider-hover: var(--vscode-scrollbarSlider-hoverBackground);
+  --color-scrollbar-slider-active: var(
+    --vscode-scrollbarSlider-activeBackground
+  );
+
+  /* ------------------------------------------------------------------ */
+  /* Charts                                                              */
+  /* ------------------------------------------------------------------ */
+  --color-chart-line: var(--vscode-charts-lines);
+  --color-chart-red: var(--vscode-charts-red);
+  --color-chart-blue: var(--vscode-charts-blue);
+  --color-chart-yellow: var(--vscode-charts-yellow);
+  --color-chart-orange: var(--vscode-charts-orange);
+  --color-chart-green: var(--vscode-charts-green);
+  --color-chart-purple: var(--vscode-charts-purple);
+  --color-chart-foreground: var(--vscode-charts-foreground);
+}
+
+@layer base {
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    min-height: 100%;
+    background: var(--vscode-editor-background);
+    color: var(--vscode-foreground);
+    font-family: var(--vscode-font-family);
+  }
+
+  body {
+    overflow: hidden;
+  }
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  a {
+    color: var(--vscode-textLink-foreground);
+  }
+
+  a:hover {
+    color: var(--vscode-textLink-activeForeground);
+  }
+
+  ::selection {
+    background: var(--vscode-editor-selectionBackground);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--vscode-scrollbarSlider-background);
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--vscode-scrollbarSlider-hoverBackground);
+  }
+
+  ::-webkit-scrollbar-thumb:active {
+    background: var(--vscode-scrollbarSlider-activeBackground);
+  }
+}

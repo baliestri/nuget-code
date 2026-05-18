@@ -1,0 +1,19 @@
+{
+  "name": "@nuget-code/client",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint .",
+    "format": "prettier . --write"
+  },
+  "dependencies": {
+    "@nuget-code/contracts": "workspace:*",
+    "@nuget-code/manager": "workspace:*",
+    "@rgrove/parse-xml": "^4.2.0",
+    "proxy-agent": "^8.0.1"
+  }
+}
