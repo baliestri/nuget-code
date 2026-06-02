@@ -23,10 +23,284 @@
     "workspaceContains:**/*.slnx",
     "workspaceContains:**/*.csproj",
     "workspaceContains:**/*.fsproj",
-    "workspaceContains:**/*.vbproj"
+    "workspaceContains:**/*.vbproj",
+    "onCommand:nuget-code.openPackageManager"
   ],
-  "contributes": {},
-  "configuration": {},
+  "contributes": {
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "nuget-code",
+          "title": "NuGet",
+          "icon": "resources/package.svg"
+        }
+      ]
+    },
+    "views": {
+      "nuget-code": [
+        {
+          "id": "nuget-code.packageManager",
+          "name": "NuGet Package Manager",
+          "type": "webview",
+          "icon": "resources/package.svg"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "nuget-code.openPackageManager",
+        "title": "Manage NuGet Packages",
+        "icon": "$(package)"
+      },
+      {
+        "command": "nuget-code.showPackages",
+        "title": "Packages",
+        "icon": "$(package)"
+      },
+      {
+        "command": "nuget-code.showSources",
+        "title": "Sources",
+        "icon": "$(server-process)"
+      },
+      {
+        "command": "nuget-code.showFolders",
+        "title": "Folders",
+        "icon": "$(folder)"
+      },
+      {
+        "command": "nuget-code.showLogs",
+        "title": "Logs",
+        "icon": "$(output)"
+      },
+      {
+        "command": "nuget-code.showPackagesLabel",
+        "title": "Packages"
+      },
+      {
+        "command": "nuget-code.showSourcesLabel",
+        "title": "Sources"
+      },
+      {
+        "command": "nuget-code.showFoldersLabel",
+        "title": "Folders"
+      },
+      {
+        "command": "nuget-code.showLogsLabel",
+        "title": "Logs"
+      },
+      {
+        "command": "nuget-code.restorePackages",
+        "title": "Restore Packages",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "nuget-code.refreshPackages",
+        "title": "Refresh Packages",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "nuget-code.upgradePackages",
+        "title": "Upgrade Packages",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "nuget-code.reloadSources",
+        "title": "Reload Sources",
+        "icon": "$(server-process)"
+      },
+      {
+        "command": "nuget-code.recalculateCacheSizes",
+        "title": "Recalculate Cache Sizes",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "nuget-code.openCacheFolder",
+        "title": "Open Cache Folder",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "nuget-code.clearSelectedCaches",
+        "title": "Clear Selected Caches",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "nuget-code.clearLogs",
+        "title": "Clear Logs",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "nuget-code.refreshLogs",
+        "title": "Refresh Logs",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "nuget-code.openSettings",
+        "title": "Open Settings",
+        "icon": "$(gear)"
+      }
+    ],
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "nuget-code.openPackageManager",
+          "when": "view == resharper.solutionExplorer && (viewItem =~ /canInstallPackage/ || viewItem =~ /canCreateSolutionFolderAt/)",
+          "group": "group2@1"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "nuget-code.openPackageManager",
+          "when": "(resourceScheme == file && (resourceExtname == .sln || resourceExtname == .slnx || resourceExtname == .csproj || resourceExtname == .fsproj || resourceExtname == .vbproj)) || (explorerResourceIsFolder && resourcePath in csdevkit.foldersWithProjects)",
+          "group": "2_workspace@4"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "nuget-code.showPackages",
+          "when": "view == nuget-code.packageManager && nuget-code.packageManager.tabButtonStyle == icons",
+          "group": "navigation@-40"
+        },
+        {
+          "command": "nuget-code.showSources",
+          "when": "view == nuget-code.packageManager && nuget-code.packageManager.tabButtonStyle == icons",
+          "group": "navigation@-39"
+        },
+        {
+          "command": "nuget-code.showFolders",
+          "when": "view == nuget-code.packageManager && nuget-code.packageManager.tabButtonStyle == icons",
+          "group": "navigation@-38"
+        },
+        {
+          "command": "nuget-code.showLogs",
+          "when": "view == nuget-code.packageManager && nuget-code.packageManager.tabButtonStyle == icons",
+          "group": "navigation@-37"
+        },
+        {
+          "command": "nuget-code.showPackagesLabel",
+          "when": "view == nuget-code.packageManager && nuget-code.packageManager.tabButtonStyle == labels",
+          "group": "navigation@-40"
+        },
+        {
+          "command": "nuget-code.showSourcesLabel",
+          "when": "view == nuget-code.packageManager && nuget-code.packageManager.tabButtonStyle == labels",
+          "group": "navigation@-39"
+        },
+        {
+          "command": "nuget-code.showFoldersLabel",
+          "when": "view == nuget-code.packageManager && nuget-code.packageManager.tabButtonStyle == labels",
+          "group": "navigation@-38"
+        },
+        {
+          "command": "nuget-code.showLogsLabel",
+          "when": "view == nuget-code.packageManager && nuget-code.packageManager.tabButtonStyle == labels",
+          "group": "navigation@-37"
+        }
+      ]
+    }
+  },
+  "configuration": {
+    "title": "NuGet Package Manager",
+    "properties": {
+      "nuget-code.packageManager.tabButtonStyle": {
+        "type": "string",
+        "default": "labels",
+        "enum": [
+          "icons",
+          "labels"
+        ],
+        "description": "Style of the Package Manager tab buttons."
+      },
+      "nuget-code.logLevel": {
+        "type": "string",
+        "default": "information",
+        "enum": [
+          "debug",
+          "verbose",
+          "information",
+          "minimal",
+          "warning",
+          "error"
+        ],
+        "description": "Minimum level used by the NuGet Package Manager log buffer."
+      },
+      "nuget-code.maxLogEntries": {
+        "type": "number",
+        "default": 1000,
+        "description": "Maximum number of log entries kept in the webview."
+      },
+      "nuget-code.defaultFeed": {
+        "type": "string",
+        "default": "__all__",
+        "description": "Default NuGet feed id selected in the Package Manager."
+      },
+      "nuget-code.includePrerelease": {
+        "type": "boolean",
+        "default": false,
+        "description": "Include prerelease packages in feed search."
+      },
+      "nuget-code.maxSearchResults": {
+        "type": "number",
+        "default": 100,
+        "description": "Maximum number of available packages shown from feed search."
+      },
+      "nuget-code.dotnetPath": {
+        "type": "string",
+        "default": "dotnet",
+        "description": "Path to the dotnet executable."
+      },
+      "nuget-code.nugetPath": {
+        "type": "string",
+        "default": "nuget",
+        "description": "Path to the nuget executable."
+      },
+      "nuget-code.extraConfigPaths": {
+        "type": "array",
+        "default": [],
+        "items": {
+          "type": "string"
+        },
+        "description": "Additional NuGet.config paths to include in source discovery."
+      },
+      "nuget-code.credentialProviderPaths": {
+        "type": "array",
+        "default": [],
+        "items": {
+          "type": "string"
+        },
+        "description": "Additional NuGet credential provider executable paths."
+      },
+      "nuget-code.proxy": {
+        "type": "string",
+        "default": "",
+        "description": "Proxy URL used for NuGet HTTP requests."
+      },
+      "nuget-code.useVsCodeProxy": {
+        "type": "boolean",
+        "default": true,
+        "description": "Use VS Code's http.proxy setting when no extension proxy is configured."
+      },
+      "nuget-code.calculateCacheSizesOnLoad": {
+        "type": "boolean",
+        "default": false,
+        "description": "Calculate NuGet cache folder sizes when the package manager loads."
+      }
+    }
+  },
+  "configurationDefaults": {
+    "nuget-code.packageManager.tabButtonStyle": "labels",
+    "nuget-code.logLevel": "information",
+    "nuget-code.maxLogEntries": 1000,
+    "nuget-code.defaultFeed": "__all__",
+    "nuget-code.includePrerelease": false,
+    "nuget-code.maxSearchResults": 100,
+    "nuget-code.dotnetPath": "dotnet",
+    "nuget-code.nugetPath": "nuget",
+    "nuget-code.extraConfigPaths": [],
+    "nuget-code.credentialProviderPaths": [],
+    "nuget-code.proxy": "",
+    "nuget-code.useVsCodeProxy": true,
+    "nuget-code.calculateCacheSizesOnLoad": false
+  },
   "dependencies": {
     "@nuget-code/client": "workspace:*",
     "@nuget-code/contracts": "workspace:*",
