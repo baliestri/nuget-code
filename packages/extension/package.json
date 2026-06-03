@@ -8,6 +8,7 @@
   },
   "version": "1.0.0",
   "publisher": "baliestri",
+  "icon": "./logo.png",
   "engines": {
     "vscode": "^1.100.0"
   },
