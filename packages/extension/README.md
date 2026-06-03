@@ -10,29 +10,29 @@ It provides a dedicated NuGet panel for .NET workspaces, with package discovery,
 
 ### Package Manager
 
-![General package manager view](../../.github/screenshots/GeneralView.png)
+![General package manager view](https://raw.githubusercontent.com/baliestri/nuget-code/refs/heads/main/.github/screenshots/GeneralView.png)
 
-![Package manager with package details](../../.github/screenshots/GeneralViewWithDetails.png)
+![Package manager with package details](https://raw.githubusercontent.com/baliestri/nuget-code/refs/heads/main/.github/screenshots/GeneralViewWithDetails.png)
 
 ### Projects and Context Menu
 
-![Solution and project target list](../../.github/screenshots/SolutionProjectList.png)
+![Solution and project target list](https://raw.githubusercontent.com/baliestri/nuget-code/refs/heads/main/.github/screenshots/SolutionProjectList.png)
 
-![Explorer context menu](../../.github/screenshots/ContextMenu.png)
+![Explorer context menu](https://raw.githubusercontent.com/baliestri/nuget-code/refs/heads/main/.github/screenshots/ContextMenu.png)
 
 ### Package Search and Installed Packages
 
-![Package search](../../.github/screenshots/PackageSearch.png)
+![Package search](https://raw.githubusercontent.com/baliestri/nuget-code/refs/heads/main/.github/screenshots/PackageSearch.png)
 
-![Implicitly installed packages](../../.github/screenshots/ImplicitlyInstalledPackages.png)
+![Implicitly installed packages](https://raw.githubusercontent.com/baliestri/nuget-code/refs/heads/main/.github/screenshots/ImplicitlyInstalledPackages.png)
 
 ### Sources, Cache Folders, and Logs
 
-![NuGet sources view](../../.github/screenshots/SourcesNotEditableYet.png)
+![NuGet sources view](https://raw.githubusercontent.com/baliestri/nuget-code/refs/heads/main/.github/screenshots/SourcesNotEditableYet.png)
 
-![NuGet cache folders view](../../.github/screenshots/CacheFolders.png)
+![NuGet cache folders view](https://raw.githubusercontent.com/baliestri/nuget-code/refs/heads/main/.github/screenshots/CacheFolders.png)
 
-![NuGet logs view](../../.github/screenshots/Logs.png)
+![NuGet logs view](https://raw.githubusercontent.com/baliestri/nuget-code/refs/heads/main/.github/screenshots/Logs.png)
 
 ## Features
 
