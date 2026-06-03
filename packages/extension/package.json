@@ -1,6 +1,6 @@
 {
   "name": "nuget-code",
-  "displayName": "NuGet Package Manager",
+  "displayName": "NuGet Manager for VS Code",
   "description": "A NuGet Package Manager based on JetBrains Rider's UI and features.",
   "repository": {
     "type": "git",
