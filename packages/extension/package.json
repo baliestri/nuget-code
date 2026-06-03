@@ -2,7 +2,11 @@
   "name": "nuget-code",
   "displayName": "NuGet Package Manager",
   "description": "A NuGet Package Manager based on JetBrains Rider's UI and features.",
-  "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/baliestri/nuget-code"
+  },
+  "version": "1.0.0",
   "publisher": "baliestri",
   "engines": {
     "vscode": "^1.100.0"
@@ -16,7 +20,10 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "format": "prettier . --write",
     "test": "vitest run",
-    "test:integration": "vscode-test"
+    "test:integration": "vscode-test",
+    "vscode:prepublish": "pnpm --filter ../.. run compile",
+    "package": "pnpm vsce package --no-dependencies",
+    "publish": "pnpm vsce publish --no-dependencies"
   },
   "activationEvents": [
     "workspaceContains:**/*.sln",
@@ -309,9 +316,10 @@
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
-    "@types/vscode": "^1.118.0",
+    "@types/vscode": "^1.100.0",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.9.1",
     "rolldown": "1.0.0-rc.18"
   }
 }
