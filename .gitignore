@@ -258,3 +258,4 @@ fabric.properties
 ### Custom ###
 
 media/
+*.vsix

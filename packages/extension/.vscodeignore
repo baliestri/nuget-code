@@ -1,6 +1,5 @@
 .vscode/**
 .vscode-test/**
-dist/**
 node_modules/**
 src/**
 .gitignore
@@ -11,5 +10,7 @@ esbuild.js
 **/*.map
 **/*.ts
 **/.vscode-test.*
+**/rolldown.config.mjs
+**/vitest.config.ts
 .turbo
 turbo.json
