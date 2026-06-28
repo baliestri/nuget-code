@@ -124,7 +124,9 @@ describe("package inventory", () => {
           frameworks: [
             {
               framework: "net8.0",
-              topLevelPackages: [{ id: "Newtonsoft.Json", resolvedVersion: "13.0.3" }],
+              topLevelPackages: [
+                { id: "Newtonsoft.Json", resolvedVersion: "13.0.3" },
+              ],
             },
           ],
         },
@@ -133,7 +135,11 @@ describe("package inventory", () => {
 
     const runDotnet = vi
       .fn()
-      .mockResolvedValueOnce({ code: 1, stdout: restoreFailureJson, stderr: "" })
+      .mockResolvedValueOnce({
+        code: 1,
+        stdout: restoreFailureJson,
+        stderr: "",
+      })
       .mockResolvedValueOnce({ code: 0, stdout: packagesJson, stderr: "" });
     const log = logger();
 
@@ -161,9 +167,11 @@ describe("package inventory", () => {
   });
 
   it("does not retry and returns empty when non-restore error occurs", async () => {
-    const runDotnet = vi
-      .fn()
-      .mockResolvedValueOnce({ code: 1, stdout: "", stderr: "some other error" });
+    const runDotnet = vi.fn().mockResolvedValueOnce({
+      code: 1,
+      stdout: "",
+      stderr: "some other error",
+    });
 
     const inventory = await loadListedPackageInventory({
       target: target(),
@@ -183,7 +191,11 @@ describe("package inventory", () => {
 
     const runDotnet = vi
       .fn()
-      .mockResolvedValueOnce({ code: 1, stdout: restoreFailureJson, stderr: "" })
+      .mockResolvedValueOnce({
+        code: 1,
+        stdout: restoreFailureJson,
+        stderr: "",
+      })
       .mockResolvedValueOnce({ code: 1, stdout: "", stderr: "still broken" });
 
     const inventory = await loadListedPackageInventory({
@@ -337,7 +349,11 @@ describe("package inventory", () => {
 
     const runDotnet = vi
       .fn()
-      .mockResolvedValueOnce({ code: 1, stdout: restoreFailureJson, stderr: "" })
+      .mockResolvedValueOnce({
+        code: 1,
+        stdout: restoreFailureJson,
+        stderr: "",
+      })
       .mockResolvedValueOnce({ code: 0, stdout: outdatedJson, stderr: "" });
     const log = logger();
 
