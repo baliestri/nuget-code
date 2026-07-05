@@ -3,6 +3,7 @@ import type { PackageManagerCommand, PackageManagerTab } from "#contracts";
 import { ExtensionLogger } from "#extension/logger";
 import { PackageManagerController } from "#extension/webview/controller";
 import { PackageManagerViewProvider } from "#extension/webview/view";
+import { SolutionSelector } from "#extension/solution-selector";
 import { getSettings } from "#extension/settings";
 
 const viewId = "nuget-code.packageManager";
@@ -33,7 +34,12 @@ const tabCommandMap: Array<[string, PackageManagerTab]> = [
 
 export function activate(context: ExtensionContext) {
   const logger = new ExtensionLogger(getSettings());
-  const controller = new PackageManagerController(logger, context.globalState);
+  const solutionSelector = new SolutionSelector(context.workspaceState);
+  const controller = new PackageManagerController(
+    logger,
+    context.globalState,
+    solutionSelector,
+  );
   const provider = new PackageManagerViewProvider(context, controller);
 
   context.subscriptions.push(
@@ -45,6 +51,12 @@ export function activate(context: ExtensionContext) {
     ),
     commands.registerCommand("nuget-code.openPackageManager", (item) =>
       controller.openPackageManagerFromContext(item),
+    ),
+    commands.registerCommand("nuget-code.selectSolution", () =>
+      controller.selectSolution(),
+    ),
+    commands.registerCommand("nuget-code.clearSelectedSolution", () =>
+      controller.clearSelectedSolution(),
     ),
     ...tabCommandMap.map(([commandId, tab]) =>
       commands.registerCommand(commandId, () => controller.setActiveTab(tab)),

@@ -87,21 +87,32 @@ async function readListedPackages(
     return { installed: [], implicit: [] };
   }
 
-  const result = await runDotnetWithSignal(
-    cli,
-    [
-      "list",
-      target.path,
-      "package",
-      "--include-transitive",
-      "--format",
-      "json",
-    ],
-    signal,
-  );
+  const baseArgs = [
+    "list",
+    target.path,
+    "package",
+    "--include-transitive",
+    "--format",
+    "json",
+  ];
+
+  let result = await runDotnetWithSignal(cli, baseArgs, signal);
 
   if (result.code !== 0) {
-    return { installed: [], implicit: [] };
+    if (isRestoreFailure(result.stdout)) {
+      logger.warning(
+        "nuget.cli",
+        `dotnet list package failed due to restore for ${target.name}, retrying with --no-restore`,
+      );
+      result = await runDotnetWithSignal(
+        cli,
+        [...baseArgs, "--no-restore"],
+        signal,
+      );
+    }
+    if (result.code !== 0) {
+      return { installed: [], implicit: [] };
+    }
   }
 
   let listed: DotnetPackageList;
@@ -192,22 +203,33 @@ async function readOutdatedPackages(
     return updates;
   }
 
-  const result = await runDotnetWithSignal(
-    cli,
-    [
-      "list",
-      target.path,
-      "package",
-      "--outdated",
-      "--include-transitive",
-      "--format",
-      "json",
-    ],
-    signal,
-  );
+  const baseArgs = [
+    "list",
+    target.path,
+    "package",
+    "--outdated",
+    "--include-transitive",
+    "--format",
+    "json",
+  ];
+
+  let result = await runDotnetWithSignal(cli, baseArgs, signal);
 
   if (result.code !== 0) {
-    return updates;
+    if (isRestoreFailure(result.stdout)) {
+      logger.warning(
+        "nuget.cli",
+        `dotnet list package --outdated failed due to restore for ${target.name}, retrying with --no-restore`,
+      );
+      result = await runDotnetWithSignal(
+        cli,
+        [...baseArgs, "--no-restore"],
+        signal,
+      );
+    }
+    if (result.code !== 0) {
+      return updates;
+    }
   }
 
   let listed: DotnetPackageList;
@@ -244,4 +266,15 @@ function runDotnetWithSignal(
   return signal
     ? cli.runDotnet(args, undefined, { signal })
     : cli.runDotnet(args);
+}
+
+function isRestoreFailure(stdout: string): boolean {
+  try {
+    const parsed = JSON.parse(stdout) as DotnetPackageList;
+    return (parsed.problems ?? []).some(
+      (p) => p.level === "error" && p.text.includes("Restore failed"),
+    );
+  } catch {
+    return false;
+  }
 }
