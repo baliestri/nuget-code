@@ -1,10 +1,11 @@
 import path from "node:path";
-import { Uri, workspace } from "vscode";
+import { workspace } from "vscode";
 import type { WorkspaceTarget } from "#contracts";
 import { ExtensionLogger } from "#extension/logger";
 
-const projectPatterns = ["**/*.csproj", "**/*.fsproj", "**/*.vbproj"];
-const solutionPatterns = ["**/*.sln", "**/*.slnx"];
+export const projectFileGlob = "**/*.{csproj,fsproj,vbproj}";
+export const solutionFileGlob = "**/*.{sln,slnx}";
+const excludeGlob = "**/{node_modules,bin,obj}/**";
 
 export interface WorkspaceDiscovery {
   targets: WorkspaceTarget[];
@@ -15,11 +16,11 @@ export interface WorkspaceDiscovery {
 export async function discoverWorkspace(
   logger: ExtensionLogger,
 ): Promise<WorkspaceDiscovery> {
-  const solutionUris = await findMany(solutionPatterns);
-  const projectUris = await findMany(projectPatterns);
+  const solutionUris = await workspace.findFiles(solutionFileGlob, excludeGlob);
+  const projectUris = await workspace.findFiles(projectFileGlob, excludeGlob);
   const centralPackageUris = await workspace.findFiles(
     "**/Directory.Packages.props",
-    "**/{node_modules,bin,obj}/**",
+    excludeGlob,
   );
   const projectPaths = unique(projectUris.map((uri) => uri.fsPath));
   const targets: WorkspaceTarget[] = [
@@ -49,15 +50,6 @@ export async function discoverWorkspace(
     projectPaths,
     centralPackageFiles: centralPackageUris.map((uri) => uri.fsPath),
   };
-}
-
-async function findMany(patterns: string[]): Promise<Uri[]> {
-  const uriGroups = await Promise.all(
-    patterns.map((pattern) =>
-      workspace.findFiles(pattern, "**/{node_modules,bin,obj}/**"),
-    ),
-  );
-  return uriGroups.flat();
 }
 
 function unique(values: string[]): string[] {

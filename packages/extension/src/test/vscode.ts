@@ -35,6 +35,22 @@ export const window: WindowMock = {
   createStatusBarItem: vi.fn(),
 };
 
+type FileSystemWatcherMock = {
+  onDidCreate: Mock;
+  onDidChange: Mock;
+  onDidDelete: Mock;
+  dispose: Mock;
+};
+
+function createFileSystemWatcherMock(): FileSystemWatcherMock {
+  return {
+    onDidCreate: vi.fn(),
+    onDidChange: vi.fn(),
+    onDidDelete: vi.fn(),
+    dispose: vi.fn(),
+  };
+}
+
 type WorkspaceMock = {
   workspaceFile: { fsPath: string } | undefined;
   workspaceFolders:
@@ -43,6 +59,7 @@ type WorkspaceMock = {
   findFiles: Mock;
   asRelativePath: Mock;
   getConfiguration: Mock;
+  createFileSystemWatcher: Mock;
 };
 
 export const workspace: WorkspaceMock = {
@@ -54,6 +71,7 @@ export const workspace: WorkspaceMock = {
     get: <T>(key: string, fallback: T): T =>
       (configurations.get(section)?.[key] as T | undefined) ?? fallback,
   })),
+  createFileSystemWatcher: vi.fn(() => createFileSystemWatcherMock()),
 };
 
 export function __setConfiguration(
@@ -71,6 +89,10 @@ export function __resetVscodeMock(): void {
   workspace.asRelativePath.mockReset();
   workspace.asRelativePath.mockImplementation((pathOrUri: string) => pathOrUri);
   workspace.getConfiguration.mockClear();
+  workspace.createFileSystemWatcher.mockReset();
+  workspace.createFileSystemWatcher.mockImplementation(() =>
+    createFileSystemWatcherMock(),
+  );
   window.showWarningMessage.mockReset();
   window.showInformationMessage.mockReset();
   window.showErrorMessage.mockReset();

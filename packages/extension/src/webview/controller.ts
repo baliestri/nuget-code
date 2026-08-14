@@ -67,6 +67,7 @@ export class PackageManagerController implements Disposable {
   private packageRefreshAbort: AbortController | undefined;
   private packageDetailsCache = new Map<string, NuGetPackageItem>();
   private initialization: Promise<void> | undefined;
+  private discoveryRefreshChain: Promise<void> = Promise.resolve();
   private readonly events = new PackageManagerEventBus();
   private readonly operations: PackageManagerOperationRunner;
   private readonly feedHealth: PackageFeedHealthNotifier;
@@ -141,6 +142,7 @@ export class PackageManagerController implements Disposable {
         this.packageReferenceFingerprint = fingerprint;
       },
       (options) => this.refreshPackages(options),
+      () => this.refreshDiscovery(),
     );
 
     this.disposables.push(
@@ -892,13 +894,15 @@ export class PackageManagerController implements Disposable {
   }
 
   private async resolveSelectedTarget(): Promise<string> {
-    const solutions = this.discovery.targets.filter(
-      (t) => t.kind === "solution",
+    const targets = this.discovery.targets;
+    const currentTargetStillValid = targets.some(
+      (t) => t.id === this.state.selectedTargetId,
     );
+    if (currentTargetStillValid) return this.state.selectedTargetId;
 
+    const solutions = targets.filter((t) => t.kind === "solution");
     if (solutions.length === 0) {
-      const fallbackId =
-        this.state.selectedTargetId || this.discovery.targets[0]?.id || "";
+      const fallbackId = targets[0]?.id ?? "";
       if (!fallbackId) {
         void window.showWarningMessage(
           "No solution file was found in this workspace.",
@@ -907,12 +911,33 @@ export class PackageManagerController implements Disposable {
       return fallbackId;
     }
 
-    const currentStillValid = solutions.some(
-      (s) => s.id === this.state.selectedTargetId,
-    );
-    if (currentStillValid) return this.state.selectedTargetId;
-
     return this.solutionSelector.resolve(solutions);
+  }
+
+  private refreshDiscovery(): Promise<void> {
+    this.discoveryRefreshChain = this.discoveryRefreshChain
+      .catch(() => {})
+      .then(() => this.performDiscoveryRefresh());
+    return this.discoveryRefreshChain;
+  }
+
+  private async performDiscoveryRefresh(): Promise<void> {
+    if (this.initialization) {
+      await this.initialization;
+    }
+
+    this.discovery = await discoverWorkspace(this.logger);
+    const selectedTargetId = await this.resolveSelectedTarget();
+
+    this.state = {
+      ...this.state,
+      targets: this.discovery.targets,
+      selectedTargetId,
+    };
+
+    this.updateSolutionStatusBar();
+    this.postState();
+    await this.refreshPackages({ forceInventory: true });
   }
 
   private updateSolutionStatusBar(): void {
