@@ -124,6 +124,12 @@ function onPrereleaseChange(event: Event): void {
             loading
           />
           <PackageSection
+            v-else-if="model.installedPackagesStatus === 'failed'"
+            :title="`Installed Packages in ${selectedTargetValue?.name ?? 'workspace'}`"
+            :packages="[]"
+            error
+          />
+          <PackageSection
             v-else-if="installedPackages.length > 0"
             :title="`Installed Packages in ${selectedTargetValue?.name ?? 'workspace'}: ${installedPackages.length}`"
             :packages="installedPackages"
@@ -133,6 +139,12 @@ function onPrereleaseChange(event: Event): void {
             :title="`Implicitly Installed Packages in ${selectedTargetValue?.name ?? 'workspace'}`"
             :packages="[]"
             loading
+          />
+          <PackageSection
+            v-else-if="model.implicitPackagesStatus === 'failed'"
+            :title="`Implicitly Installed Packages in ${selectedTargetValue?.name ?? 'workspace'}`"
+            :packages="[]"
+            error
           />
           <PackageSection
             v-else-if="implicitPackages.length > 0"

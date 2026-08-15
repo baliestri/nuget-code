@@ -1,13 +1,19 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { storeToRefs } from "pinia";
 import VscodeIcon from "#webview/components/vscode/VscodeIcon.vue";
-import { targetIcon } from "#manager";
+import { filterTargetsForActiveSolution, targetIcon } from "#manager";
 import { usePackageManagerStore } from "#webview/stores/packageManager";
 
 const store = usePackageManagerStore();
 const { model, selectedTargetValue } = storeToRefs(store);
 const open = ref(false);
+const visibleTargets = computed(() =>
+  filterTargetsForActiveSolution(
+    model.value.targets,
+    model.value.selectedTargetId,
+  ),
+);
 
 function handleFocusOut(event: FocusEvent): void {
   const current = event.currentTarget;
@@ -45,7 +51,7 @@ function handleFocusOut(event: FocusEvent): void {
       role="listbox"
     >
       <button
-        v-for="target in model.targets"
+        v-for="target in visibleTargets"
         :key="target.id"
         :class="`flex w-full items-center gap-2 px-2 py-1 text-left ${target.id === model.selectedTargetId ? 'bg-list-active text-list-active-fg' : 'hover:bg-list-hover hover:text-list-hover-fg'}`"
         type="button"

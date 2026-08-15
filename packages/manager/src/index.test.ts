@@ -17,6 +17,7 @@ import {
   feedColor,
   feedName,
   filterPackagesForTarget,
+  filterTargetsForActiveSolution,
   globalProjectActions,
   isHttpFeed,
   isHttpUrl,
@@ -175,6 +176,51 @@ describe("package manager state helpers", () => {
     expect(filterPackagesForTarget([packageItemA], undefined)).toEqual([
       packageItemA,
     ]);
+  });
+
+  it("filters targets down to the active solution and its own projects", () => {
+    const singleSolution = target("solution:a", "src/A.sln", [
+      "src/A/A.csproj",
+    ]);
+    const singleProject = target("project:a", "src/A/A.csproj", [
+      "src/A/A.csproj",
+    ]);
+    expect(
+      filterTargetsForActiveSolution(
+        [singleSolution, singleProject],
+        singleSolution.id,
+      ),
+    ).toEqual([singleSolution, singleProject]);
+
+    const solutionA = target("solution:a", "src/A.sln", [
+      "src/A/A.csproj",
+      "src/Shared/Shared.csproj",
+    ]);
+    const solutionB = target("solution:b", "src/B.sln", ["src/B/B.csproj"]);
+    const projectA = target("project:a", "src/A/A.csproj", ["src/A/A.csproj"]);
+    const projectShared = target("project:shared", "src/Shared/Shared.csproj", [
+      "src/Shared/Shared.csproj",
+    ]);
+    const projectB = target("project:b", "src/B/B.csproj", ["src/B/B.csproj"]);
+    const allTargets = [
+      solutionA,
+      solutionB,
+      projectA,
+      projectShared,
+      projectB,
+    ];
+
+    expect(filterTargetsForActiveSolution(allTargets, solutionA.id)).toEqual([
+      solutionA,
+      projectA,
+      projectShared,
+    ]);
+    expect(filterTargetsForActiveSolution(allTargets, projectA.id)).toEqual([
+      solutionA,
+      projectA,
+      projectShared,
+    ]);
+    expect(filterTargetsForActiveSolution(allTargets, "")).toEqual(allTargets);
   });
 
   it("computes project selection and project state fallbacks", () => {
