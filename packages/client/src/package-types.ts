@@ -12,6 +12,8 @@ export interface PackageInventory {
 }
 
 export interface DotnetPackageList {
+  version?: number;
+  problems?: Array<{ text: string; level: string }>;
   projects?: DotnetListedProject[];
 }
 

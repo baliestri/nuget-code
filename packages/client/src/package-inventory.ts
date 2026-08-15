@@ -1,4 +1,4 @@
-import { NuGetCli } from "#client/cli";
+import type { CommandResult, NuGetCli } from "#client/cli";
 import type { NuGetClientLogger } from "#client/types";
 import type {
   DotnetListedPackage,
@@ -87,33 +87,23 @@ async function readListedPackages(
     return { installed: [], implicit: [] };
   }
 
-  const result = await runDotnetWithSignal(
+  const baseArgs = [
+    "list",
+    target.path,
+    "package",
+    "--include-transitive",
+    "--format",
+    "json",
+  ];
+
+  const listed = await runListCommand(
     cli,
-    [
-      "list",
-      target.path,
-      "package",
-      "--include-transitive",
-      "--format",
-      "json",
-    ],
+    baseArgs,
+    target,
+    logger,
     signal,
+    "dotnet list package",
   );
-
-  if (result.code !== 0) {
-    return { installed: [], implicit: [] };
-  }
-
-  let listed: DotnetPackageList;
-  try {
-    listed = JSON.parse(result.stdout) as DotnetPackageList;
-  } catch (error) {
-    logger.warning(
-      "nuget.packages",
-      `Failed to parse dotnet package list JSON for ${target.name}: ${error instanceof Error ? error.message : String(error)}`,
-    );
-    return { installed: [], implicit: [] };
-  }
 
   const installed: NuGetPackageItem[] = [];
   const implicit: NuGetPackageItem[] = [];
@@ -192,34 +182,24 @@ async function readOutdatedPackages(
     return updates;
   }
 
-  const result = await runDotnetWithSignal(
+  const baseArgs = [
+    "list",
+    target.path,
+    "package",
+    "--outdated",
+    "--include-transitive",
+    "--format",
+    "json",
+  ];
+
+  const listed = await runListCommand(
     cli,
-    [
-      "list",
-      target.path,
-      "package",
-      "--outdated",
-      "--include-transitive",
-      "--format",
-      "json",
-    ],
+    baseArgs,
+    target,
+    logger,
     signal,
+    "dotnet list package --outdated",
   );
-
-  if (result.code !== 0) {
-    return updates;
-  }
-
-  let listed: DotnetPackageList;
-  try {
-    listed = JSON.parse(result.stdout) as DotnetPackageList;
-  } catch (error) {
-    logger.warning(
-      "nuget.packages",
-      `Failed to parse dotnet outdated package JSON for ${target.name}: ${error instanceof Error ? error.message : String(error)}`,
-    );
-    return updates;
-  }
 
   for (const project of listed.projects ?? []) {
     for (const framework of project.frameworks ?? []) {
@@ -244,4 +224,63 @@ function runDotnetWithSignal(
   return signal
     ? cli.runDotnet(args, undefined, { signal })
     : cli.runDotnet(args);
+}
+
+async function runListCommand(
+  cli: NuGetCli,
+  baseArgs: string[],
+  target: WorkspaceTarget,
+  logger: NuGetClientLogger,
+  signal: AbortSignal | undefined,
+  actionLabel: string,
+): Promise<DotnetPackageList> {
+  let result = await runDotnetWithSignal(cli, baseArgs, signal);
+
+  if (result.code !== 0) {
+    logger.warning(
+      "nuget.cli",
+      `${actionLabel} failed for ${target.name} (exit ${result.code}), retrying with --no-restore`,
+    );
+    result = await runDotnetWithSignal(
+      cli,
+      [...baseArgs, "--no-restore"],
+      signal,
+    );
+  }
+
+  if (result.code !== 0) {
+    const message = `${actionLabel} failed for ${target.name}: ${describeFailure(result)}`;
+    logger.error("nuget.packages", message);
+    throw new Error(message);
+  }
+
+  try {
+    return JSON.parse(result.stdout) as DotnetPackageList;
+  } catch (error) {
+    const message = `Failed to parse ${actionLabel} JSON for ${target.name}: ${error instanceof Error ? error.message : String(error)}`;
+    logger.error("nuget.packages", message);
+    throw new Error(message, { cause: error });
+  }
+}
+
+function describeFailure(result: CommandResult): string {
+  try {
+    const parsed = JSON.parse(result.stdout) as DotnetPackageList;
+    const problemText = (parsed.problems ?? [])
+      .filter((p) => p.level === "error" && p.text.trim().length > 0)
+      .map((p) => p.text.trim())
+      .join("; ");
+    if (problemText) {
+      return problemText;
+    }
+  } catch {
+    // stdout wasn't JSON — fall through to stderr/generic below
+  }
+
+  const stderr = result.stderr.trim();
+  if (stderr) {
+    return stderr;
+  }
+
+  return `dotnet exited with code ${result.code}`;
 }

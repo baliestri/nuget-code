@@ -2,8 +2,10 @@ import {
   commands,
   window,
   workspace,
+  StatusBarAlignment,
   type Disposable,
   type Memento,
+  type StatusBarItem,
   type Webview,
 } from "vscode";
 import type {
@@ -46,6 +48,7 @@ import { PackageDetailsService } from "#extension/webview/package-details-servic
 import { PackageCommandService } from "#extension/webview/package-commands";
 import { FolderService } from "#extension/webview/folder-service";
 import { PackageReferenceWatcher } from "#extension/webview/package-reference-watcher";
+import { SolutionSelector } from "#extension/solution-selector";
 
 export class PackageManagerController implements Disposable {
   private webview: Webview | undefined;
@@ -64,6 +67,7 @@ export class PackageManagerController implements Disposable {
   private packageRefreshAbort: AbortController | undefined;
   private packageDetailsCache = new Map<string, NuGetPackageItem>();
   private initialization: Promise<void> | undefined;
+  private discoveryRefreshChain: Promise<void> = Promise.resolve();
   private readonly events = new PackageManagerEventBus();
   private readonly operations: PackageManagerOperationRunner;
   private readonly feedHealth: PackageFeedHealthNotifier;
@@ -71,15 +75,22 @@ export class PackageManagerController implements Disposable {
   private readonly packageCommands: PackageCommandService;
   private readonly folders: FolderService;
   private readonly packageReferenceWatcher: PackageReferenceWatcher;
+  private readonly solutionStatusBar: StatusBarItem;
   private readonly disposables: Disposable[] = [];
 
   constructor(
     private readonly logger: ExtensionLogger,
     private readonly storage: Memento,
+    private readonly solutionSelector: SolutionSelector,
   ) {
     this.settings = getSettings();
     this.cli = new NuGetCli(this.settings, this.logger);
     this.state = this.createInitialState();
+    this.solutionStatusBar = window.createStatusBarItem(
+      StatusBarAlignment.Left,
+      100,
+    );
+    this.solutionStatusBar.command = "nuget-code.selectSolution";
     this.operations = new PackageManagerOperationRunner(
       this.logger,
       (message) => {
@@ -131,9 +142,11 @@ export class PackageManagerController implements Disposable {
         this.packageReferenceFingerprint = fingerprint;
       },
       (options) => this.refreshPackages(options),
+      () => this.refreshDiscovery(),
     );
 
     this.disposables.push(
+      this.solutionStatusBar,
       this.events.subscribe((message) => {
         this.webview?.postMessage(message);
       }),
@@ -301,6 +314,31 @@ export class PackageManagerController implements Disposable {
     );
   }
 
+  async selectSolution(): Promise<void> {
+    const solutions = this.discovery.targets.filter(
+      (t) => t.kind === "solution",
+    );
+    if (solutions.length === 0) {
+      void window.showInformationMessage(
+        "No solution files found in this workspace.",
+      );
+      return;
+    }
+    const targetId = await this.solutionSelector.prompt(solutions);
+    await this.setSelectedTarget(targetId);
+    this.updateSolutionStatusBar();
+  }
+
+  async clearSelectedSolution(): Promise<void> {
+    await this.solutionSelector.clear();
+    const solutions = this.discovery.targets.filter(
+      (t) => t.kind === "solution",
+    );
+    const targetId = await this.solutionSelector.resolve(solutions);
+    await this.setSelectedTarget(targetId);
+    this.updateSolutionStatusBar();
+  }
+
   async openPackageManagerFromContext(item?: unknown): Promise<void> {
     await this.initialize();
     await commands.executeCommand("nuget-code.packageManager.focus");
@@ -355,11 +393,12 @@ export class PackageManagerController implements Disposable {
           this.storage.get<FolderSizeCache>(folderSizeCacheKey, {}),
         );
 
+        const selectedTargetId = await this.resolveSelectedTarget();
+
         this.state = {
           ...this.state,
           targets: this.discovery.targets,
-          selectedTargetId:
-            this.state.selectedTargetId || this.discovery.targets[0]?.id || "",
+          selectedTargetId,
           feeds: [PackageManagementCore.feeds.allFeeds, ...effectiveFeeds],
           selectedFeedId: PackageManagementCore.feeds.selectInitialFeed(
             [PackageManagementCore.feeds.allFeeds, ...effectiveFeeds],
@@ -377,6 +416,7 @@ export class PackageManagerController implements Disposable {
         this.hydratePackageDetailsCache(cached);
         this.packageReferenceFingerprint = fingerprint;
         await this.folders.updateSelectedCacheFolderContext();
+        this.updateSolutionStatusBar();
         this.postState();
         void this.feedHealth.check(effectiveFeeds);
 
@@ -708,6 +748,7 @@ export class PackageManagerController implements Disposable {
     };
 
     this.hydratePackageDetailsCache(this.hydrateCachedPackages());
+    this.updateSolutionStatusBar();
     this.postState();
     await this.refreshPackages();
   }
@@ -850,6 +891,66 @@ export class PackageManagerController implements Disposable {
         this.packageDetailsCache.set(key, value);
       },
     };
+  }
+
+  private async resolveSelectedTarget(): Promise<string> {
+    const targets = this.discovery.targets;
+    const currentTargetStillValid = targets.some(
+      (t) => t.id === this.state.selectedTargetId,
+    );
+    if (currentTargetStillValid) return this.state.selectedTargetId;
+
+    const solutions = targets.filter((t) => t.kind === "solution");
+    if (solutions.length === 0) {
+      const fallbackId = targets[0]?.id ?? "";
+      if (!fallbackId) {
+        void window.showWarningMessage(
+          "No solution file was found in this workspace.",
+        );
+      }
+      return fallbackId;
+    }
+
+    return this.solutionSelector.resolve(solutions);
+  }
+
+  private refreshDiscovery(): Promise<void> {
+    this.discoveryRefreshChain = this.discoveryRefreshChain
+      .catch(() => {})
+      .then(() => this.performDiscoveryRefresh());
+    return this.discoveryRefreshChain;
+  }
+
+  private async performDiscoveryRefresh(): Promise<void> {
+    if (this.initialization) {
+      await this.initialization;
+    }
+
+    this.discovery = await discoverWorkspace(this.logger);
+    const selectedTargetId = await this.resolveSelectedTarget();
+
+    this.state = {
+      ...this.state,
+      targets: this.discovery.targets,
+      selectedTargetId,
+    };
+
+    this.updateSolutionStatusBar();
+    this.postState();
+    await this.refreshPackages({ forceInventory: true });
+  }
+
+  private updateSolutionStatusBar(): void {
+    const target = PackageManagementCore.selection.getSelectedTarget(
+      this.state,
+    );
+    if (target?.kind === "solution") {
+      this.solutionStatusBar.text = `$(file-code) ${target.name}`;
+      this.solutionStatusBar.tooltip = `NuGet active solution: ${workspace.asRelativePath(target.path)}\nClick to change`;
+      this.solutionStatusBar.show();
+    } else {
+      this.solutionStatusBar.hide();
+    }
   }
 }
 

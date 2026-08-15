@@ -7,9 +7,11 @@ withDefaults(
     title: string;
     packages: NuGetPackageItem[];
     loading?: boolean;
+    error?: boolean;
   }>(),
   {
     loading: false,
+    error: false,
   },
 );
 </script>
@@ -32,6 +34,9 @@ withDefaults(
           <span class="h-4 w-40 max-w-full rounded bg-surface-2" />
         </span>
         <span class="h-4 w-16 rounded bg-surface-2" />
+      </div>
+      <div v-else-if="error" class="px-3 py-3 text-sm text-error">
+        Failed to load packages. Check the Logs tab for details.
       </div>
       <div
         v-else-if="packages.length === 0"
