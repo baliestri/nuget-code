@@ -93,3 +93,39 @@ export function normalizeProjectPath(value: string): string {
     .replace(/^\.?\//, "")
     .toLowerCase();
 }
+
+export function filterTargetsForActiveSolution(
+  targets: WorkspaceTarget[],
+  selectedTargetId: string,
+): WorkspaceTarget[] {
+  const solutions = targets.filter((target) => target.kind === "solution");
+  if (solutions.length <= 1) {
+    return targets;
+  }
+
+  const selected = targets.find((target) => target.id === selectedTargetId);
+  const activeSolution =
+    selected?.kind === "solution"
+      ? selected
+      : solutions.find((solution) =>
+          solution.projectPaths.some(
+            (projectPath) =>
+              selected && sameProjectPath(projectPath, selected.path),
+          ),
+        );
+
+  if (!activeSolution) {
+    return targets;
+  }
+
+  const memberPaths = new Set(
+    activeSolution.projectPaths.map(normalizeProjectPath),
+  );
+
+  return targets.filter(
+    (target) =>
+      target.id === activeSolution.id ||
+      (target.kind === "project" &&
+        memberPaths.has(normalizeProjectPath(target.path))),
+  );
+}
