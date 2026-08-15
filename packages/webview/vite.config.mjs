@@ -27,7 +27,7 @@ export default defineConfig({
         strict: true,
         entryFileNames: "webview.js",
         assetFileNames: "assets/[name][extname]",
-        cleanDir: true,
+        cleanDir: false,
         codeSplitting: false,
       },
     },
