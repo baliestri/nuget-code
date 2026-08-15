@@ -84,15 +84,25 @@ describe("package inventory", () => {
     });
   });
 
-  it("logs and returns empty inventory for command or JSON failures", async () => {
+  it("throws when dotnet list package fails on both attempts", async () => {
+    const log = logger();
     await expect(
       loadListedPackageInventory({
         target: target(),
-        cli: cli([{ code: 1, stdout: "" }]) as never,
-        logger: logger(),
+        cli: cli([
+          { code: 1, stdout: "" },
+          { code: 1, stdout: "" },
+        ]) as never,
+        logger: log,
       }),
-    ).resolves.toEqual({ installed: [], implicit: [] });
+    ).rejects.toThrow(/exited with code 1/);
+    expect(log.error).toHaveBeenCalledWith(
+      "nuget.packages",
+      expect.stringContaining("exited with code 1"),
+    );
+  });
 
+  it("throws when dotnet list package succeeds but returns unparseable JSON", async () => {
     const log = logger();
     await expect(
       loadListedPackageInventory({
@@ -100,10 +110,10 @@ describe("package inventory", () => {
         cli: cli([{ code: 0, stdout: "{" }]) as never,
         logger: log,
       }),
-    ).resolves.toEqual({ installed: [], implicit: [] });
-    expect(log.warning).toHaveBeenCalledWith(
+    ).rejects.toThrow(/Failed to parse/);
+    expect(log.error).toHaveBeenCalledWith(
       "nuget.packages",
-      expect.stringContaining("Failed to parse dotnet package list JSON"),
+      expect.stringContaining("Failed to parse dotnet list package JSON"),
     );
   });
 
@@ -166,24 +176,36 @@ describe("package inventory", () => {
     expect(inventory.installed[0]).toMatchObject({ name: "Newtonsoft.Json" });
   });
 
-  it("does not retry and returns empty when non-restore error occurs", async () => {
-    const runDotnet = vi.fn().mockResolvedValueOnce({
-      code: 1,
-      stdout: "",
-      stderr: "some other error",
-    });
+  it("retries with --no-restore even for non-restore-shaped errors", async () => {
+    const runDotnet = vi
+      .fn()
+      .mockResolvedValueOnce({
+        code: 1,
+        stdout: "",
+        stderr: "some other error",
+      })
+      .mockResolvedValueOnce({
+        code: 1,
+        stdout: "",
+        stderr: "still some other error",
+      });
 
-    const inventory = await loadListedPackageInventory({
-      target: target(),
-      cli: { runDotnet } as never,
-      logger: logger(),
-    });
+    await expect(
+      loadListedPackageInventory({
+        target: target(),
+        cli: { runDotnet } as never,
+        logger: logger(),
+      }),
+    ).rejects.toThrow(/still some other error/);
 
-    expect(runDotnet).toHaveBeenCalledTimes(1);
-    expect(inventory).toEqual({ installed: [], implicit: [] });
+    expect(runDotnet).toHaveBeenCalledTimes(2);
+    expect(runDotnet).toHaveBeenNthCalledWith(
+      2,
+      expect.arrayContaining(["--no-restore"]),
+    );
   });
 
-  it("returns empty when --no-restore retry also fails", async () => {
+  it("throws with diagnostic message when --no-restore retry also fails", async () => {
     const restoreFailureJson = JSON.stringify({
       version: 1,
       problems: [{ text: "Restore failed.", level: "error" }],
@@ -198,14 +220,50 @@ describe("package inventory", () => {
       })
       .mockResolvedValueOnce({ code: 1, stdout: "", stderr: "still broken" });
 
-    const inventory = await loadListedPackageInventory({
-      target: target(),
-      cli: { runDotnet } as never,
-      logger: logger(),
-    });
+    await expect(
+      loadListedPackageInventory({
+        target: target(),
+        cli: { runDotnet } as never,
+        logger: logger(),
+      }),
+    ).rejects.toThrow(/still broken/);
 
     expect(runDotnet).toHaveBeenCalledTimes(2);
-    expect(inventory).toEqual({ installed: [], implicit: [] });
+  });
+
+  it("retries with --no-restore for a TreatWarningsAsErrors-style failure without a literal 'Restore failed' match", async () => {
+    const warningsAsErrorsJson = JSON.stringify({
+      version: 1,
+      problems: [
+        {
+          level: "error",
+          text: "error NU1903: Package 'Foo' 1.0.0 has a known high severity vulnerability (warning promoted to error by TreatWarningsAsErrors)",
+        },
+      ],
+    });
+
+    const runDotnet = vi
+      .fn()
+      .mockResolvedValueOnce({
+        code: 1,
+        stdout: warningsAsErrorsJson,
+        stderr: "",
+      })
+      .mockResolvedValueOnce({ code: 1, stdout: "", stderr: "" });
+
+    await expect(
+      loadListedPackageInventory({
+        target: target(),
+        cli: { runDotnet } as never,
+        logger: logger(),
+      }),
+    ).rejects.toThrow(/exited with code 1/);
+
+    expect(runDotnet).toHaveBeenCalledTimes(2);
+    expect(runDotnet).toHaveBeenNthCalledWith(
+      2,
+      expect.arrayContaining(["--no-restore"]),
+    );
   });
 
   it("applies outdated versions and loads full inventory", async () => {
@@ -325,11 +383,27 @@ describe("package inventory", () => {
         cli: cli([{ code: 0, stdout: "{" }]) as never,
         logger: log,
       }),
-    ).resolves.toEqual(new Map());
-    expect(log.warning).toHaveBeenCalledWith(
+    ).rejects.toThrow(/Failed to parse/);
+    expect(log.error).toHaveBeenCalledWith(
       "nuget.packages",
-      expect.stringContaining("Failed to parse dotnet outdated package JSON"),
+      expect.stringContaining(
+        "Failed to parse dotnet list package --outdated JSON",
+      ),
     );
+  });
+
+  it("throws when dotnet list package --outdated fails on both attempts", async () => {
+    const log = logger();
+    await expect(
+      loadOutdatedPackageVersions({
+        target: target(),
+        cli: cli([
+          { code: 1, stdout: "" },
+          { code: 1, stdout: "" },
+        ]) as never,
+        logger: log,
+      }),
+    ).rejects.toThrow(/exited with code 1/);
   });
 
   it("retries outdated check with --no-restore when restore fails", async () => {
@@ -397,6 +471,11 @@ function cli(results: Array<{ code: number; stdout: string }>) {
   for (const result of results) {
     runDotnet.mockResolvedValueOnce({ stderr: "", ...result });
   }
+  runDotnet.mockRejectedValue(
+    new Error(
+      "cli() test helper: no more queued results — did you forget the --no-restore retry entry?",
+    ),
+  );
   return { runDotnet };
 }
 
