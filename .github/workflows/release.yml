@@ -1,0 +1,107 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump type"
+        required: true
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout develop
+        uses: actions/checkout@v5
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate
+        run: |
+          pnpm run lint
+          pnpm run typecheck
+          pnpm run test
+          pnpm run build
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump extension version
+        id: bump
+        working-directory: packages/extension
+        run: |
+          NEW_VERSION=$(pnpm version "${{ inputs.bump }}" --no-git-tag-version | sed 's/^v//')
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Create release branch
+        run: |
+          git checkout -b "release/v${{ steps.bump.outputs.version }}"
+          git add packages/extension/package.json
+          git commit -m "chore(extension): release v${{ steps.bump.outputs.version }}"
+          git push origin "release/v${{ steps.bump.outputs.version }}"
+
+      - name: Open and merge release PR
+        run: |
+          gh pr create \
+            --base main \
+            --head "release/v${{ steps.bump.outputs.version }}" \
+            --title "chore(release): v${{ steps.bump.outputs.version }}" \
+            --body "Automated release PR for v${{ steps.bump.outputs.version }}."
+          gh pr merge "release/v${{ steps.bump.outputs.version }}" --merge --delete-branch
+
+      - name: Checkout main at merge
+        run: |
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
+
+      - name: Publish extension to VS Code Marketplace
+        working-directory: packages/extension
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: pnpm run publish
+
+      - name: Create tag and GitHub release
+        run: |
+          gh release create "v${{ steps.bump.outputs.version }}" \
+            --target main \
+            --title "v${{ steps.bump.outputs.version }}" \
+            --generate-notes
+
+      - name: Back-merge main into develop
+        run: |
+          git push origin main:sync/main-into-develop
+          gh pr create \
+            --base develop \
+            --head sync/main-into-develop \
+            --title "chore(release): sync v${{ steps.bump.outputs.version }} into develop" \
+            --body "Automated sync of the v${{ steps.bump.outputs.version }} release merge back into develop."
+          gh pr merge sync/main-into-develop --merge --delete-branch
