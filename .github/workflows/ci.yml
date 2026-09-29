@@ -145,7 +145,7 @@ jobs:
         run: |
           {
             printf '## CI outcome\n\n'
-            printf 'Commit: `%s`\n\n' "$SOURCE_SHA"
+            printf 'Commit: %s\n\n' "$SOURCE_SHA"
             printf -- '- Identity: %s\n' "$IDENTITY_RESULT"
             printf -- '- Quality: %s\n' "$QUALITY_RESULT"
             printf -- '- Windows/Linux build and tests: %s\n' "$TEST_RESULT"
