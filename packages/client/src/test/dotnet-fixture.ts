@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { NuGetCli, type CommandResult } from "#client/cli";
 import { compareNuGetVersions } from "#manager";
 
@@ -11,6 +12,34 @@ export interface DotnetFixture {
   sdkVersion: string;
   cli: NuGetCli;
   dispose(): Promise<void>;
+}
+
+/** Records files, empty directories and links without traversing link targets. */
+export async function snapshotTree(
+  root: string,
+): Promise<Record<string, string>> {
+  const snapshot: Record<string, string> = {};
+  async function visit(directory: string): Promise<void> {
+    const entries = await fs.readdir(directory, { withFileTypes: true });
+    for (const entry of entries.sort((a, b) =>
+      a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+    )) {
+      const file = path.join(directory, entry.name);
+      const relative = path.relative(root, file).replaceAll("\\", "/");
+      if (entry.isSymbolicLink())
+        snapshot[relative] = `link:${await fs.readlink(file)}`;
+      else if (entry.isDirectory()) {
+        snapshot[`${relative}/`] = "directory";
+        await visit(file);
+      } else if (entry.isFile())
+        snapshot[relative] = createHash("sha256")
+          .update(await fs.readFile(file))
+          .digest("hex");
+      else snapshot[relative] = "special";
+    }
+  }
+  await visit(root);
+  return snapshot;
 }
 
 export function fixtureCli(workspacePath: string): NuGetCli {
@@ -97,6 +126,15 @@ export async function createDotnetFixture(options: {
           allowPrerelease: false,
         },
       }),
+    );
+    // Keep generated fixtures independent of ancestor machine/user build files.
+    await fs.writeFile(
+      path.join(root, "Directory.Build.props"),
+      "<Project />\n",
+    );
+    await fs.writeFile(
+      path.join(root, "Directory.Build.targets"),
+      "<Project />\n",
     );
     const feedPath = path.join(root, "feed");
     await fs.mkdir(feedPath);
