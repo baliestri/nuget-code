@@ -7,6 +7,7 @@ export interface CommandResult {
   code: number | null;
   stdout: string;
   stderr: string;
+  failure?: { kind: "launch"; code: string };
 }
 
 export interface CommandOptions {
@@ -44,42 +45,61 @@ export class NuGetCli {
     const safeCommand = `${command} ${args.map(maskSecret).join(" ")}`;
     this.logger.verbose("nuget.cli", `Running ${safeCommand}`);
 
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       if (options.signal?.aborted) {
-        resolve({ code: -1, stdout: "", stderr: "aborted" });
+        reject(abortError());
         return;
       }
 
-      const env = { ...process.env };
+      const env: NodeJS.ProcessEnv = {
+        ...process.env,
+        DOTNET_CLI_UI_LANGUAGE: "en-US",
+      };
       if (this.settings.credentialProviderPaths.length > 0) {
         env.NUGET_PLUGIN_PATHS = this.settings.credentialProviderPaths.join(
           process.platform === "win32" ? ";" : ":",
         );
       }
 
-      const child = spawn(command, args, {
-        cwd: this.resolveCwd(options.cwd),
-        env,
-        shell: process.platform === "win32",
-        windowsHide: true,
-      });
+      const launch = () =>
+        spawn(command, args, {
+          cwd: this.resolveCwd(options.cwd),
+          env,
+          shell: false,
+          windowsHide: true,
+        });
+      let child: ReturnType<typeof launch>;
+      try {
+        child = launch();
+      } catch (error) {
+        const failure = commandLaunchFailure(error);
+        this.logger.error(
+          "nuget.cli",
+          `${safeCommand} failed: ${failure.stderr}`,
+        );
+        resolve(failure);
+        return;
+      }
       const stdout: Buffer[] = [];
       const stderr: Buffer[] = [];
       let settled = false;
+      let aborted = false;
+      let launchFailure: CommandResult | undefined;
       const finish = (result: CommandResult): void => {
         if (settled) {
           return;
         }
         settled = true;
         options.signal?.removeEventListener("abort", abort);
-        resolve(result);
+        if (aborted) reject(abortError());
+        else resolve(result);
       };
       const abort = (): void => {
+        if (settled || aborted) return;
+        aborted = true;
         this.logger.verbose("nuget.cli", `${safeCommand} aborted`);
         child.kill();
-        finish({ code: -1, stdout: "", stderr: "aborted" });
       };
-      options.signal?.addEventListener("abort", abort, { once: true });
 
       child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
       child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
@@ -89,9 +109,13 @@ export class NuGetCli {
           `${safeCommand} failed: ${error.message}`,
         );
 
-        finish({ code: -1, stdout: "", stderr: error.message });
+        launchFailure = commandLaunchFailure(error);
       });
       child.on("close", (code) => {
+        if (aborted || launchFailure) {
+          finish(launchFailure ?? { code, stdout: "", stderr: "" });
+          return;
+        }
         const result = {
           code,
           stdout: Buffer.concat(stdout).toString("utf8"),
@@ -109,17 +133,40 @@ export class NuGetCli {
 
         finish(result);
       });
+      options.signal?.addEventListener("abort", abort, { once: true });
+      if (options.signal?.aborted) abort();
     });
   }
 
   private resolveCwd(fallback: string | undefined): string | undefined {
-    const cwd = this.settings.workspacePath ?? fallback;
+    const cwd = fallback ?? this.settings.workspacePath;
     if (!cwd) {
       return undefined;
     }
 
     return process.platform === "win32" ? sanitizeWindowsCwd(cwd) : cwd;
   }
+}
+
+function abortError(): Error {
+  const error = new Error("The command was aborted.");
+  error.name = "AbortError";
+  return error;
+}
+
+function commandLaunchFailure(error: unknown): CommandResult {
+  return {
+    code: -1,
+    stdout: "",
+    stderr:
+      error instanceof Error
+        ? error.message
+        : "Could not start the executable.",
+    failure: {
+      kind: "launch",
+      code: (error as NodeJS.ErrnoException)?.code ?? "UNKNOWN",
+    },
+  };
 }
 
 function sanitizeWindowsCwd(cwd: string): string {

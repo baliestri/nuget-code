@@ -17,7 +17,12 @@ export async function loadPackageInventory(options: {
 }): Promise<PackageInventory> {
   const [listed, outdated] = await Promise.all([
     loadListedPackageInventory(options),
-    readOutdatedPackages(options.target, options.cli, options.logger),
+    readOutdatedPackages(
+      options.target,
+      options.cli,
+      options.logger,
+      options.signal,
+    ),
   ]);
 
   return applyOutdatedPackageVersions(listed, outdated);
@@ -236,7 +241,7 @@ async function runListCommand(
 ): Promise<DotnetPackageList> {
   let result = await runDotnetWithSignal(cli, baseArgs, signal);
 
-  if (result.code !== 0) {
+  if (result.code !== 0 && !result.failure) {
     logger.warning(
       "nuget.cli",
       `${actionLabel} failed for ${target.name} (exit ${result.code}), retrying with --no-restore`,

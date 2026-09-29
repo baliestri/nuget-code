@@ -9,6 +9,46 @@ import type { NuGetClientLogger } from "./types.js";
 import type { PackageInventory } from "./package-types.js";
 
 describe("package inventory", () => {
+  it("forwards cancellation to both inventory and outdated reads", async () => {
+    const signal = new AbortController().signal;
+    const runDotnet = vi
+      .fn()
+      .mockResolvedValue({ code: 0, stdout: '{"projects":[]}', stderr: "" });
+    await loadPackageInventory({
+      target: target(),
+      cli: { runDotnet } as never,
+      logger: logger(),
+      signal,
+    });
+    expect(runDotnet).toHaveBeenCalledTimes(2);
+    expect(runDotnet).toHaveBeenNthCalledWith(1, expect.any(Array), undefined, {
+      signal,
+    });
+    expect(runDotnet).toHaveBeenNthCalledWith(
+      2,
+      expect.arrayContaining(["--outdated"]),
+      undefined,
+      { signal },
+    );
+  });
+
+  it("does not retry executable launch failures as restore failures", async () => {
+    const runDotnet = vi.fn().mockResolvedValue({
+      code: -1,
+      stdout: "",
+      stderr: "Executable not found",
+      failure: { kind: "launch", code: "ENOENT" },
+    });
+    await expect(
+      loadListedPackageInventory({
+        target: target(),
+        cli: { runDotnet } as never,
+        logger: logger(),
+      }),
+    ).rejects.toThrow("Executable not found");
+    expect(runDotnet).toHaveBeenCalledTimes(1);
+  });
+
   it("returns empty inventory without a target", async () => {
     await expect(
       loadListedPackageInventory({

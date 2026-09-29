@@ -22,6 +22,7 @@ import {
 export * from "#client/cli";
 export * from "#client/config";
 export * from "#client/credentials";
+export * from "#client/dotnet-sdk";
 export * from "#client/folders";
 export * from "#client/packages";
 export * from "#client/types";
