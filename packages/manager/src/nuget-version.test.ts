@@ -4,23 +4,15 @@ import {
   parseNuGetVersion,
   sameNuGetVersion,
 } from "./nuget-version";
+import {
+  comparisonCases,
+  invalidVersions,
+  normalizationCases,
+} from "./test/nuget-version-cases";
 
 // Expected results verified against NuGet.Versioning 6.12.1, VersionRelease.
 describe("NuGet version parsing", () => {
-  it.each([
-    ["1", "1.0.0"],
-    ["1.2", "1.2.0"],
-    ["01.002.0003.0", "1.2.3"],
-    ["1.2.3.4", "1.2.3.4"],
-    [" 1 . 2 . 3 ", "1.2.3"],
-    ["1.0.0\u0085", "1.0.0"],
-    ["2147483647.0", "2147483647.0.0"],
-    ["1.0.0+build-meta.01", "1.0.0"],
-    ["1.0.0-ALPHA+build", "1.0.0-ALPHA"],
-    ["1.0.0-0A", "1.0.0-0A"],
-    ["1.0.0--01", "1.0.0--01"],
-    ["1.0.0-999999999999999999999999", "1.0.0-999999999999999999999999"],
-  ])("normalizes %s to %s", (input, normalized) => {
+  it.each(normalizationCases)("normalizes %s to %s", (input, normalized) => {
     expect(parseNuGetVersion(input)?.normalized).toBe(normalized);
   });
 
@@ -32,57 +24,13 @@ describe("NuGet version parsing", () => {
     });
   });
 
-  it.each([
-    "",
-    " ",
-    "v1.0.0",
-    "[1.0,2.0)",
-    "1.*",
-    "1.",
-    "1..2",
-    "1.2.3.4.5",
-    "-1.0",
-    "+1.0",
-    "1e2.0",
-    "1 2.0",
-    "2147483648.0",
-    "1.0.0-",
-    "1.0.0+",
-    "1.0.0-alpha+",
-    "1.0.0-01",
-    "1.0.0-alpha.01",
-    "1.0.0-a..b",
-    "1.0.0+a..b",
-    "1.0.0-a_b",
-    "1.0.0+a_b",
-    "1.0.0+meta+more",
-    "1.0.0-α",
-    "\ufeff1.0.0",
-  ])("rejects invalid concrete version %j", (input) => {
+  it.each(invalidVersions)("rejects invalid concrete version %j", (input) => {
     expect(parseNuGetVersion(input)).toBeUndefined();
   });
 });
 
 describe("NuGet version precedence", () => {
-  const cases: [string, string, number][] = [
-    ["1.0.10", "1.0.2", 1],
-    ["1.0.0", "1.0.0-beta", 1],
-    ["1.0", "1.0.0.0", 0],
-    ["1.0.0.1", "1.0.0", 1],
-    ["1.0.0.1-alpha", "1.0.0", 1],
-    ["1.0.0+abc", "1.0.0+xyz", 0],
-    ["1.0.0-ALPHA", "1.0.0-alpha", 0],
-    ["1.0.0-beta.2", "1.0.0-beta.10", -1],
-    ["1.0.0-beta", "1.0.0-beta.1", -1],
-    ["1.0.0-1", "1.0.0-alpha", -1],
-    ["1.0.0--01", "1.0.0--1", 0],
-    ["1.0.0--1", "1.0.0-0", -1],
-    ["1.0.0-9999999999", "1.0.0-10000000000", 1],
-    ["1.0.0-2147483648", "1.0.0-2147483647", 1],
-    ["1.0.0--2147483648", "1.0.0-0", -1],
-  ];
-
-  it.each(cases)("compares %s against %s", (a, b, sign) => {
+  it.each(comparisonCases)("compares %s against %s", (a, b, sign) => {
     expect(Math.sign(compareNuGetVersions(a, b))).toBe(sign);
     expect(compareNuGetVersions(b, a) + compareNuGetVersions(a, b)).toBe(0);
     expect(sameNuGetVersion(a, b)).toBe(sign === 0);

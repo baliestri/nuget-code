@@ -1,4 +1,4 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 import { packageSourceAliases, sourceAliases } from "../../vitest.shared";
 
 export default defineConfig({
@@ -10,5 +10,6 @@ export default defineConfig({
   },
   test: {
     include: ["src/**/*.test.ts"],
+    exclude: [...configDefaults.exclude, "src/**/*.integration.test.ts"],
   },
 });
