@@ -5,6 +5,7 @@ export * from "#manager/folders";
 export * from "#manager/merge";
 export * from "#manager/nuget-version";
 export * from "#manager/package-actions";
+export * from "#manager/package-catalog";
 export * from "#manager/projects";
 export * from "#manager/selection";
 export * from "#manager/state";

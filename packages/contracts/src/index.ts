@@ -3,4 +3,5 @@ export * from "#contracts/logging";
 export * from "#contracts/messages";
 export * from "#contracts/nuget";
 export * from "#contracts/package-manager";
+export * from "#contracts/package-updates";
 export * from "#contracts/workspace";
