@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import path from "node:path";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { resolveDotnetSdk } from "./dotnet-sdk";
 import {
   applyOutdatedPackageVersions,
   loadListedPackageInventory,
@@ -7,6 +9,20 @@ import {
 } from "./package-inventory.js";
 import type { NuGetClientLogger } from "./types.js";
 import type { PackageInventory } from "./package-types.js";
+
+const app = path.resolve("src/App.csproj");
+const api = path.resolve("src/Api.csproj");
+vi.mock("#client/dotnet-sdk", async (original) => ({
+  ...(await original<typeof import("./dotnet-sdk")>()),
+  resolveDotnetSdk: vi.fn(),
+}));
+beforeEach(() => {
+  vi.mocked(resolveDotnetSdk).mockImplementation(async (_cli, projectPath) => ({
+    major: 10,
+    version: "10.0.401",
+    cwd: path.dirname(projectPath),
+  }));
+});
 
 describe("package inventory", () => {
   it("forwards cancellation to both inventory and outdated reads", async () => {
@@ -21,13 +37,18 @@ describe("package inventory", () => {
       signal,
     });
     expect(runDotnet).toHaveBeenCalledTimes(2);
-    expect(runDotnet).toHaveBeenNthCalledWith(1, expect.any(Array), undefined, {
-      signal,
-    });
+    expect(runDotnet).toHaveBeenNthCalledWith(
+      1,
+      expect.any(Array),
+      path.dirname(app),
+      {
+        signal,
+      },
+    );
     expect(runDotnet).toHaveBeenNthCalledWith(
       2,
       expect.arrayContaining(["--outdated"]),
-      undefined,
+      path.dirname(app),
       { signal },
     );
   });
@@ -60,12 +81,12 @@ describe("package inventory", () => {
   });
 
   it("parses dotnet list package JSON into installed and implicit packages", async () => {
-    const runDotnet = vi.fn().mockResolvedValue({
+    const runDotnet = vi.fn().mockImplementation((args: string[]) => ({
       code: 0,
       stdout: JSON.stringify({
         projects: [
           {
-            path: "src/App.csproj",
+            path: app,
             frameworks: [
               {
                 framework: "net8.0",
@@ -83,7 +104,7 @@ describe("package inventory", () => {
             ],
           },
           {
-            path: "src/Api.csproj",
+            path: api,
             frameworks: [
               {
                 framework: "net8.0",
@@ -93,29 +114,36 @@ describe("package inventory", () => {
               },
             ],
           },
-        ],
+        ].filter((project) => project.path === args[3]),
       }),
-    });
+    }));
 
     const inventory = await loadListedPackageInventory({
-      target: target(),
+      target: { ...target(), projectPaths: [app, api] },
       cli: { runDotnet } as never,
       logger: logger(),
     });
 
-    expect(runDotnet).toHaveBeenCalledWith([
-      "list",
-      "App.sln",
-      "package",
-      "--include-transitive",
-      "--format",
-      "json",
-    ]);
+    expect(runDotnet).toHaveBeenCalledWith(
+      [
+        "package",
+        "list",
+        "--project",
+        app,
+        "--include-transitive",
+        "--format",
+        "json",
+        "--output-version",
+        "1",
+      ],
+      path.dirname(app),
+      { signal: undefined },
+    );
     expect(inventory.installed).toHaveLength(1);
     expect(inventory.installed[0]).toMatchObject({
       name: "Newtonsoft.Json",
       installedVersion: "13.0.3",
-      projectPaths: ["src/App.csproj", "src/Api.csproj"],
+      projectPaths: [app, api],
     });
     expect(inventory.implicit[0]).toMatchObject({
       name: "System.Memory",
@@ -170,7 +198,7 @@ describe("package inventory", () => {
     const packagesJson = JSON.stringify({
       projects: [
         {
-          path: "src/App.csproj",
+          path: app,
           frameworks: [
             {
               framework: "net8.0",
@@ -200,15 +228,23 @@ describe("package inventory", () => {
     });
 
     expect(runDotnet).toHaveBeenCalledTimes(2);
-    expect(runDotnet).toHaveBeenNthCalledWith(2, [
-      "list",
-      "App.sln",
-      "package",
-      "--include-transitive",
-      "--format",
-      "json",
-      "--no-restore",
-    ]);
+    expect(runDotnet).toHaveBeenNthCalledWith(
+      2,
+      [
+        "package",
+        "list",
+        "--project",
+        app,
+        "--include-transitive",
+        "--format",
+        "json",
+        "--output-version",
+        "1",
+        "--no-restore",
+      ],
+      path.dirname(app),
+      { signal: undefined },
+    );
     expect(log.warning).toHaveBeenCalledWith(
       "nuget.cli",
       expect.stringContaining("retrying with --no-restore"),
@@ -242,6 +278,8 @@ describe("package inventory", () => {
     expect(runDotnet).toHaveBeenNthCalledWith(
       2,
       expect.arrayContaining(["--no-restore"]),
+      path.dirname(app),
+      { signal: undefined },
     );
   });
 
@@ -303,6 +341,8 @@ describe("package inventory", () => {
     expect(runDotnet).toHaveBeenNthCalledWith(
       2,
       expect.arrayContaining(["--no-restore"]),
+      path.dirname(app),
+      { signal: undefined },
     );
   });
 
@@ -339,7 +379,7 @@ describe("package inventory", () => {
         stdout: JSON.stringify({
           projects: [
             {
-              path: "src/App.csproj",
+              path: app,
               frameworks: [
                 {
                   framework: "net8.0",
@@ -355,7 +395,7 @@ describe("package inventory", () => {
         stdout: JSON.stringify({
           projects: [
             {
-              path: "src/App.csproj",
+              path: app,
               frameworks: [
                 {
                   framework: "net8.0",
@@ -396,8 +436,10 @@ describe("package inventory", () => {
             stdout: JSON.stringify({
               projects: [
                 {
+                  path: app,
                   frameworks: [
                     {
+                      framework: "net8.0",
                       topLevelPackages: [{ id: "A", latestVersion: "2.0.0" }],
                       transitivePackages: [{ id: "B", latestVersion: "3.0.0" }],
                     },
@@ -454,8 +496,12 @@ describe("package inventory", () => {
     const outdatedJson = JSON.stringify({
       projects: [
         {
+          path: app,
           frameworks: [
-            { topLevelPackages: [{ id: "Demo", latestVersion: "2.0.0" }] },
+            {
+              framework: "net8.0",
+              topLevelPackages: [{ id: "Demo", latestVersion: "2.0.0" }],
+            },
           ],
         },
       ],
@@ -478,16 +524,24 @@ describe("package inventory", () => {
     });
 
     expect(runDotnet).toHaveBeenCalledTimes(2);
-    expect(runDotnet).toHaveBeenNthCalledWith(2, [
-      "list",
-      "App.sln",
-      "package",
-      "--outdated",
-      "--include-transitive",
-      "--format",
-      "json",
-      "--no-restore",
-    ]);
+    expect(runDotnet).toHaveBeenNthCalledWith(
+      2,
+      [
+        "package",
+        "list",
+        "--project",
+        app,
+        "--outdated",
+        "--include-transitive",
+        "--format",
+        "json",
+        "--output-version",
+        "1",
+        "--no-restore",
+      ],
+      path.dirname(app),
+      { signal: undefined },
+    );
     expect(log.warning).toHaveBeenCalledWith(
       "nuget.cli",
       expect.stringContaining("retrying with --no-restore"),
@@ -502,7 +556,7 @@ function target() {
     kind: "solution" as const,
     name: "App",
     path: "App.sln",
-    projectPaths: ["src/App.csproj"],
+    projectPaths: [app],
   };
 }
 

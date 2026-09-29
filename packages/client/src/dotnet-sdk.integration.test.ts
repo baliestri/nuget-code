@@ -8,6 +8,10 @@ import {
   type DotnetFixture,
 } from "./test/dotnet-fixture";
 import type { DotnetPackageList } from "./package-types";
+import {
+  loadInstalledReferences,
+  loadListedPackageInventory,
+} from "./package-inventory";
 
 describe("real SDK package operations", () => {
   const major = Number(process.env.SDK_MAJOR);
@@ -165,6 +169,47 @@ describe("real SDK package operations", () => {
     } finally {
       await fs.rm(globalFile);
     }
+  });
+
+  it("loads reference facts and the display adapter for a discovered slnx target", async () => {
+    const sdk = await resolveDotnetSdk(fixture.cli, fixture.projectPath);
+    await checkedDotnet(
+      fixture.cli,
+      dotnetArguments(sdk, {
+        kind: "add",
+        projectPath: fixture.projectPath,
+        packageId: "Demo",
+        version: "1.0.0",
+      }),
+      sdk.cwd,
+    );
+    const options = {
+      target: {
+        id: "solution",
+        kind: "solution" as const,
+        name: "Fixture",
+        path: path.join(fixture.root, "DiscoveryOnly.slnx"),
+        projectPaths: [fixture.projectPath],
+      },
+      cli: fixture.cli,
+      logger: { error() {}, warning() {}, information() {}, verbose() {} },
+    };
+    const references = await loadInstalledReferences(options);
+    expect(references).toContainEqual(
+      expect.objectContaining({
+        projectPath: fixture.projectPath,
+        framework: `net${major}.0`,
+        packageId: "Demo",
+        resolvedVersion: "1.0.0",
+        direct: true,
+        declarationPath: null,
+        affectedProjectPaths: [],
+      }),
+    );
+    const display = await loadListedPackageInventory(options);
+    expect(display.installed).toContainEqual(
+      expect.objectContaining({ name: "Demo", installedVersion: "1.0.0" }),
+    );
   });
 });
 
