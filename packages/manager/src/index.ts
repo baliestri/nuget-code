@@ -11,4 +11,5 @@ export * from "#manager/selection";
 export * from "#manager/state";
 export * from "#manager/state-updates";
 export * from "#manager/types";
+export * from "#manager/upgrade-policy";
 export * from "#manager/versions";

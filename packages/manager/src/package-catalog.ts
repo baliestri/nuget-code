@@ -12,7 +12,7 @@ function uniqueSorted(values: readonly string[]): string[] {
   return [...new Set(values)].sort(compareText);
 }
 
-function normalizeFeedUrl(value: string): string | undefined {
+export function normalizeCatalogFeedUrl(value: string): string | undefined {
   if (!value) return undefined;
   if (!/^https?:\/\//i.test(value)) return value;
   try {
@@ -35,7 +35,7 @@ function mergePackageCatalogs(
         complete = false;
         continue;
       }
-      const urls = item.feedUrls.map(normalizeFeedUrl);
+      const urls = item.feedUrls.map(normalizeCatalogFeedUrl);
       if (urls.length === 0 || urls.some((url) => url === undefined)) {
         complete = false;
       }
