@@ -126,10 +126,17 @@ jobs:
       - name: Test all workspace packages
         run: pnpm run test
 
+  integration:
+    name: .NET integration
+    needs: identity
+    uses: ./.github/workflows/integration.yml
+    with:
+      source_sha: ${{ needs.identity.outputs.source_sha }}
+
   gate:
     name: CI result
     if: ${{ always() }}
-    needs: [identity, quality, tests]
+    needs: [identity, quality, tests, integration]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -142,6 +149,8 @@ jobs:
           IDENTITY_RESULT: ${{ needs.identity.result }}
           QUALITY_RESULT: ${{ needs.quality.result }}
           TEST_RESULT: ${{ needs.tests.result }}
+          INTEGRATION_RESULT: ${{ needs.integration.result }}
+          INTEGRATION_SHA: ${{ needs.integration.outputs.source_sha }}
         run: |
           {
             printf '## CI outcome\n\n'
@@ -149,9 +158,12 @@ jobs:
             printf -- '- Identity: %s\n' "$IDENTITY_RESULT"
             printf -- '- Quality: %s\n' "$QUALITY_RESULT"
             printf -- '- Windows/Linux build and tests: %s\n' "$TEST_RESULT"
+            printf -- '- .NET SDK integration: %s\n' "$INTEGRATION_RESULT"
           } >> "$GITHUB_STEP_SUMMARY"
           test "$IDENTITY_RESULT" = success
           test "$QUALITY_RESULT" = success
           test "$TEST_RESULT" = success
+          test "$INTEGRATION_RESULT" = success
+          test "$INTEGRATION_SHA" = "$SOURCE_SHA"
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           printf 'source_sha=%s\n' "$SOURCE_SHA" >> "$GITHUB_OUTPUT"
