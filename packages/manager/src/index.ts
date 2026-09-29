@@ -3,6 +3,7 @@ export * from "#manager/facade";
 export * from "#manager/feeds";
 export * from "#manager/folders";
 export * from "#manager/merge";
+export * from "#manager/nuget-version";
 export * from "#manager/package-actions";
 export * from "#manager/projects";
 export * from "#manager/selection";

@@ -6,16 +6,20 @@ import {
 } from "#manager/projects";
 import type { ProjectVersionAction } from "#manager/types";
 import { comparePackageVersions, samePackageVersion } from "#manager/versions";
+import { parseNuGetVersion } from "#manager/nuget-version";
 
 export function projectVersionAction(
   installedVersion: string | undefined,
   selectedVersion: string,
 ): ProjectVersionAction {
+  if (!parseNuGetVersion(selectedVersion)) {
+    return "remove";
+  }
   if (!installedVersion) {
     return "add";
   }
   if (
-    !selectedVersion ||
+    !parseNuGetVersion(installedVersion) ||
     samePackageVersion(installedVersion, selectedVersion)
   ) {
     return "remove";
@@ -43,6 +47,13 @@ export function packageChangeAction(
       )?.installedVersion;
       if (!installedVersion) {
         return "Installing";
+      }
+      if (
+        !parseNuGetVersion(installedVersion) ||
+        !parseNuGetVersion(version) ||
+        samePackageVersion(installedVersion, version)
+      ) {
+        return "Changing";
       }
       return comparePackageVersions(installedVersion, version) < 0
         ? "Updating"

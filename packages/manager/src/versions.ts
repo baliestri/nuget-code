@@ -1,18 +1,20 @@
 import type { NuGetPackageItem, PackageVersionInfo } from "#contracts";
+import {
+  compareNuGetVersions,
+  parseNuGetVersion,
+  sameNuGetVersion,
+} from "#manager/nuget-version";
 
 export function isPrereleaseVersion(version: string | undefined): boolean {
-  return Boolean(version && /-\w/.test(version));
+  return Boolean(version && parseNuGetVersion(version)?.prerelease.length);
 }
 
 export function samePackageVersion(a: string, b: string): boolean {
-  return a.localeCompare(b, undefined, { sensitivity: "base" }) === 0;
+  return sameNuGetVersion(a, b);
 }
 
 export function comparePackageVersions(a: string, b: string): number {
-  return a.localeCompare(b, undefined, {
-    numeric: true,
-    sensitivity: "base",
-  });
+  return compareNuGetVersions(a, b);
 }
 
 export function packageVersions(packageItem: NuGetPackageItem): string[] {
@@ -22,7 +24,9 @@ export function packageVersions(packageItem: NuGetPackageItem): string[] {
         ...packageItem.versions.map((version) => version.version),
         packageItem.installedVersion,
         packageItem.availableVersion,
-      ].filter((version): version is string => Boolean(version)),
+      ].filter((version): version is string =>
+        Boolean(version && parseNuGetVersion(version)),
+      ),
     ),
   ).sort(comparePackageVersions);
 }
@@ -49,10 +53,12 @@ export function upgradablePackageVersion(
   if (
     !packageItem.installedVersion ||
     !packageItem.availableVersion ||
-    samePackageVersion(
-      packageItem.installedVersion,
+    !parseNuGetVersion(packageItem.installedVersion) ||
+    !parseNuGetVersion(packageItem.availableVersion) ||
+    comparePackageVersions(
       packageItem.availableVersion,
-    )
+      packageItem.installedVersion,
+    ) <= 0
   ) {
     return undefined;
   }
@@ -65,10 +71,9 @@ export function mergeVersions(
 ): PackageVersionInfo[] {
   const keys = new Set(current.map((version) => version.version));
 
-  return [
-    ...current,
-    ...next.filter((version) => !keys.has(version.version)),
-  ].sort((a, b) => comparePackageVersions(a.version, b.version));
+  return [...current, ...next.filter((version) => !keys.has(version.version))]
+    .filter((item) => parseNuGetVersion(item.version))
+    .sort((a, b) => comparePackageVersions(a.version, b.version));
 }
 
 export function prependVersion(
