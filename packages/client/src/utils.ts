@@ -1,5 +1,7 @@
 import http from "node:http";
 import https from "node:https";
+import { promisify } from "node:util";
+import { gunzip, inflate, brotliDecompress } from "node:zlib";
 import { ProxyAgent } from "proxy-agent";
 export {
   comparePackageVersions,
@@ -98,19 +100,20 @@ export function getJson<T>(
         const chunks: Buffer[] = [];
         response.on("data", (chunk: Buffer) => chunks.push(chunk));
         response.on("end", () => {
-          try {
-            const result = JSON.parse(
-              Buffer.concat(chunks).toString("utf8"),
-            ) as T;
-            finish(() => {
-              resolve(result);
-            });
-          } catch (error) {
-            finish(() => {
-              reject(error);
-            });
-          }
+          void decodeJson<T>(
+            Buffer.concat(chunks),
+            response.headers["content-encoding"],
+          )
+            .then((result) =>
+              finish(() =>
+                requestOptions.signal?.aborted
+                  ? reject(abortError())
+                  : resolve(result),
+              ),
+            )
+            .catch((error) => finish(() => reject(error)));
         });
+        response.on("error", (error) => finish(() => reject(error)));
       },
     );
     const abort = (): void => {
@@ -138,6 +141,30 @@ export function getJson<T>(
     });
     request.end();
   });
+}
+
+const decompress = {
+  gzip: promisify(gunzip),
+  deflate: promisify(inflate),
+  br: promisify(brotliDecompress),
+};
+
+async function decodeJson<T>(
+  body: Buffer,
+  contentEncoding?: string,
+): Promise<T> {
+  let decoded: Buffer = body;
+  for (const encoding of (contentEncoding ?? "identity")
+    .toLowerCase()
+    .split(",")
+    .reverse()) {
+    const coding = encoding.trim();
+    if (coding === "identity") continue;
+    if (coding !== "gzip" && coding !== "deflate" && coding !== "br")
+      throw new Error("Unsupported response content encoding.");
+    decoded = await decompress[coding](decoded);
+  }
+  return JSON.parse(decoded.toString("utf8")) as T;
 }
 
 function abortError(): Error {

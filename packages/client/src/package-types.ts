@@ -62,10 +62,12 @@ export interface SearchPackage {
 }
 
 export interface RegistrationIndex {
+  count?: number;
   items?: RegistrationPage[];
 }
 
 export interface RegistrationPage {
+  count?: number;
   "@id"?: string;
   items?: RegistrationLeaf[];
 }
@@ -75,6 +77,7 @@ export interface RegistrationLeaf {
 }
 
 export interface RegistrationCatalogEntry {
+  listed?: boolean;
   id?: string;
   version: string;
   description?: string;

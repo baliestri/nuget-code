@@ -1,13 +1,11 @@
 import { getServiceResource, getFeedJson } from "#client/feed-http";
+import { readRegistrationEntries } from "#client/package-registration";
 import type { NuGetClientLogger, NuGetClientSettings } from "#client/types";
 import type {
   RegistrationDependencyGroup,
   RegistrationIndex,
-  RegistrationLeaf,
-  RegistrationPage,
 } from "#client/package-types";
 import {
-  comparePackageVersions,
   displayFeedName,
   feedColor,
   isHttpUrl,
@@ -160,9 +158,14 @@ async function loadPackageDetailsFromFeed(
       logger: options.logger,
       signal: options.signal,
     });
-    const entries = (
-      await loadRegistrationEntries(registration, feed, options)
-    ).filter(
+    const registrationEntries = await readRegistrationEntries(
+      registration,
+      feed,
+      options,
+    );
+    if (!registrationEntries.complete)
+      throw new Error("Incomplete package registration metadata.");
+    const entries = registrationEntries.entries.filter(
       (entry) =>
         options.includePrerelease !== false ||
         !isPrereleaseVersion(entry.catalogEntry.version),
@@ -213,42 +216,6 @@ async function loadPackageDetailsFromFeed(
     );
     return undefined;
   }
-}
-
-async function loadRegistrationEntries(
-  registration: RegistrationIndex,
-  feed: PackageFeed,
-  options: {
-    settings: NuGetClientSettings;
-    logger: NuGetClientLogger;
-    signal?: AbortSignal | undefined;
-  },
-): Promise<RegistrationLeaf[]> {
-  const pages = await Promise.all(
-    (registration.items ?? []).map(async (page: RegistrationPage) => {
-      if (page.items) {
-        return page.items;
-      }
-      if (!page["@id"]) {
-        return [];
-      }
-      const loadedPage = await getFeedJson<RegistrationPage>({
-        url: page["@id"],
-        feed,
-        settings: options.settings,
-        logger: options.logger,
-        signal: options.signal,
-      });
-      return loadedPage.items ?? [];
-    }),
-  );
-  const entries = pages.flat();
-
-  return entries
-    .filter((entry) => entry.catalogEntry?.version)
-    .sort((a, b) =>
-      comparePackageVersions(a.catalogEntry.version, b.catalogEntry.version),
-    );
 }
 
 function toDependencyGroups(

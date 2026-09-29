@@ -12,6 +12,36 @@ describe("NuGet config loading", () => {
     process.env = { ...previousEnv };
   });
 
+  it("gives relative local feeds distinct identities based on their declaring config", async () => {
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), "nuget-config-relative-"),
+    );
+    try {
+      const configs: string[] = [];
+      for (const name of ["A", "B"]) {
+        const directory = path.join(root, name);
+        await fs.mkdir(directory);
+        const file = path.join(directory, "NuGet.Config");
+        await fs.writeFile(
+          file,
+          `<configuration><packageSources><add key="local-${name}" value="packages"/></packageSources></configuration>`,
+        );
+        configs.push(file);
+      }
+      const sources = await loadSources(settings(), logger(), {
+        workspaceConfigPaths: configs,
+      });
+      expect(
+        sources[0]?.feeds.find((feed) => feed.name === "local-A")?.url,
+      ).toBe(path.join(root, "A", "packages"));
+      expect(
+        sources[0]?.feeds.find((feed) => feed.name === "local-B")?.url,
+      ).toBe(path.join(root, "B", "packages"));
+    } finally {
+      await fs.rm(root, { recursive: true, force: true, maxRetries: 5 });
+    }
+  });
+
   it("loads workspace config files, credentials, disabled sources, and effective config", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "nuget-config-"));
     const configPath = path.join(root, "NuGet.config");

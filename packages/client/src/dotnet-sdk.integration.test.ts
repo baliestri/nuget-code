@@ -12,6 +12,7 @@ import {
   loadInstalledReferences,
   loadListedPackageInventory,
 } from "./package-inventory";
+import { loadPackageCatalog } from "./package-catalog";
 
 describe("real SDK package operations", () => {
   const major = Number(process.env.SDK_MAJOR);
@@ -30,6 +31,30 @@ describe("real SDK package operations", () => {
       major,
       cwd: path.dirname(fixture.projectPath),
     });
+  });
+
+  it("reads real nupkg identities without filtering prereleases from the catalog", async () => {
+    const catalog = await loadPackageCatalog({
+      packageId: "Demo",
+      feeds: [
+        { id: "local", name: "Local", url: fixture.feedPath, enabled: true },
+      ],
+      settings: {
+        dotnetPath: "dotnet",
+        nugetPath: "nuget",
+        credentialProviderPaths: [],
+        extraConfigPaths: [],
+        proxy: "",
+        maxSearchResults: 100,
+      },
+      logger: { error() {}, warning() {}, information() {}, verbose() {} },
+    });
+    expect(catalog.complete).toBe(true);
+    expect(catalog.versions.map((v) => v.version)).toEqual([
+      "1.0.0",
+      "1.5.0",
+      "2.0.0-beta",
+    ]);
   });
 
   it("installs, lists, updates and removes a package using a local feed", async () => {

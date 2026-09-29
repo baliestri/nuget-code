@@ -12,6 +12,7 @@ import {
   loadInstalledReferences,
   loadOutdatedPackageVersions,
   loadPackageDetails,
+  loadPackageCatalog,
   loadPackageInventory,
   searchPackages,
 } from "#client/packages";
@@ -42,6 +43,7 @@ export const NuGetClient = {
   loadCacheFolders,
   loadOutdatedPackageVersions,
   loadPackageDetails,
+  loadPackageCatalog,
   loadPackageInventory,
   searchPackages,
 };

@@ -103,7 +103,11 @@ async function readConfig(
       .map<PackageFeed>((source) => ({
         id: `${configPath}:${source.key}`,
         name: source.key,
-        url: source.value,
+        url:
+          path.isAbsolute(source.value) ||
+          /^[a-z][a-z0-9+.-]*:\/\//i.test(source.value)
+            ? source.value
+            : path.resolve(path.dirname(configPath), source.value),
         enabled: !disabled.has(source.key),
         allowInsecure:
           String(source.allowInsecureConnections).toLowerCase() === "true",

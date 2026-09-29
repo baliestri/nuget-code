@@ -1,4 +1,5 @@
 export * from "#client/package-availability";
+export * from "#client/package-catalog";
 export * from "#client/package-details";
 export * from "#client/package-inventory";
 export * from "#client/package-search";

@@ -50,9 +50,18 @@ export async function getServiceResource(
     logger,
     signal,
   });
-  return serviceIndex.resources?.find((resource) =>
+  const resources = serviceIndex.resources?.filter((resource) =>
     resource["@type"]?.toLowerCase().startsWith(resourceType),
   );
+  if (resourceType === "registrationsbaseurl") {
+    return (
+      resources?.find(
+        (resource) =>
+          resource["@type"]?.toLowerCase() === "registrationsbaseurl/3.6.0",
+      ) ?? resources?.[0]
+    );
+  }
+  return resources?.[0];
 }
 
 export async function getFeedJson<T>(options: {
