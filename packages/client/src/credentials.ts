@@ -91,6 +91,9 @@ export async function getFeedAuthorizationHeader(options: {
     options.retry === true,
     options.interactive === true,
   ]);
+  const previousAuthorization = credentialCache.get(cacheKey);
+  if (options.retry && previousAuthorization)
+    network.invalidateAuthentication(options.settings);
   if (options.retry) credentialCache.delete(cacheKey);
   const cache = credentialCache;
   return network.authentication.run(
@@ -103,7 +106,8 @@ export async function getFeedAuthorizationHeader(options: {
       signal.throwIfAborted();
       if (
         result.authorizationHeader &&
-        result.authorizationHeader !== cache.get(cacheKey)
+        result.authorizationHeader !==
+          (cache.get(cacheKey) ?? previousAuthorization)
       )
         network.invalidateAuthentication(options.settings);
       if (result.authorizationHeader)

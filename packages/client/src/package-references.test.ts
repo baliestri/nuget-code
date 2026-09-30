@@ -54,6 +54,23 @@ function payload(projectPath: string) {
 }
 
 describe("installed reference facts", () => {
+  it("never triggers implicit restore or a restore-capable retry for read-only SDK10 inventory", async () => {
+    const runDotnet = vi.fn(async (args: string[]) =>
+      args[0] === "--version"
+        ? { code: 0, stdout: "10.0.401", stderr: "" }
+        : { code: 1, stdout: "", stderr: "assets missing" },
+    );
+    await expect(
+      loadInstalledReferences({
+        target: { ...target, projectPaths: [app] },
+        cli: { runDotnet } as never,
+        logger,
+        readOnly: true,
+      }),
+    ).rejects.toThrow("assets missing");
+    expect(runDotnet).toHaveBeenCalledTimes(2);
+    expect(runDotnet.mock.calls[1]?.[0]).toContain("--no-restore");
+  });
   it("queries each solution project with its own SDK and preserves frameworks", async () => {
     const runDotnet = vi.fn(async (args: string[], cwd: string) => ({
       code: 0,

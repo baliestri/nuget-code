@@ -11,6 +11,7 @@ import {
   createFolderSizeCache,
   createInitialPackageManagerState,
   createReadFlowStates,
+  createEmptyUpdateProjection,
   defaultPackageVersion,
   defaultSelectedProjectPaths,
   detailFeedId,
@@ -478,8 +479,8 @@ describe("package merge and metadata helpers", () => {
     ).toEqual([installed]);
     expect(
       applyPackageDetails(state, { ...installed, description: "updated" })
-        .installedPackages[0]?.description,
-    ).toBe("updated");
+        .installedPackages,
+    ).toBe(state.installedPackages);
     expect(
       applyAvailablePackages(state, [available]).availablePackages,
     ).toEqual([available]);
@@ -495,7 +496,7 @@ describe("package merge and metadata helpers", () => {
     ).toMatchObject({
       installedPackagesStatus: "ready",
       implicitPackagesStatus: "ready",
-      hasUpgrades: true,
+      hasUpgrades: false,
     });
   });
 });
@@ -687,6 +688,7 @@ function stateWithPackages(
 ): PackageManagerState {
   return {
     flows: createReadFlowStates(),
+    updates: createEmptyUpdateProjection(),
     activeTab: "packages",
     targets: [],
     selectedTargetId: "",

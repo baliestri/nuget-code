@@ -83,3 +83,18 @@ export interface UpgradeEvaluation {
   candidates: readonly UpgradeCandidate[];
   blocked: readonly UpgradeBlock[];
 }
+
+/** Facts captured together, independent of the current search or preview filter. */
+export interface InventorySnapshot {
+  targetId: string;
+  projectPaths: readonly string[];
+  revision: string;
+  references: readonly InstalledReference[];
+  projectRevisions: Readonly<Record<string, string | null>>;
+  inputPaths: readonly string[];
+}
+
+export interface UpdateProjection {
+  context: UpgradeContext;
+  evaluation: UpgradeEvaluation;
+}

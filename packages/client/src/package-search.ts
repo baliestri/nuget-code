@@ -15,6 +15,7 @@ import type {
 } from "#contracts/nuget";
 
 export async function searchPackages(options: {
+  onIncomplete?: () => void;
   feeds: PackageFeed[];
   selectedFeedId: string;
   query: string;
@@ -38,6 +39,7 @@ export async function searchPackages(options: {
         settings: options.settings,
         logger: options.logger,
         signal: options.signal,
+        onIncomplete: options.onIncomplete,
       }),
     ),
   );
@@ -51,6 +53,7 @@ export async function searchPackages(options: {
 async function searchFeed(
   feed: PackageFeed,
   options: {
+    onIncomplete?: (() => void) | undefined;
     query: string;
     includePrerelease: boolean;
     take: number;
@@ -60,6 +63,7 @@ async function searchFeed(
   },
 ): Promise<NuGetPackageItem[]> {
   if (!isHttpUrl(feed.url)) {
+    options.onIncomplete?.();
     options.logger.verbose(
       "nuget.http",
       `Skipping non-HTTP source ${feed.name}: ${feed.url}`,
@@ -76,6 +80,7 @@ async function searchFeed(
       options.signal,
     );
     if (!searchResource?.["@id"]) {
+      options.onIncomplete?.();
       options.logger.warning(
         "nuget.http",
         `${feed.name} has no SearchQueryService`,
@@ -148,6 +153,7 @@ async function searchFeed(
       "nuget.http",
       `Failed to search ${feed.name}: ${error instanceof Error ? error.message : String(error)}`,
     );
+    options.onIncomplete?.();
     return [];
   }
 }

@@ -7,6 +7,7 @@ import {
 } from "#manager/folders";
 import {
   applyAvailablePackages,
+  applyUpdateProjection,
   applyPackageInventory,
 } from "#manager/state-updates";
 import { getSelectedPackage, getSelectedTarget } from "#manager/selection";
@@ -33,6 +34,7 @@ export const PackageManagementCore = {
     getSelectedTarget,
   },
   state: {
+    applyUpdateProjection,
     applyAvailablePackages,
     applyPackageInventory,
     createInitialPackageManagerState,

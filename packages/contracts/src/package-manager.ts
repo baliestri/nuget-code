@@ -7,12 +7,18 @@ import {
 } from "#contracts/nuget";
 import { WorkspaceTarget } from "#contracts/workspace";
 import type { LoadState, ReadFlow } from "#contracts/package-loads";
+import type { UpdateProjection } from "#contracts/package-updates";
 
 export type PackageManagerTab = "packages" | "sources" | "folders" | "logs";
 export type PackageListStatus = "idle" | "loading" | "ready" | "failed";
 
 export interface PackageManagerState {
   flows: Record<ReadFlow, LoadState>;
+  updates: UpdateProjection;
+  packageDetails?:
+    | { packageId: string; feedId: string; packageItem: NuGetPackageItem }
+    | null
+    | undefined;
   activeTab: PackageManagerTab;
   targets: WorkspaceTarget[];
   selectedTargetId: string;

@@ -11,12 +11,27 @@ export function createReadFlowStates(): PackageManagerState["flows"] {
   };
 }
 
+export function createEmptyUpdateProjection(): PackageManagerState["updates"] {
+  return {
+    context: {
+      targetId: "",
+      projectPaths: [],
+      feedUrls: [],
+      includePrerelease: false,
+      revision: "pending",
+    },
+    evaluation: { candidates: [], blocked: [] },
+  };
+}
+
 export function createInitialPackageManagerState(
   defaults: PackageManagerDefaults,
   logs: LogEntry[],
 ): PackageManagerState {
   return {
     flows: createReadFlowStates(),
+    updates: createEmptyUpdateProjection(),
+    packageDetails: null,
     activeTab: "packages",
     targets: [],
     selectedTargetId: "",
@@ -39,6 +54,8 @@ export function createInitialPackageManagerState(
 export function createEmptyPackageManagerState(): PackageManagerState {
   return {
     flows: createReadFlowStates(),
+    updates: createEmptyUpdateProjection(),
+    packageDetails: null,
     activeTab: "packages",
     targets: [],
     selectedTargetId: "",

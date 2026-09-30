@@ -113,7 +113,7 @@ function packageDetailsCacheKey(
   return `${feed.id}:${packageName.toLowerCase()}:${includePrerelease !== false}`;
 }
 
-async function loadPackageDetailsFromFeed(
+export async function loadPackageDetailsFromFeed(
   packageName: string,
   feed: PackageFeed,
   options: {

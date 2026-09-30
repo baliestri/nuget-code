@@ -1,5 +1,74 @@
-import type { NuGetPackageItem, PackageManagerState } from "#contracts";
-import { applyAvailablePackageMetadata, replacePackage } from "#manager/merge";
+import type {
+  NuGetPackageItem,
+  PackageManagerState,
+  InventorySnapshot,
+  UpdateProjection,
+} from "#contracts";
+import { mergeInstalled, replacePackage } from "#manager/merge";
+import { executableCandidates } from "#manager/upgrade-policy";
+
+export function applyUpdateProjection(
+  state: PackageManagerState,
+  updates: UpdateProjection,
+): PackageManagerState {
+  return {
+    ...state,
+    updates,
+    hasUpgrades: executableCandidates(updates.evaluation).length > 0,
+  };
+}
+export function referenceInventory(snapshot: InventorySnapshot): {
+  installed: NuGetPackageItem[];
+  implicit: NuGetPackageItem[];
+} {
+  const items = (direct: boolean) =>
+    mergeInstalled(
+      snapshot.references
+        .filter(
+          (reference) =>
+            reference.direct === direct &&
+            snapshot.projectPaths.includes(reference.projectPath),
+        )
+        .map(
+          (reference): NuGetPackageItem => ({
+            id: `${reference.projectPath}:${direct ? "" : "implicit:"}${reference.framework}:${reference.packageId}`,
+            name: reference.packageId,
+            installedVersion: reference.resolvedVersion ?? undefined,
+            projectPaths: [reference.projectPath],
+            projectStates: [
+              {
+                projectPath: reference.projectPath,
+                installedVersion: reference.resolvedVersion ?? undefined,
+                implicit: !direct,
+              },
+            ],
+            versions: reference.resolvedVersion
+              ? [{ version: reference.resolvedVersion, source: "Installed" }]
+              : [],
+            dependencyGroups: [],
+            implicit: !direct,
+          }),
+        ),
+    );
+  return { installed: items(true), implicit: items(false) };
+}
+
+/** Details are presentation metadata, never a writer of installed facts or automatic candidates. */
+export function presentPackageDetails(
+  base: NuGetPackageItem,
+  details: NuGetPackageItem,
+): NuGetPackageItem {
+  return {
+    ...details,
+    id: base.id,
+    name: base.name,
+    installedVersion: base.installedVersion,
+    availableVersion: base.availableVersion,
+    projectPaths: base.projectPaths,
+    projectStates: base.projectStates,
+    implicit: base.implicit,
+  };
+}
 
 export function applyPackageDetails(
   state: PackageManagerState,
@@ -7,8 +76,6 @@ export function applyPackageDetails(
 ): PackageManagerState {
   return {
     ...state,
-    installedPackages: replacePackage(state.installedPackages, packageItem),
-    implicitPackages: replacePackage(state.implicitPackages, packageItem),
     availablePackages: replacePackage(state.availablePackages, packageItem),
   };
 }
@@ -23,19 +90,13 @@ export function applyPackageInventory(
 ): PackageManagerState {
   return {
     ...state,
-    installedPackages: applyAvailablePackageMetadata(
-      inventory.installed,
-      availablePackages,
-    ),
+    installedPackages: inventory.installed,
     installedPackagesStatus: "ready",
-    implicitPackages: applyAvailablePackageMetadata(
-      inventory.implicit,
-      availablePackages,
-    ),
+    implicitPackages: inventory.implicit,
     implicitPackagesStatus: "ready",
     availablePackages,
     selectedPackageId: state.selectedPackageId,
-    hasUpgrades: inventory.installed.some((item) => item.availableVersion),
+    hasUpgrades: executableCandidates(state.updates.evaluation).length > 0,
   };
 }
 
@@ -45,14 +106,6 @@ export function applyAvailablePackages(
 ): PackageManagerState {
   return {
     ...state,
-    installedPackages: applyAvailablePackageMetadata(
-      state.installedPackages,
-      availablePackages,
-    ),
-    implicitPackages: applyAvailablePackageMetadata(
-      state.implicitPackages,
-      availablePackages,
-    ),
     availablePackages,
     selectedPackageId: state.selectedPackageId,
   };

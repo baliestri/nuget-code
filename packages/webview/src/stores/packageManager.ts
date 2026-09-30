@@ -21,6 +21,7 @@ import {
   selectedTarget,
   sameProjectPath,
   updatePackageProjectStates,
+  presentPackageDetails,
 } from "#manager";
 
 export const usePackageManagerStore = defineStore("packageManager", () => {
@@ -41,12 +42,18 @@ export const usePackageManagerStore = defineStore("packageManager", () => {
   const retiredSessions = new Set<string>();
 
   const selectedTargetValue = computed(() => selectedTarget(model.value));
-  const currentPackage = computed(() =>
-    selectedPackage(
+  const currentPackage = computed(() => {
+    const base = selectedPackage(
       model.value,
       selectedPackageId.value ?? model.value.selectedPackageId,
-    ),
-  );
+    );
+    const details = model.value.packageDetails;
+    return base &&
+      details?.packageId === base.id &&
+      details.feedId === selectedDetailFeedId.value
+      ? presentPackageDetails(base, details.packageItem)
+      : base;
+  });
 
   function post(message: WebviewToExtensionMessage): void {
     postMessage(message);
@@ -460,7 +467,7 @@ export const usePackageManagerStore = defineStore("packageManager", () => {
       return;
     }
 
-    const key = `${packageItem.id}:${feedId}:${model.value.includePrerelease}`;
+    const key = `${model.value.updates.context.revision}:${packageItem.id}:${feedId}:${model.value.includePrerelease}`;
     if (lastDetailsRequestKey.value === key) {
       return;
     }

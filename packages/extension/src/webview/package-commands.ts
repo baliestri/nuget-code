@@ -12,10 +12,12 @@ import {
   PackageManagementCore,
   packageChangeAction,
   projectName,
+  executableCandidates,
 } from "#manager";
 import type { WorkspaceDiscovery } from "#extension/discovery";
 
 interface PackageCommandServiceOptions {
+  executeVerifiedUpgrades?: () => Promise<void>;
   getState: () => PackageManagerState;
   getDiscovery: () => WorkspaceDiscovery;
   getCli: () => NuGetCli;
@@ -63,42 +65,21 @@ export class PackageCommandService {
   }
 
   async upgradePackages(): Promise<void> {
-    const packages = this.options
-      .getState()
-      .installedPackages.filter((item) => item.availableVersion);
-
-    if (packages.length === 0) {
+    const candidates = executableCandidates(
+      this.options.getState().updates.evaluation,
+    );
+    if (candidates.length === 0) {
       window.showInformationMessage("No package upgrades are available.");
       return;
     }
-
-    await this.options.runOperation(
-      "upgrade",
-      "Upgrading NuGet packages",
-      async () => {
-        await window.withProgress(
-          {
-            location: ProgressLocation.Notification,
-            title: "Updating NuGet packages",
-            cancellable: false,
-          },
-          async (progress) => {
-            for (const packageItem of packages) {
-              await this.applyPackageToProjects(
-                packageItem,
-                packageItem.availableVersion,
-                undefined,
-                undefined,
-                "Updating",
-                progress,
-              );
-            }
-          },
-        );
-
-        await this.options.refreshPackages();
-      },
-    );
+    // O3 supplies the bound-plan executor. Never translate a proof back to legacy availableVersion/CLI edits.
+    if (!this.options.executeVerifiedUpgrades) {
+      window.showWarningMessage(
+        "No verified execution plan is available for automatic updates.",
+      );
+      return;
+    }
+    await this.options.executeVerifiedUpgrades();
   }
 
   async addOrUpgradeSelectedPackage(
@@ -116,18 +97,14 @@ export class PackageCommandService {
       return;
     }
 
-    const version =
-      options.version ||
-      (packageItem.availableVersion ??
-        packageItem.versions[0]?.version ??
-        packageItem.installedVersion);
+    const version = options.version;
     const feed = options.feedId
       ? state.feeds.find((item) => item.id === options.feedId)
       : undefined;
 
     if (!version) {
       window.showWarningMessage(
-        `No version is available for ${packageItem.name}.`,
+        "Select an explicit package version before changing a project.",
       );
       return;
     }

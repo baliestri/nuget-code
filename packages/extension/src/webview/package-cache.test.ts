@@ -10,7 +10,7 @@ import {
 } from "./package-cache.js";
 import type { NuGetPackageItem, PackageManagerState } from "#contracts";
 import { CacheStore, memoryCacheStorage } from "./cache-store";
-import { createReadFlowStates } from "#manager";
+import { createReadFlowStates, createEmptyUpdateProjection } from "#manager";
 
 const vscodeMock = vscode as unknown as {
   __resetVscodeMock(): void;
@@ -263,6 +263,7 @@ function stateWithPackages(
 ): PackageManagerState {
   return {
     flows: createReadFlowStates(),
+    updates: createEmptyUpdateProjection(),
     activeTab: "packages",
     targets: [],
     selectedTargetId: "",

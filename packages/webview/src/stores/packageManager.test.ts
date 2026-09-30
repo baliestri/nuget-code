@@ -10,7 +10,7 @@ import type {
   PackageManagerState,
   WorkspaceTarget,
 } from "#contracts";
-import { createReadFlowStates } from "#manager";
+import { createReadFlowStates, createEmptyUpdateProjection } from "#manager";
 
 let fixtureRevision = 0;
 const connections: Array<() => void> = [];
@@ -365,6 +365,47 @@ describe("package manager store", () => {
     expect(vscode.postMessage).toHaveBeenCalledTimes(calls);
   });
 
+  it("presents scoped detail metadata without changing installed facts, and accepts an explicit JSON clear", () => {
+    const store = usePackageManagerStore();
+    connect(store);
+    const installed = packageItem("demo", "Demo", "1.0.0");
+    dispatch({
+      type: "state",
+      state: state({
+        selectedPackageId: "demo",
+        selectedFeedId: "nuget",
+        feeds: [
+          {
+            id: "nuget",
+            name: "NuGet",
+            url: "https://feed.test",
+            enabled: true,
+          },
+        ],
+        installedPackages: [installed],
+      }),
+    });
+    dispatch({
+      type: "stateDelta",
+      patch: {
+        packageDetails: {
+          packageId: "demo",
+          feedId: "nuget",
+          packageItem: {
+            ...installed,
+            installedVersion: "9.0.0",
+            description: "selected-feed details",
+          },
+        },
+      },
+    });
+    expect(store.currentPackage?.description).toBe("selected-feed details");
+    expect(store.currentPackage?.installedVersion).toBe("1.0.0");
+    expect(store.model.installedPackages).toEqual([installed]);
+    dispatch({ type: "stateDelta", patch: { packageDetails: null } });
+    expect(store.currentPackage?.description).toBeUndefined();
+  });
+
   it("accepts only contiguous deltas and ignores delayed snapshots and duplicates", () => {
     const store = usePackageManagerStore();
     const disconnect = connect(store);
@@ -511,6 +552,7 @@ function state(
 ): PackageManagerState {
   return {
     flows: createReadFlowStates(),
+    updates: createEmptyUpdateProjection(),
     activeTab: "packages",
     targets: [],
     selectedTargetId: "",

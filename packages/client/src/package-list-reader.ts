@@ -11,6 +11,7 @@ import {
 } from "#client/dotnet-sdk";
 
 export interface PackageInventoryOptions {
+  readOnly?: boolean;
   target: WorkspaceTarget | undefined;
   cli: NuGetCli;
   logger: NuGetClientLogger;
@@ -44,14 +45,26 @@ export async function readTargetPackageList(
       projectPath,
       options.signal,
     );
-    const action = { kind: "list" as const, projectPath, outdated };
+    const action = {
+      kind: "list" as const,
+      projectPath,
+      outdated,
+      ...(options.readOnly && supportsListNoRestore(sdk)
+        ? { noRestore: true }
+        : {}),
+    };
     const actionLabel = `dotnet list package${outdated ? " --outdated" : ""}`;
     let result = await options.cli.runDotnet(
       dotnetArguments(sdk, action),
       sdk.cwd,
       { signal: options.signal },
     );
-    if (result.code !== 0 && !result.failure && supportsListNoRestore(sdk)) {
+    if (
+      result.code !== 0 &&
+      !result.failure &&
+      !options.readOnly &&
+      supportsListNoRestore(sdk)
+    ) {
       options.signal?.throwIfAborted();
       options.logger.warning(
         "nuget.cli",
