@@ -13,6 +13,8 @@ export interface CommandResult {
 export interface CommandOptions {
   cwd?: string | undefined;
   signal?: AbortSignal | undefined;
+  /** Capture output for the caller, but omit command details and raw diagnostics from logs. */
+  privateDiagnostics?: boolean;
 }
 
 export class NuGetCli {
@@ -42,7 +44,9 @@ export class NuGetCli {
     args: string[],
     options: CommandOptions,
   ): Promise<CommandResult> {
-    const safeCommand = `${command} ${args.map(maskSecret).join(" ")}`;
+    const safeCommand = options.privateDiagnostics
+      ? "Private NuGet verification"
+      : `${command} ${args.map(maskSecret).join(" ")}`;
     this.logger.verbose("nuget.cli", `Running ${safeCommand}`);
 
     return new Promise((resolve, reject) => {
@@ -75,7 +79,9 @@ export class NuGetCli {
         const failure = commandLaunchFailure(error);
         this.logger.error(
           "nuget.cli",
-          `${safeCommand} failed: ${failure.stderr}`,
+          options.privateDiagnostics
+            ? `${safeCommand} failed to launch`
+            : `${safeCommand} failed: ${failure.stderr}`,
         );
         resolve(failure);
         return;
@@ -106,7 +112,9 @@ export class NuGetCli {
       child.on("error", (error) => {
         this.logger.error(
           "nuget.cli",
-          `${safeCommand} failed: ${error.message}`,
+          options.privateDiagnostics
+            ? `${safeCommand} failed to launch`
+            : `${safeCommand} failed: ${error.message}`,
         );
 
         launchFailure = commandLaunchFailure(error);
@@ -127,7 +135,9 @@ export class NuGetCli {
         } else {
           this.logger.warning(
             "nuget.cli",
-            `${safeCommand} exited with ${code}: ${result.stderr.trim()}`,
+            options.privateDiagnostics
+              ? `${safeCommand} exited with ${code}`
+              : `${safeCommand} exited with ${code}: ${result.stderr.trim()}`,
           );
         }
 

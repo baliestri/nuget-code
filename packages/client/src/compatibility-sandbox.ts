@@ -274,7 +274,7 @@ export async function createCompatibilitySandbox(
 
 /** Must succeed before S4 applies a candidate plan to the copy. */
 export async function validateCompatibilitySandbox(
-  cli: NuGetCli,
+  cli: Pick<NuGetCli, "runDotnet">,
   original: EvaluatedProject,
   sandbox: CompatibilitySandbox,
   signal?: AbortSignal,

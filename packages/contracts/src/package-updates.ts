@@ -35,6 +35,12 @@ export interface CompatibilityEvidence {
   result: CompatibilityResult;
 }
 
+/** Evidence for the exact host-prepared edit intent; required by the mutation executor. */
+export interface PlannedCompatibilityEvidence extends CompatibilityEvidence {
+  candidateKey: string;
+  planRevision: string;
+}
+
 export interface UpgradeContext {
   targetId: string;
   projectPaths: readonly string[];

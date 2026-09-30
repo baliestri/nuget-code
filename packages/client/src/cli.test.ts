@@ -104,4 +104,31 @@ describe("CLI process execution", () => {
       stderr: "failed",
     });
   });
+
+  it("keeps verification diagnostics available to the parser but out of logs", async () => {
+    const messages: string[] = [];
+    const log = (_scope: string, message: string) => {
+      messages.push(message);
+    };
+    const runner = new NuGetCli(
+      {
+        dotnetPath: process.execPath,
+        nugetPath: process.execPath,
+        workspacePath: root,
+        credentialProviderPaths: [],
+        extraConfigPaths: [],
+        proxy: "",
+        maxSearchResults: 100,
+      },
+      { verbose: log, information: log, warning: log, error: log },
+    );
+    const result = await runner.runDotnet(
+      ["-e", "process.stderr.write('secret-token');process.exitCode=1"],
+      root,
+      { privateDiagnostics: true },
+    );
+    expect(result.stderr).toBe("secret-token");
+    expect(messages.join("\n")).not.toContain("secret-token");
+    expect(messages.join("\n")).not.toContain(root);
+  });
 });

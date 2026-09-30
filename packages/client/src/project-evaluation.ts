@@ -56,7 +56,7 @@ function installedVersions(
 }
 
 export async function evaluateProject(
-  cli: NuGetCli,
+  cli: Pick<NuGetCli, "runDotnet">,
   options: EvaluationOptions,
   signal?: AbortSignal,
 ): Promise<EvaluatedProject> {
