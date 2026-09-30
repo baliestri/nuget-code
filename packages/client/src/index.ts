@@ -31,6 +31,7 @@ export * from "#client/package-version-edits";
 export * from "#client/project-evaluation";
 export * from "#client/compatibility-sandbox";
 export * from "#client/package-compatibility";
+export * from "#client/compatibility-queue";
 export { ProjectContextError } from "#client/project-context";
 export * from "#client/types";
 

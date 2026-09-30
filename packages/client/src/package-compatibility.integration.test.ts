@@ -2,13 +2,18 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import http from "node:http";
 import { expect, it } from "vitest";
-import type { UpgradeCandidate } from "#contracts";
+import type {
+  PlannedCompatibilityEvidence,
+  UpgradeCandidate,
+} from "#contracts";
 import { candidateKey } from "#manager";
 import { evaluateProject } from "./project-evaluation";
 import {
   prepareCompatibilityRequest,
   verifyPackageCompatibility,
+  compatibilityRequestKey,
 } from "./package-compatibility";
+import { CompatibilityQueue } from "./compatibility-queue";
 import {
   checkedDotnet,
   createDotnetFixture,
@@ -112,7 +117,18 @@ it.each(["simple", "multi", "imports", "central"] as const)(
         });
       };
       const request = await prepare("1.5.0");
-      const result = await verifyPackageCompatibility(fixture.cli, request);
+      const queue = new CompatibilityQueue<PlannedCompatibilityEvidence>();
+      let executions = 0;
+      const work = (signal: AbortSignal) => {
+        executions++;
+        return verifyPackageCompatibility(fixture.cli, request, signal);
+      };
+      const [result, shared] = await Promise.all([
+        queue.request(compatibilityRequestKey(request), 1, work),
+        queue.request(compatibilityRequestKey(request), 5, work),
+      ]).finally(() => queue.dispose());
+      expect(shared).toBe(result);
+      expect(executions).toBe(1);
       expect(result, JSON.stringify(result.result)).toMatchObject({
         contextRevision: project.contextRevision,
         candidateKey: request.candidate.key,
