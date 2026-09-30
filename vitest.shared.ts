@@ -10,6 +10,10 @@ export function packageSourceAliases(name: string, source: URL): SourceAlias[] {
 
   return [
     { find: new RegExp(`^#${name}$`), replacement: `${path}/index.ts` },
+    {
+      find: new RegExp(`^#${name}/(.*\\.(?:vue|svg)(?:\\?.*)?)$`),
+      replacement: `${path}/$1`,
+    },
     { find: new RegExp(`^#${name}/(.*)$`), replacement: `${path}/$1.ts` },
   ];
 }
