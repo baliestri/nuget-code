@@ -9,7 +9,7 @@ import {
   type Webview,
 } from "vscode";
 import type {
-  ExtensionToWebviewMessage,
+  PackageManagerEvent,
   NuGetPackageItem,
   PackageManagerCommand,
   PackageManagerOperationKind,
@@ -56,8 +56,11 @@ import { PackageCommandService } from "#extension/webview/package-commands";
 import { FolderService } from "#extension/webview/folder-service";
 import { PackageReferenceWatcher } from "#extension/webview/package-reference-watcher";
 import { SolutionSelector } from "#extension/solution-selector";
+import { StateMessageSequence } from "#extension/webview/state-message-sequence";
+import { ReadCoordinator } from "#extension/webview/read-coordinator";
 
 export class PackageManagerController implements Disposable {
+  private readonly messages = new StateMessageSequence();
   private readonly network = new ClientNetwork();
   private webview: Webview | undefined;
   private settings: ExtensionSettings;
@@ -72,7 +75,7 @@ export class PackageManagerController implements Disposable {
   private packageInventoryRequestId = 0;
   private packageAvailabilityRequestId = 0;
   private packageReferenceFingerprint = "";
-  private packageRefreshAbort: AbortController | undefined;
+  private readonly reads = new ReadCoordinator();
   private readonly packageDetailsCache = new MemoryCache(
     500,
     Date.now,
@@ -174,6 +177,7 @@ export class PackageManagerController implements Disposable {
         if (!event.affectsConfiguration("nuget-code")) {
           return;
         }
+        this.cancelPackageReads();
         this.settings = { ...getSettings(), network: this.network };
         this.packageCache.setConfigurationRevision(() =>
           this.network.context(this.settings),
@@ -214,12 +218,14 @@ export class PackageManagerController implements Disposable {
         await this.setSelectedFeed(message.feedId);
         return;
       case "setSearch":
+        this.cancelSearchReads();
         this.state = { ...this.state, search: message.search };
         await this.hydrateCachedPackages({ preserveSelection: true });
         this.postState();
         await this.refreshAvailablePackages();
         return;
       case "setIncludePrerelease":
+        this.cancelSearchReads();
         this.state = {
           ...this.state,
           includePrerelease: message.includePrerelease,
@@ -383,7 +389,7 @@ export class PackageManagerController implements Disposable {
 
   dispose(): void {
     this.network.dispose();
-    this.packageRefreshAbort?.abort();
+    this.reads.dispose();
     this.packageReferenceWatcher.dispose();
     for (const disposable of this.disposables) {
       disposable.dispose();
@@ -498,13 +504,13 @@ export class PackageManagerController implements Disposable {
     if (
       signal.aborted ||
       this.settings !== settings ||
-      !sameCacheContext(this.state, cacheState)
+      this.state.selectedTargetId !== cacheState.selectedTargetId ||
+      this.state.targets !== cacheState.targets
     )
       return;
     this.packageReferenceFingerprint = fingerprint;
     if (!options.forceInventory && cached?.fingerprint === fingerprint) {
-      const requestId = ++this.availablePackagesRequestId;
-      await this.refreshAvailablePackagesForRequest(requestId, { signal });
+      await this.refreshAvailablePackages();
       return;
     }
 
@@ -513,7 +519,7 @@ export class PackageManagerController implements Disposable {
 
     await Promise.all([
       this.refreshAvailablePackagesForRequest(availableRequestId, {
-        signal,
+        signal: this.beginPackageRefresh("search"),
         refreshPackageAvailability: false,
       }),
       this.refreshPackageInventoryForRequest(inventoryRequestId, signal),
@@ -521,7 +527,7 @@ export class PackageManagerController implements Disposable {
   }
 
   private async refreshAvailablePackages(): Promise<void> {
-    const signal = this.beginPackageRefresh();
+    const signal = this.beginPackageRefresh("search");
     const requestId = ++this.availablePackagesRequestId;
     await this.refreshAvailablePackagesForRequest(requestId, { signal });
   }
@@ -543,7 +549,10 @@ export class PackageManagerController implements Disposable {
       const availablePackages = await this.searchAvailablePackages(
         options.signal,
       );
-      if (requestId === this.availablePackagesRequestId) {
+      if (
+        requestId === this.availablePackagesRequestId &&
+        !options.signal?.aborted
+      ) {
         this.state = PackageManagementCore.state.applyAvailablePackages(
           this.state,
           availablePackages,
@@ -588,7 +597,7 @@ export class PackageManagerController implements Disposable {
         signal,
       });
 
-      if (requestId === this.packageInventoryRequestId) {
+      if (requestId === this.packageInventoryRequestId && !signal?.aborted) {
         this.state = PackageManagementCore.state.applyPackageInventory(
           this.state,
           { installed: listedInventory.installed, implicit: [] },
@@ -600,6 +609,10 @@ export class PackageManagerController implements Disposable {
           implicitPackagesStatus: "loading",
         };
         await this.updateHasUpgradesContext();
+        if (signal?.aborted || requestId !== this.packageInventoryRequestId) {
+          this.finishOperation(operation);
+          return;
+        }
         this.publishInventoryChanged(requestId, {
           implicitPackages: [],
         });
@@ -620,6 +633,10 @@ export class PackageManagerController implements Disposable {
         await this.refreshPackageAvailability(signal);
       }
 
+      if (signal?.aborted || requestId !== this.packageInventoryRequestId) {
+        this.finishOperation(operation);
+        return;
+      }
       const outdated = await NuGetClient.loadOutdatedPackageVersions({
         target: PackageManagementCore.selection.getSelectedTarget(this.state),
         cli: this.cli,
@@ -627,7 +644,7 @@ export class PackageManagerController implements Disposable {
         signal,
       });
 
-      if (requestId === this.packageInventoryRequestId) {
+      if (requestId === this.packageInventoryRequestId && !signal?.aborted) {
         const inventory = NuGetClient.applyOutdatedPackageVersions(
           {
             installed: this.state.installedPackages,
@@ -647,6 +664,10 @@ export class PackageManagerController implements Disposable {
         };
 
         await this.updateHasUpgradesContext();
+        if (signal?.aborted || requestId !== this.packageInventoryRequestId) {
+          this.finishOperation(operation);
+          return;
+        }
         this.publishInventoryChanged(requestId);
         await this.persistPackageCache();
         await this.refreshPackageAvailability(signal);
@@ -742,7 +763,7 @@ export class PackageManagerController implements Disposable {
         }),
       ]);
 
-      if (requestId !== this.packageAvailabilityRequestId) {
+      if (requestId !== this.packageAvailabilityRequestId || signal?.aborted) {
         return;
       }
 
@@ -773,6 +794,7 @@ export class PackageManagerController implements Disposable {
   }
 
   private async setSelectedTarget(targetId: string): Promise<void> {
+    this.cancelPackageReads();
     this.state = {
       ...this.state,
       selectedTargetId: targetId,
@@ -792,6 +814,7 @@ export class PackageManagerController implements Disposable {
   }
 
   private async setSelectedFeed(feedId: string): Promise<void> {
+    this.cancelSearchReads();
     this.state = {
       ...this.state,
       selectedFeedId: feedId,
@@ -812,6 +835,7 @@ export class PackageManagerController implements Disposable {
       return;
     }
 
+    this.cancelSearchReads();
     this.state = {
       ...this.state,
       selectedFeedId: feedId,
@@ -868,8 +892,8 @@ export class PackageManagerController implements Disposable {
     this.publishPackageEvent({ type: "state", state: this.state });
   }
 
-  private publishPackageEvent(message: ExtensionToWebviewMessage): void {
-    this.events.publish(message);
+  private publishPackageEvent(message: PackageManagerEvent): void {
+    this.events.publish(this.messages.next(message));
   }
 
   private async hydrateCachedPackages(
@@ -925,10 +949,37 @@ export class PackageManagerController implements Disposable {
     );
   }
 
-  private beginPackageRefresh(): AbortSignal {
-    this.packageRefreshAbort?.abort();
-    this.packageRefreshAbort = new AbortController();
-    return this.packageRefreshAbort.signal;
+  private beginPackageRefresh(
+    flow: "inventory" | "search" = "inventory",
+  ): AbortSignal {
+    const contextKey = JSON.stringify([
+      this.state.selectedTargetId,
+      this.packageReferenceFingerprint,
+      this.network.context(this.settings),
+      ...(flow === "search"
+        ? [
+            this.state.feeds.map((feed) => [feed.id, feed.url, feed.enabled]),
+            this.state.selectedFeedId,
+            this.state.search,
+            this.state.includePrerelease,
+          ]
+        : []),
+    ]);
+    return this.reads.begin(flow, contextKey).signal;
+  }
+
+  private cancelSearchReads(): void {
+    this.reads.cancel("search");
+    this.reads.cancel("catalog");
+    this.availablePackagesRequestId++;
+    this.packageAvailabilityRequestId++;
+  }
+
+  private cancelPackageReads(): void {
+    this.cancelSearchReads();
+    this.reads.cancel("inventory");
+    this.reads.cancel("details");
+    this.packageInventoryRequestId++;
   }
 
   private createPackageReferenceFingerprint(): Promise<string> {
@@ -1018,6 +1069,7 @@ export class PackageManagerController implements Disposable {
   }
 
   private async performDiscoveryRefresh(): Promise<void> {
+    this.cancelPackageReads();
     if (this.initialization) {
       await this.initialization;
     }

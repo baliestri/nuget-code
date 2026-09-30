@@ -35,6 +35,10 @@ export const usePackageManagerStore = defineStore("packageManager", () => {
   const selectedProjectPathsKey = ref("");
   const pendingSearch = ref<string | undefined>();
   let searchTimeout: ReturnType<typeof window.setTimeout> | undefined;
+  let sessionId: string | undefined;
+  let revision = -1;
+  let resyncRequested = false;
+  const retiredSessions = new Set<string>();
 
   const selectedTargetValue = computed(() => selectedTarget(model.value));
   const currentPackage = computed(() =>
@@ -54,6 +58,7 @@ export const usePackageManagerStore = defineStore("packageManager", () => {
 
     return () => {
       clearSearchTimeout();
+      pendingSearch.value = undefined;
       window.removeEventListener("message", handleExtensionMessage);
     };
   }
@@ -265,7 +270,62 @@ export const usePackageManagerStore = defineStore("packageManager", () => {
     event: MessageEvent<ExtensionToWebviewMessage>,
   ): void {
     const message = event.data;
+    if (
+      !message ||
+      typeof message.sessionId !== "string" ||
+      !message.sessionId ||
+      !Number.isSafeInteger(message.revision) ||
+      message.revision < 0
+    )
+      return;
+    if (retiredSessions.has(message.sessionId)) return;
+    if (message.type === "state") {
+      if (message.sessionId === sessionId && message.revision <= revision)
+        return;
+      if (sessionId !== undefined && message.sessionId !== sessionId) {
+        retiredSessions.add(sessionId);
+        clearSearchTimeout();
+        pendingSearch.value = undefined;
+        selectedVersion.value = "";
+        selectedVersionDirty.value = false;
+        selectedPackageId.value = undefined;
+        selectedDetailFeedId.value = "";
+        lastDetailsRequestKey.value = "";
+        selectedProjectPaths.value = [];
+        selectedProjectPathsKey.value = "";
+      }
+      sessionId = message.sessionId;
+      revision = message.revision;
+      resyncRequested = false;
+    } else {
+      if (message.sessionId === sessionId && message.revision <= revision)
+        return;
+      if (
+        message.sessionId !== sessionId ||
+        message.baseRevision !== revision ||
+        !Number.isSafeInteger(message.baseRevision) ||
+        message.revision !== message.baseRevision + 1
+      ) {
+        if (!resyncRequested) {
+          resyncRequested = true;
+          post({ type: "ready" });
+        }
+        return;
+      }
+      revision = message.revision;
+    }
     switch (message.type) {
+      case "stateDelta":
+        model.value = {
+          ...model.value,
+          ...message.patch,
+          search:
+            pendingSearch.value ?? message.patch.search ?? model.value.search,
+        };
+        if (Object.hasOwn(message.patch, "selectedPackageId"))
+          selectedPackageId.value = message.patch.selectedPackageId;
+        syncPackageControls();
+        return;
       case "state":
         model.value = {
           ...message.state,

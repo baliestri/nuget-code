@@ -1,5 +1,5 @@
 import type {
-  ExtensionToWebviewMessage,
+  PackageManagerEvent,
   PackageManagerOperationKind,
   PackageManagerOperationMessage,
 } from "#contracts";
@@ -10,7 +10,7 @@ export class PackageManagerOperationRunner {
 
   constructor(
     private readonly logger: ExtensionLogger,
-    private readonly publish: (message: ExtensionToWebviewMessage) => void,
+    private readonly publish: (message: PackageManagerEvent) => void,
   ) {}
 
   async run(

@@ -1,14 +1,24 @@
 // @vitest-environment happy-dom
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { usePackageManagerStore } from "./packageManager.js";
 import type {
   ExtensionToWebviewMessage,
+  PackageManagerEvent,
   NuGetPackageItem,
   PackageManagerState,
   WorkspaceTarget,
 } from "#contracts";
+import { createReadFlowStates } from "#manager";
+
+let fixtureRevision = 0;
+const connections: Array<() => void> = [];
+afterEach(() => {
+  for (const disconnect of connections.splice(0)) disconnect();
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 const vscode = vi.hoisted(() => ({
   postMessage: vi.fn(),
@@ -20,6 +30,7 @@ vi.mock("#webview/composables/useVsCodeApi", () => ({
 
 describe("package manager store", () => {
   beforeEach(() => {
+    fixtureRevision = 0;
     setActivePinia(createPinia());
     vscode.postMessage.mockReset();
     vi.useFakeTimers();
@@ -30,7 +41,7 @@ describe("package manager store", () => {
     const remove = vi.spyOn(window, "removeEventListener");
     const store = usePackageManagerStore();
 
-    const disconnect = store.connect();
+    const disconnect = connect(store);
 
     expect(add).toHaveBeenCalledWith("message", expect.any(Function));
     expect(vscode.postMessage).toHaveBeenCalledWith({ type: "ready" });
@@ -41,7 +52,7 @@ describe("package manager store", () => {
 
   it("debounces search while preserving pending input over incoming state", () => {
     const store = usePackageManagerStore();
-    store.connect();
+    connect(store);
 
     store.setSearch("newton");
     dispatch({ type: "state", state: state({ search: "" }) });
@@ -61,7 +72,7 @@ describe("package manager store", () => {
 
   it("selects target, feed, source, folders, and include-prerelease", () => {
     const store = usePackageManagerStore();
-    store.connect();
+    connect(store);
     dispatch({ type: "state", state: state({ targets: [target()] }) });
 
     store.selectTargetId("app");
@@ -110,7 +121,7 @@ describe("package manager store", () => {
 
   it("selects packages locally and requests selected-feed details", () => {
     const store = usePackageManagerStore();
-    store.connect();
+    connect(store);
     const available = packageItem("nuget:demo", "Demo", undefined, "2.0.0", {
       availableFeeds: [
         {
@@ -170,7 +181,7 @@ describe("package manager store", () => {
 
   it("updates state from extension messages", () => {
     const store = usePackageManagerStore();
-    store.connect();
+    connect(store);
     const selected = packageItem("nuget:demo", "Demo", undefined, "2.0.0");
     dispatch({
       type: "state",
@@ -278,7 +289,7 @@ describe("package manager store", () => {
 
   it("runs optimistic project install, update, and remove commands", () => {
     const store = usePackageManagerStore();
-    store.connect();
+    connect(store);
     const item = packageItem("nuget:demo", "Demo", "1.0.0", "2.0.0", {
       projectStates: [
         {
@@ -353,16 +364,153 @@ describe("package manager store", () => {
     store.runPackageCommandForProjects("addPackage", "2.0.0", "nuget", []);
     expect(vscode.postMessage).toHaveBeenCalledTimes(calls);
   });
+
+  it("accepts only contiguous deltas and ignores delayed snapshots and duplicates", () => {
+    const store = usePackageManagerStore();
+    const disconnect = connect(store);
+    try {
+      wire({
+        type: "state",
+        sessionId: "revision-test",
+        revision: 10,
+        state: state({ search: "snapshot" }),
+      });
+      wire({
+        type: "stateDelta",
+        sessionId: "revision-test",
+        baseRevision: 10,
+        revision: 11,
+        patch: { search: "current" },
+      });
+      expect(store.model.search).toBe("current");
+      wire({
+        type: "state",
+        sessionId: "revision-test",
+        revision: 9,
+        state: state({ search: "late" }),
+      });
+      wire({
+        type: "stateDelta",
+        sessionId: "revision-test",
+        baseRevision: 10,
+        revision: 11,
+        patch: { search: "duplicate" },
+      });
+      expect(store.model.search).toBe("current");
+      vscode.postMessage.mockClear();
+      wire({
+        type: "stateDelta",
+        sessionId: "revision-test",
+        baseRevision: 12,
+        revision: 13,
+        patch: { search: "gap" },
+      });
+      wire({
+        type: "logs",
+        sessionId: "revision-test",
+        baseRevision: 14,
+        revision: 15,
+        entries: [],
+      });
+      expect(store.model.search).toBe("current");
+      expect(vscode.postMessage).toHaveBeenCalledExactlyOnceWith({
+        type: "ready",
+      });
+      wire({
+        type: "state",
+        sessionId: "revision-test",
+        revision: 14,
+        state: state({ search: "recovered" }),
+      });
+      expect(store.model.search).toBe("recovered");
+    } finally {
+      disconnect();
+    }
+  });
+
+  it("resynchronizes a new session and clears old controls and pending input", () => {
+    const store = usePackageManagerStore();
+    const disconnect = connect(store);
+    try {
+      wire({
+        type: "state",
+        sessionId: "old-host",
+        revision: 8,
+        state: state({
+          availablePackages: [packageItem("demo", "Demo", "1.0.0")],
+        }),
+      });
+      store.setSelectedVersion("9.0.0");
+      store.setSearch("old pending input");
+      wire({
+        type: "stateDelta",
+        sessionId: "new-host",
+        baseRevision: 0,
+        revision: 1,
+        patch: { search: "invalid without snapshot" },
+      });
+      expect(store.model.search).toBe("old pending input");
+      expect(vscode.postMessage).toHaveBeenCalledWith({ type: "ready" });
+      wire({
+        type: "state",
+        sessionId: "new-host",
+        revision: 2,
+        state: state({
+          search: "new snapshot",
+          selectedPackageId: "other",
+          availablePackages: [packageItem("other", "Other", "2.0.0", "9.0.0")],
+        }),
+      });
+      expect(store.model.search).toBe("new snapshot");
+      expect(store.selectedVersion).toBe("2.0.0");
+      expect(store.selectedProjectPaths).toEqual([]);
+      wire({
+        type: "state",
+        sessionId: "old-host",
+        revision: 99,
+        state: state({ search: "retired" }),
+      });
+      expect(store.model.search).toBe("new snapshot");
+      vscode.postMessage.mockClear();
+      vi.advanceTimersByTime(1000);
+      expect(vscode.postMessage).not.toHaveBeenCalledWith({
+        type: "setSearch",
+        search: "old pending input",
+      });
+    } finally {
+      disconnect();
+    }
+  });
 });
 
-function dispatch(message: ExtensionToWebviewMessage): void {
+function wire(message: ExtensionToWebviewMessage): void {
   window.dispatchEvent(new MessageEvent("message", { data: message }));
+}
+
+function connect(store: ReturnType<typeof usePackageManagerStore>): () => void {
+  const disconnect = store.connect();
+  connections.push(disconnect);
+  return disconnect;
+}
+
+function dispatch(message: PackageManagerEvent): void {
+  const baseRevision = fixtureRevision++;
+  if (message.type === "state")
+    wire({ ...message, sessionId: "fixture", revision: fixtureRevision });
+  else
+    wire({
+      ...message,
+      sessionId: "fixture",
+      baseRevision,
+      revision: fixtureRevision,
+    });
 }
 
 function state(
   overrides: Partial<PackageManagerState> = {},
 ): PackageManagerState {
   return {
+    flows: createReadFlowStates(),
     activeTab: "packages",
     targets: [],
     selectedTargetId: "",

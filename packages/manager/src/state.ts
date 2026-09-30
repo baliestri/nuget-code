@@ -2,11 +2,21 @@ import type { LogEntry, PackageManagerState } from "#contracts";
 import { allFeeds } from "#manager/constants";
 import type { PackageManagerDefaults } from "#manager/types";
 
+export function createReadFlowStates(): PackageManagerState["flows"] {
+  return {
+    inventory: { status: "idle", stale: false, error: null },
+    search: { status: "idle", stale: false, error: null },
+    catalog: { status: "idle", stale: false, error: null },
+    details: { status: "idle", stale: false, error: null },
+  };
+}
+
 export function createInitialPackageManagerState(
   defaults: PackageManagerDefaults,
   logs: LogEntry[],
 ): PackageManagerState {
   return {
+    flows: createReadFlowStates(),
     activeTab: "packages",
     targets: [],
     selectedTargetId: "",
@@ -28,6 +38,7 @@ export function createInitialPackageManagerState(
 
 export function createEmptyPackageManagerState(): PackageManagerState {
   return {
+    flows: createReadFlowStates(),
     activeTab: "packages",
     targets: [],
     selectedTargetId: "",

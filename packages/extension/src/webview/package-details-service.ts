@@ -1,7 +1,7 @@
 import { NuGetClient } from "#client";
 import type { PackageDetailsCache } from "#client/package-details";
 import type {
-  ExtensionToWebviewMessage,
+  PackageManagerEvent,
   NuGetPackageItem,
   PackageFeed,
   PackageManagerState,
@@ -21,7 +21,7 @@ interface PackageDetailsServiceOptions {
   getSettings: () => ExtensionSettings;
   getCache: () => PackageDetailsCache;
   logger: ExtensionLogger;
-  publish: (message: ExtensionToWebviewMessage) => void;
+  publish: (message: PackageManagerEvent) => void;
   persistPackageCache: () => Promise<void>;
 }
 

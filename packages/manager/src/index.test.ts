@@ -10,6 +10,7 @@ import {
   createEmptyPackageManagerState,
   createFolderSizeCache,
   createInitialPackageManagerState,
+  createReadFlowStates,
   defaultPackageVersion,
   defaultSelectedProjectPaths,
   detailFeedId,
@@ -685,6 +686,7 @@ function stateWithPackages(
   state: Partial<PackageManagerState>,
 ): PackageManagerState {
   return {
+    flows: createReadFlowStates(),
     activeTab: "packages",
     targets: [],
     selectedTargetId: "",

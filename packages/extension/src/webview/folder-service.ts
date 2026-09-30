@@ -1,7 +1,7 @@
 import { Uri, commands, env, window } from "vscode";
 import { NuGetClient } from "#client";
 import type {
-  ExtensionToWebviewMessage,
+  PackageManagerEvent,
   PackageManagerOperationKind,
   PackageManagerState,
 } from "#contracts";
@@ -12,7 +12,7 @@ interface FolderServiceOptions {
   getState: () => PackageManagerState;
   setState: (state: PackageManagerState) => void;
   logger: ExtensionLogger;
-  publish: (message: ExtensionToWebviewMessage) => void;
+  publish: (message: PackageManagerEvent) => void;
   persistFolderSizeCache: (
     folders: PackageManagerState["folders"],
   ) => Promise<void>;

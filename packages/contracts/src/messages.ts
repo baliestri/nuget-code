@@ -7,6 +7,7 @@ import {
   PackageManagerState,
 } from "#contracts/package-manager";
 import { NuGetCacheFolder, NuGetPackageItem } from "#contracts/nuget";
+import type { StateRevision, DeltaRevision } from "#contracts/package-loads";
 
 export type WebviewToExtensionMessage =
   | { type: "ready" }
@@ -27,8 +28,10 @@ export type WebviewToExtensionMessage =
       projectPaths?: string[] | undefined;
     };
 
-export type ExtensionToWebviewMessage =
+/** Internal host events; the controller adds the wire envelope exactly once. */
+export type PackageManagerEvent =
   | { type: "state"; state: PackageManagerState }
+  | { type: "stateDelta"; patch: Partial<PackageManagerState> }
   | ({ type: "operationStarted" } & PackageManagerOperationMessage)
   | ({ type: "operationFinished" } & PackageManagerOperationMessage)
   | ({
@@ -68,3 +71,7 @@ export type ExtensionToWebviewMessage =
   | { type: "foldersChanged"; folders: NuGetCacheFolder[] }
   | { type: "log"; entry: LogEntry }
   | { type: "logs"; entries: LogEntry[] };
+
+export type ExtensionToWebviewMessage =
+  | (Extract<PackageManagerEvent, { type: "state" }> & StateRevision)
+  | (Exclude<PackageManagerEvent, { type: "state" }> & DeltaRevision);

@@ -6,11 +6,13 @@ import {
   PackageFeed,
 } from "#contracts/nuget";
 import { WorkspaceTarget } from "#contracts/workspace";
+import type { LoadState, ReadFlow } from "#contracts/package-loads";
 
 export type PackageManagerTab = "packages" | "sources" | "folders" | "logs";
 export type PackageListStatus = "idle" | "loading" | "ready" | "failed";
 
 export interface PackageManagerState {
+  flows: Record<ReadFlow, LoadState>;
   activeTab: PackageManagerTab;
   targets: WorkspaceTarget[];
   selectedTargetId: string;
