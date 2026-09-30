@@ -25,6 +25,7 @@ export {
 } from "#manager";
 
 export interface JsonRequestOptions {
+  generation?: number | undefined;
   headers?: Record<string, string> | undefined;
   signal?: AbortSignal | undefined;
   timeoutMs?: number | undefined;
@@ -77,6 +78,7 @@ export async function getJson<T>(
         current.toString(),
         proxy,
         requestOptions.authContext ?? "anonymous",
+        requestOptions.generation ?? network.facts.generation,
         Object.entries(headers).sort(),
         timeoutMs,
       ]);

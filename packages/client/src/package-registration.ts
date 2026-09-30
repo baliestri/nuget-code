@@ -5,13 +5,82 @@ import type {
   RegistrationPage,
 } from "#client/package-types";
 import type { NuGetClientLogger, NuGetClientSettings } from "#client/types";
-import { getFeedJson } from "#client/feed-http";
+import { getFeedJson, getServiceResource } from "#client/feed-http";
+import { networkFor } from "#client/client-network";
+import { cachePolicy } from "#client/cache";
 import { compareNuGetVersions, parseNuGetVersion } from "#manager";
+
+/** Version names only: this resource never establishes listing status for automatic updates. */
+export async function listPackageVersions(
+  packageId: string,
+  feed: PackageFeed,
+  options: {
+    settings: NuGetClientSettings;
+    logger: NuGetClientLogger;
+    signal?: AbortSignal | undefined;
+    generation?: number | undefined;
+  },
+): Promise<string[] | undefined> {
+  const network = networkFor(options.settings);
+  const generation = options.generation ?? network.facts.generation;
+  const resource = await getServiceResource(
+    feed,
+    "packagebaseaddress",
+    options.settings,
+    options.logger,
+    options.signal,
+    { generation },
+  );
+  if (!resource?.["@id"]) return undefined;
+  try {
+    return await network.facts.read(
+      network.key([
+        "version-list",
+        feed.url,
+        packageId.toLowerCase(),
+        network.context(options.settings),
+      ]),
+      cachePolicy.metadataTtlMs,
+      generation,
+      async (signal) => {
+        const url = new URL(
+          `${encodeURIComponent(packageId.toLowerCase())}/index.json`,
+          resource["@id"]!.replace(/\/?$/, "/"),
+        ).toString();
+        const result = await getFeedJson<{ versions: string[] }>({
+          ...options,
+          feed,
+          url,
+          generation,
+          signal,
+        });
+        if (
+          !Array.isArray(result.versions) ||
+          result.versions.some(
+            (version) =>
+              typeof version !== "string" || !parseNuGetVersion(version),
+          )
+        )
+          throw new Error("Invalid version list.");
+        return result.versions;
+      },
+      options.signal,
+    );
+  } catch (error) {
+    if (
+      options.signal?.aborted ||
+      (error instanceof Error && error.name === "AbortError")
+    )
+      throw error;
+    return undefined;
+  }
+}
 
 export async function readRegistrationEntries(
   registration: RegistrationIndex,
   feed: PackageFeed,
   options: {
+    generation?: number | undefined;
     settings: NuGetClientSettings;
     logger: NuGetClientLogger;
     signal?: AbortSignal | undefined;

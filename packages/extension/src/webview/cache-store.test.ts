@@ -119,3 +119,34 @@ it("keeps data available when initial storage discovery fails and repairs persis
     await new CacheStore(storage, 1024, () => 100).get("a", false),
   ).toBeDefined();
 });
+
+it("N5: bounds a workspace to 25 MiB of actual UTF-8 payload across hundreds of partitions", async () => {
+  const { storage, files } = backend();
+  const budget = 25 * 1024 * 1024;
+  const store = new CacheStore(storage, budget, Date.now);
+  for (let i = 0; i < 230; i++)
+    await store.put({
+      schema: 2,
+      key: `catalog:${i}`,
+      value: "á".repeat(64_000),
+      revision: String(i),
+      savedAt: i,
+      accessedAt: i,
+      expiresAt: null,
+    });
+  const persisted = [...files.values()].reduce(
+    (sum, value) => sum + Buffer.byteLength(value, "utf8"),
+    0,
+  );
+  expect(store.sizeBytes()).toBeLessThanOrEqual(budget);
+  expect(persisted).toBeLessThanOrEqual(budget);
+  expect(files.size).toBeLessThan(230);
+  console.info(
+    JSON.stringify({
+      workspaceBudget: budget,
+      memoryPayloadBytes: store.sizeBytes(),
+      persistedPayloadBytes: persisted,
+      partitions: files.size,
+    }),
+  );
+});

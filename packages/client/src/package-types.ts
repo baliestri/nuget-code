@@ -67,6 +67,8 @@ export interface RegistrationIndex {
 }
 
 export interface RegistrationPage {
+  lower?: string;
+  upper?: string;
   count?: number;
   "@id"?: string;
   items?: RegistrationLeaf[];

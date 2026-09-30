@@ -1,9 +1,18 @@
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import { RequestBroker } from "#client/request-broker";
+import { ResourceCache } from "#client/resource-cache";
+import { LocalFeedIndex } from "#client/local-feed-index";
 import type { NuGetClientSettings } from "#client/types";
 
 /** Lifecycle-owned by the extension. Credential processes never occupy an HTTP slot. */
 export class ClientNetwork {
+  readonly facts = new ResourceCache();
+  readonly localFeeds = new LocalFeedIndex();
+  readonly searches = new ResourceCache(100);
+  refresh(): number {
+    this.searches.refresh();
+    return this.facts.refresh();
+  }
   readonly requests = new RequestBroker(6);
   readonly authentication = new RequestBroker(1);
   private readonly salt = randomBytes(32);
@@ -37,6 +46,9 @@ export class ClientNetwork {
       .digest("hex");
   }
   dispose(): void {
+    this.facts.dispose();
+    this.localFeeds.dispose();
+    this.searches.dispose();
     this.authListeners.clear();
     this.requests.dispose();
     this.authentication.dispose();

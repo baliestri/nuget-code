@@ -341,7 +341,9 @@ describe("version catalogs", () => {
       "2.0.0-beta",
     ]);
     await fs.writeFile(path.join(root, "Demo.3.0.nupkg"), "not a zip");
-    expect((await loadPackageCatalog(options)).complete).toBe(false);
+    expect(
+      (await loadPackageCatalog({ ...options, force: true })).complete,
+    ).toBe(false);
   });
 
   it("resolves relative local feeds from their declaring config", async () => {

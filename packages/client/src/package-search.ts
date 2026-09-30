@@ -1,4 +1,7 @@
 import { getServiceResource, getFeedJson } from "#client/feed-http";
+import { networkFor } from "#client/client-network";
+import { cachePolicy } from "#client/cache";
+import { localSourceDirectory } from "#client/local-package-catalog";
 import type { NuGetClientLogger, NuGetClientSettings } from "#client/types";
 import { toFeedSummary } from "#client/package-details";
 import type { SearchResponse } from "#client/package-types";
@@ -14,7 +17,9 @@ import type {
   PackageVersionInfo,
 } from "#contracts/nuget";
 
-export async function searchPackages(options: {
+interface SearchOptions {
+  force?: boolean;
+  generation?: number | undefined;
   onIncomplete?: () => void;
   feeds: PackageFeed[];
   selectedFeedId: string;
@@ -23,7 +28,49 @@ export async function searchPackages(options: {
   settings: NuGetClientSettings;
   logger: NuGetClientLogger;
   signal?: AbortSignal | undefined;
-}): Promise<NuGetPackageItem[]> {
+}
+export async function searchPackages(
+  options: SearchOptions,
+): Promise<NuGetPackageItem[]> {
+  const network = networkFor(options.settings);
+  const generation =
+    options.generation ??
+    (options.force ? network.refresh() : network.facts.generation);
+  const key = network.key([
+    "search",
+    options.feeds.map((feed) => [feed.id, feed.url, feed.enabled]),
+    options.selectedFeedId,
+    options.query,
+    options.includePrerelease,
+    options.settings.maxSearchResults,
+    network.context(options.settings),
+    generation,
+  ]);
+  const result = await network.searches.read(
+    key,
+    cachePolicy.searchTtlMs,
+    network.searches.generation,
+    async (signal) => {
+      let complete = true;
+      const packages = await searchUncached({
+        ...options,
+        generation,
+        signal,
+        onIncomplete: () => {
+          complete = false;
+        },
+      });
+      return { packages, complete };
+    },
+    options.signal,
+    (value) => value.complete,
+  );
+  if (!result.complete) options.onIncomplete?.();
+  return result.packages;
+}
+async function searchUncached(
+  options: SearchOptions,
+): Promise<NuGetPackageItem[]> {
   const enabledFeeds = options.feeds.filter((feed) => feed.enabled);
   const feeds =
     options.selectedFeedId === "__all__"
@@ -40,6 +87,7 @@ export async function searchPackages(options: {
         logger: options.logger,
         signal: options.signal,
         onIncomplete: options.onIncomplete,
+        generation: options.generation,
       }),
     ),
   );
@@ -53,6 +101,7 @@ export async function searchPackages(options: {
 async function searchFeed(
   feed: PackageFeed,
   options: {
+    generation?: number | undefined;
     onIncomplete?: (() => void) | undefined;
     query: string;
     includePrerelease: boolean;
@@ -63,12 +112,48 @@ async function searchFeed(
   },
 ): Promise<NuGetPackageItem[]> {
   if (!isHttpUrl(feed.url)) {
-    options.onIncomplete?.();
-    options.logger.verbose(
-      "nuget.http",
-      `Skipping non-HTTP source ${feed.name}: ${feed.url}`,
+    const network = networkFor(options.settings);
+    const index = await network.localFeeds.snapshot(
+      localSourceDirectory(feed, options.settings),
+      options.generation ?? network.facts.generation,
+      options.signal,
+      (message) =>
+        options.logger.warning(
+          "nuget.feed",
+          `Local source ${feed.name}: ${message}`,
+        ),
     );
-    return [];
+    if (!index.complete) options.onIncomplete?.();
+    const packages = new Map<
+      string,
+      { name: string; versions: PackageVersionInfo[] }
+    >();
+    for (const entry of index.entries) {
+      if (
+        !entry.packageId
+          .toLowerCase()
+          .includes(options.query.toLowerCase().trim()) ||
+        (!options.includePrerelease && isPrereleaseVersion(entry.version))
+      )
+        continue;
+      const key = entry.packageId.toLowerCase();
+      const item = packages.get(key) ?? { name: entry.packageId, versions: [] };
+      item.versions.push({ version: entry.version, source: feed.name });
+      packages.set(key, item);
+    }
+    return [...packages.values()].slice(0, options.take).map((item) => ({
+      id: `${feed.id}:${item.name}`,
+      name: item.name,
+      availableVersion: item.versions
+        .sort((a, b) => comparePackageVersions(a.version, b.version))
+        .at(-1)!.version,
+      versions: item.versions,
+      sourceName: feed.name,
+      sourceUrl: feed.url,
+      availableFeeds: [toFeedSummary(feed)],
+      projectPaths: [],
+      dependencyGroups: [],
+    }));
   }
 
   try {
@@ -78,6 +163,7 @@ async function searchFeed(
       options.settings,
       options.logger,
       options.signal,
+      { generation: options.generation },
     );
     if (!searchResource?.["@id"]) {
       options.onIncomplete?.();
@@ -97,6 +183,7 @@ async function searchFeed(
       settings: options.settings,
       logger: options.logger,
       signal: options.signal,
+      generation: options.generation,
     });
 
     return (result.data ?? [])

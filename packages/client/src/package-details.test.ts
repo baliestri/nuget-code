@@ -211,7 +211,7 @@ describe("package details", () => {
     expect(getServiceResource).toHaveBeenCalledTimes(2);
   });
 
-  it("uses injected persisted details before hitting the feed", async () => {
+  it("does not accept legacy persisted details without URL/authentication/version identity", async () => {
     const cache = new Map<string, NuGetPackageItem>([
       [
         "nuget:cached:true",
@@ -238,12 +238,9 @@ describe("package details", () => {
         settings: settings(),
         logger: logger(),
       }),
-    ).resolves.toMatchObject({
-      name: "Cached",
-      availableVersion: "1.0.0",
-    });
+    ).resolves.toBeUndefined();
 
-    expect(getServiceResource).not.toHaveBeenCalled();
+    expect(getServiceResource).toHaveBeenCalledOnce();
   });
 
   it("summarizes feeds with display name and color", () => {

@@ -3,12 +3,19 @@ import type { PackageCatalog, PackageFeed } from "#contracts";
 import type { NuGetClientLogger, NuGetClientSettings } from "#client/types";
 import { getFeedJson, getServiceResource } from "#client/feed-http";
 import { HttpError } from "#client/utils";
-import { readRegistrationEntries } from "#client/package-registration";
+import {
+  readRegistrationEntries,
+  listPackageVersions,
+} from "#client/package-registration";
 import { readLocalPackageVersions } from "#client/local-package-catalog";
 import type { RegistrationIndex } from "#client/package-types";
 import { isHttpUrl, mergeCatalogs } from "#manager";
+import { networkFor } from "#client/client-network";
+import { cachePolicy } from "#client/cache";
 
 export interface PackageCatalogOptions {
+  force?: boolean;
+  generation?: number | undefined;
   packageId: string;
   feeds: readonly PackageFeed[];
   settings: NuGetClientSettings;
@@ -32,6 +39,25 @@ async function loadFeedCatalog(
   options: PackageCatalogOptions,
   feed: PackageFeed,
 ): Promise<PackageCatalog> {
+  const network = networkFor(options.settings);
+  return network.facts.read(
+    network.key([
+      "catalog",
+      feed.url,
+      options.packageId.toLowerCase(),
+      network.context(options.settings),
+    ]),
+    cachePolicy.metadataTtlMs,
+    options.generation ?? network.facts.generation,
+    (signal) => loadFeedCatalogUncached({ ...options, signal }, feed),
+    options.signal,
+    (value) => value.complete,
+  );
+}
+async function loadFeedCatalogUncached(
+  options: PackageCatalogOptions,
+  feed: PackageFeed,
+): Promise<PackageCatalog> {
   const { packageId, settings, logger, signal } = options;
   try {
     signal?.throwIfAborted();
@@ -39,15 +65,26 @@ async function loadFeedCatalog(
       const local = await readLocalPackageVersions(packageId, feed, options);
       return catalog(packageId, feed.url, local.versions, local.complete);
     }
+    const versionNames = await listPackageVersions(packageId, feed, options);
     const resource = await getServiceResource(
       feed,
       "registrationsbaseurl",
       settings,
       logger,
       signal,
+      { generation: options.generation },
     );
     if (!resource?.["@id"])
-      throw new Error("Source has no registration resource.");
+      return catalog(
+        packageId,
+        feed.url,
+        (versionNames ?? []).map((version) => ({
+          version,
+          feedUrls: [feed.url],
+          listed: false,
+        })),
+        false,
+      );
     const base = resource["@id"].endsWith("/")
       ? resource["@id"]
       : `${resource["@id"]}/`;
@@ -57,7 +94,14 @@ async function loadFeedCatalog(
     ).toString();
     let registration: RegistrationIndex;
     try {
-      registration = await getFeedJson({ url, feed, settings, logger, signal });
+      registration = await getFeedJson({
+        url,
+        feed,
+        settings,
+        logger,
+        signal,
+        generation: options.generation,
+      });
     } catch (error) {
       if (error instanceof HttpError && error.statusCode === 404)
         return catalog(packageId, feed.url, [], true);
@@ -96,6 +140,13 @@ export async function loadPackageCatalog(
   options: PackageCatalogOptions,
 ): Promise<PackageCatalog> {
   options.signal?.throwIfAborted();
+  const network = networkFor(options.settings);
+  options = {
+    ...options,
+    generation:
+      options.generation ??
+      (options.force ? network.refresh() : network.facts.generation),
+  };
   // NuGet's legacy ID grammar uses .NET Unicode word categories, not ASCII \w.
   if (
     options.packageId.length > 100 ||

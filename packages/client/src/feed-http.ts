@@ -1,6 +1,7 @@
 import { getFeedAuthorizationHeader } from "#client/credentials";
 import { networkFor } from "#client/client-network";
 import { deadline } from "#client/http-retry";
+import { cachePolicy } from "#client/cache";
 import type { NuGetClientLogger, NuGetClientSettings } from "#client/types";
 import { getJson, HttpError } from "#client/utils";
 import { isHttpUrl } from "#manager";
@@ -44,14 +45,27 @@ export async function getServiceResource(
   settings: NuGetClientSettings,
   logger: NuGetClientLogger,
   signal?: AbortSignal | undefined,
+  options: { force?: boolean; generation?: number | undefined } = {},
 ): Promise<ServiceResource | undefined> {
-  const serviceIndex = await getFeedJson<ServiceIndex>({
-    url: feed.url,
-    feed,
-    settings,
-    logger,
+  const network = networkFor(settings);
+  const generation =
+    options.generation ??
+    (options.force ? network.refresh() : network.facts.generation);
+  const serviceIndex = await network.facts.read(
+    network.key(["service-index", feed.url, network.context(settings)]),
+    cachePolicy.metadataTtlMs,
+    generation,
+    (signal) =>
+      getFeedJson<ServiceIndex>({
+        url: feed.url,
+        feed,
+        settings,
+        logger,
+        signal,
+        generation,
+      }),
     signal,
-  });
+  );
   const resources = serviceIndex.resources?.filter((resource) =>
     resource["@type"]?.toLowerCase().startsWith(resourceType),
   );
@@ -67,6 +81,7 @@ export async function getServiceResource(
 }
 
 export async function getFeedJson<T>(options: {
+  generation?: number | undefined;
   url: string;
   feed: PackageFeed;
   settings: NuGetClientSettings;
@@ -131,6 +146,7 @@ export async function getFeedJson<T>(options: {
 
 async function requestFeedJson<T>(
   options: {
+    generation?: number | undefined;
     url: string;
     settings: NuGetClientSettings;
     signal?: AbortSignal | undefined;
@@ -149,5 +165,6 @@ async function requestFeedJson<T>(
     retryState: options.retryState,
     network,
     authContext: network.context(options.settings),
+    generation: options.generation,
   });
 }
