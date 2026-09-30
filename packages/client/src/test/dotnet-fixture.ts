@@ -136,6 +136,10 @@ export async function createDotnetFixture(options: {
       path.join(root, "Directory.Build.targets"),
       "<Project />\n",
     );
+    await fs.writeFile(
+      path.join(root, "Directory.Packages.props"),
+      "<Project />\n",
+    );
     const feedPath = path.join(root, "feed");
     await fs.mkdir(feedPath);
     await fs.writeFile(

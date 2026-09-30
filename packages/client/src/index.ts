@@ -29,6 +29,7 @@ export * from "#client/folders";
 export * from "#client/packages";
 export * from "#client/package-version-edits";
 export * from "#client/project-evaluation";
+export * from "#client/compatibility-sandbox";
 export { ProjectContextError } from "#client/project-context";
 export * from "#client/types";
 
