@@ -18,6 +18,7 @@ export type PackageManagerTab = "packages" | "sources" | "folders" | "logs";
 export type PackageListStatus = "idle" | "loading" | "ready" | "failed";
 
 export interface PackageManagerState {
+  sourceEditor?: import("#contracts/nuget").SourceEditorState;
   flows: Record<ReadFlow, LoadState>;
   updates: UpdateProjection;
   operations: readonly MutationOperation[];

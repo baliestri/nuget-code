@@ -9,8 +9,11 @@ import {
 import { NuGetCacheFolder, NuGetPackageItem } from "#contracts/nuget";
 import type { StateRevision, DeltaRevision } from "#contracts/package-loads";
 import type { MutationOutcome, MutationPlan } from "#contracts/operations";
+import type { SourceEditRequest } from "#contracts/nuget";
 
 export type WebviewToExtensionMessage =
+  | { type: "sourceEditor"; reload?: boolean }
+  | { type: "editSource"; request: SourceEditRequest }
   | { type: "ready" }
   | { type: "cancelOperation"; operationId: string }
   | { type: "retryOperation"; operationId: string }

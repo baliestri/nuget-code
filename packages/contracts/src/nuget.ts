@@ -1,4 +1,7 @@
 export interface PackageFeed {
+  /** Non-secret packageSources attributes retained when editing inherited declarations. */
+  sourceAttributes?: Record<string, string> | undefined;
+  declaredUrl?: string;
   id: string;
   name: string;
   url: string;
@@ -61,6 +64,8 @@ export interface NuGetPackageItem {
 }
 
 export interface NuGetConfigFile {
+  mappingNames?: string[];
+  revision?: string;
   sourceDirectives?: readonly {
     action: "add" | "remove" | "clear";
     key?: string;
@@ -78,6 +83,36 @@ export interface NuGetConfigFile {
   hasCredentials: boolean;
   scope: string;
   feeds: PackageFeed[];
+}
+
+export interface SourceEdit {
+  action: "upsert" | "remove";
+  originalName?: string | undefined;
+  name: string;
+  url: string;
+  enabled: boolean;
+  allowInsecure: boolean;
+}
+export interface SourceDestination {
+  id: string;
+  path: string;
+  label: string;
+  revision: string;
+  suggested?: boolean;
+}
+export interface SourceEditRequest {
+  requestId: string;
+  sourceId: string;
+  sourceRevision: string;
+  destinationId: string;
+  destinationRevision: string;
+  edit: SourceEdit;
+}
+export interface SourceEditorState {
+  requestId?: string;
+  destinations: SourceDestination[];
+  status: "idle" | "loading" | "saving" | "saved" | "failed";
+  message: string;
 }
 
 export interface NuGetCacheFolder {

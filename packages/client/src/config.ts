@@ -10,6 +10,8 @@ import type {
   NuGetWorkspaceConfigOptions,
 } from "#client/types";
 import { parseXml } from "@rgrove/parse-xml";
+import { decodeProjectText } from "#client/project-files";
+import { credentialSourceName } from "#client/source-edits";
 
 export async function loadSources(
   settings: NuGetClientSettings,
@@ -94,7 +96,8 @@ async function readConfig(
   }
 
   try {
-    const xml = await fs.readFile(configPath, "utf8");
+    const bytes = await fs.readFile(configPath);
+    const xml = decodeProjectText(bytes).text;
     const doc = parseXml(xml) as XmlContainer;
     const configuration = firstElement(doc, "configuration");
     const packageSources = childElements(
@@ -108,16 +111,18 @@ async function readConfig(
     const credentialKeys = new Set(
       childElements(
         firstElement(configuration, "packageSourceCredentials"),
-      ).map((element) => element.name),
+      ).map((element) => credentialSourceName(element.name)),
     );
-    const disabled = new Set(
-      disabledSources
-        .filter((source) => String(source.value).toLowerCase() === "true")
-        .map((source) => source.key),
-    );
+    const disabled = new Set(disabledSources.map((source) => source.key));
     const feeds = packageSources
       .filter(hasPackageSource)
       .map<PackageFeed>((source) => ({
+        sourceAttributes: Object.fromEntries(
+          Object.entries(source).filter(
+            (entry): entry is [string, string] => entry[1] !== undefined,
+          ),
+        ),
+        declaredUrl: source.value,
         id: `${configPath}:${source.key}`,
         name: source.key,
         url:
@@ -133,6 +138,13 @@ async function readConfig(
       }));
 
     return {
+      revision: createHash("sha256").update(bytes).digest("hex"),
+      mappingNames: childElements(
+        firstElement(configuration, "packageSourceMapping"),
+        "packageSource",
+      )
+        .map((element) => element.attributes.key)
+        .filter((value): value is string => !!value),
       sourceDirectives: childElements(
         firstElement(configuration, "packageSources"),
       )
@@ -148,9 +160,7 @@ async function readConfig(
         .map((element) => ({
           action: element.name as "add" | "remove" | "clear",
           ...(element.attributes.key ? { key: element.attributes.key } : {}),
-          ...(element.attributes.value !== undefined
-            ? { disabled: element.attributes.value.toLowerCase() === "true" }
-            : {}),
+          ...(element.attributes.value !== undefined ? { disabled: true } : {}),
         })),
       credentialNames: [...credentialKeys],
       id: configPath,
@@ -235,6 +245,14 @@ function createEffectiveConfig(
   }));
   return {
     id: "__effective__",
+    revision: createHash("sha256")
+      .update(
+        JSON.stringify([
+          configs.map((config) => [config.path, config.revision]),
+          options.projectPaths,
+        ]),
+      )
+      .digest("hex"),
     name: "[Effective NuGet.config]",
     path: "",
     origin: "effective",

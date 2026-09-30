@@ -30,6 +30,9 @@ interface ActiveOperation {
 export class MutationService {
   private readonly queue = new MutationQueue();
   private readonly operations = new Map<string, ActiveOperation>();
+  exclusive<T>(work: () => Promise<T>): Promise<T> {
+    return this.queue.enqueue(`source:${randomUUID()}`, work);
+  }
   constructor(
     private readonly publish: (
       operations: readonly MutationOperation[],

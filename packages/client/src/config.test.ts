@@ -12,6 +12,31 @@ describe("NuGet config loading", () => {
     process.env = { ...previousEnv };
   });
 
+  it("matches NuGet by treating disabled keys with value false as disabled", async () => {
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), "nuget-disabled-false-"),
+    );
+    try {
+      const configPath = path.join(root, "NuGet.Config");
+      await fs.writeFile(
+        configPath,
+        '<configuration><packageSources><clear/><add key="Probe" value="https://probe.example/v3/index.json"/></packageSources><disabledPackageSources><clear/><add key="Probe" value="false"/></disabledPackageSources></configuration>',
+      );
+      const sources = await loadSources(settings(), logger(), {
+        workspaceConfigPaths: [configPath],
+        workspaceFolderPaths: [root],
+      });
+      expect(
+        sources.find((source) => source.path === configPath)?.feeds,
+      ).toEqual([expect.objectContaining({ name: "Probe", enabled: false })]);
+      expect(sources[0]?.feeds).toEqual([
+        expect.objectContaining({ name: "Probe", enabled: false }),
+      ]);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("gives relative local feeds distinct identities based on their declaring config", async () => {
     const root = await fs.mkdtemp(
       path.join(os.tmpdir(), "nuget-config-relative-"),

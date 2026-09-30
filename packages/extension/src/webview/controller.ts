@@ -72,11 +72,19 @@ import { MutationService } from "#extension/webview/mutation-service";
 import { PackageMutationPort } from "#extension/webview/package-mutation-port";
 import { packageStatus } from "#extension/webview/package-status";
 import {
+  SourceEditService,
+  sourceEditSummary,
+} from "#extension/webview/source-edit-service";
+import {
   PackageDataAdapter,
   type DataEnvironment,
 } from "#extension/webview/package-data-adapter";
 
 export class PackageManagerController implements Disposable {
+  private readonly sourceEditor = new SourceEditService();
+  private sourceEditorRevision = 0;
+  private sourceEditPending = false;
+  private disposed = false;
   private readonly messages = new StateMessageSequence();
   private readonly network = new ClientNetwork();
   private webview: Webview | undefined;
@@ -438,6 +446,12 @@ export class PackageManagerController implements Disposable {
           message.version,
         );
         return;
+      case "sourceEditor":
+        await this.describeSourceEditor(message.reload);
+        return;
+      case "editSource":
+        await this.editSource(message.request);
+        return;
       case "selectSource":
         this.state = { ...this.state, selectedSourceId: message.sourceId };
         this.postState();
@@ -589,6 +603,9 @@ export class PackageManagerController implements Disposable {
   }
 
   dispose(): void {
+    this.disposed = true;
+    this.sourceEditorRevision++;
+    this.sourceEditor.invalidate();
     this.mutations.dispose();
     this.network.dispose();
     this.data.dispose();
@@ -693,7 +710,11 @@ export class PackageManagerController implements Disposable {
       this.state = {
         ...this.state,
         sources,
-        selectedSourceId: sources[0]?.id,
+        selectedSourceId: sources.some(
+          (source) => source.id === this.state.selectedSourceId,
+        )
+          ? this.state.selectedSourceId
+          : sources[0]?.id,
         feeds: [PackageManagementCore.feeds.allFeeds, ...effectiveFeeds],
         selectedFeedId: PackageManagementCore.feeds.selectInitialFeed(
           [PackageManagementCore.feeds.allFeeds, ...effectiveFeeds],
@@ -704,8 +725,169 @@ export class PackageManagerController implements Disposable {
 
       this.postState();
       void this.feedHealth.check(effectiveFeeds);
-      await this.refreshAvailablePackages();
+      this.data.invalidate(targetId);
+      await this.refreshPackages({ forceInventory: true });
     });
+  }
+
+  private async describeSourceEditor(reload = false): Promise<void> {
+    if (this.sourceEditPending || this.disposed) return;
+    const revision = ++this.sourceEditorRevision;
+    const targetId = this.state.selectedTargetId;
+    const isCurrent = () =>
+      revision === this.sourceEditorRevision &&
+      this.state.selectedTargetId === targetId &&
+      !this.sourceEditPending;
+    this.state = {
+      ...this.state,
+      sourceEditor: {
+        destinations: [],
+        status: "loading",
+        message: "Loading source configuration…",
+      },
+    };
+    this.postState();
+    try {
+      if (reload) await this.reloadSources();
+      if (!isCurrent()) return;
+      const destinations = await this.sourceEditor.describe(
+        this.state.sources,
+        workspace.workspaceFolders?.map((folder) => folder.uri.fsPath) ?? [],
+        this.state.targets.find((target) => target.id === targetId),
+      );
+      if (!isCurrent()) return;
+      this.state = {
+        ...this.state,
+        sourceEditor: { destinations, status: "idle", message: "" },
+      };
+    } catch (error) {
+      if (!isCurrent()) return;
+      this.state = {
+        ...this.state,
+        sourceEditor: {
+          destinations: [],
+          status: "failed",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Could not load source destinations. Reload to retry.",
+        },
+      };
+    }
+    this.postState();
+  }
+
+  private async editSource(
+    request: import("#contracts").SourceEditRequest,
+  ): Promise<void> {
+    if (
+      this.disposed ||
+      this.sourceEditPending ||
+      this.state.sourceEditor?.status === "loading"
+    )
+      return;
+    this.sourceEditPending = true;
+    const revision = ++this.sourceEditorRevision;
+    const targetId = this.state.selectedTargetId;
+    const target = this.state.targets.find((target) => target.id === targetId);
+    const settings = this.settings;
+    const isCurrent = () =>
+      revision === this.sourceEditorRevision &&
+      this.state.selectedTargetId === targetId &&
+      settings === this.settings;
+    const requestId = request?.requestId;
+    this.state = {
+      ...this.state,
+      sourceEditor: {
+        destinations: this.state.sourceEditor?.destinations ?? [],
+        status: "saving",
+        message: "Saving source configuration…",
+        requestId,
+      },
+    };
+    this.postState();
+    let status: "saved" | "failed" = "saved";
+    let message = "";
+    let savedFile: string | undefined;
+    try {
+      await this.mutations.exclusive(() =>
+        this.packageReferenceWatcher.suspendDuring(async () => {
+          try {
+            if (!isCurrent())
+              throw new Error("The selected context changed. Reload Sources.");
+            const sources = await loadPackageSources(
+              settings,
+              this.logger,
+              target,
+            );
+            if (!isCurrent())
+              throw new Error("The selected context changed. Reload Sources.");
+            const file = await this.sourceEditor.apply(
+              request,
+              sources,
+              isCurrent,
+            );
+            savedFile = file;
+            message = `Saved ${file}. This destination may affect other projects; descendant configs can override it.`;
+          } catch (error) {
+            status = "failed";
+            message =
+              error instanceof Error
+                ? error.message
+                : "Could not save source configuration.";
+          } finally {
+            // Reconciliation remains inside the mutation slot, including partial editor saves.
+            if (isCurrent()) {
+              try {
+                await this.reloadSources();
+                if (savedFile)
+                  message = sourceEditSummary(
+                    savedFile,
+                    request.edit,
+                    this.state.sources,
+                  );
+              } catch {
+                status = "failed";
+                message += " Could not reload sources; retry refresh.";
+              }
+            }
+          }
+        }),
+      );
+    } catch (error) {
+      status = "failed";
+      message =
+        error instanceof Error
+          ? error.message
+          : "Could not save source configuration.";
+    } finally {
+      this.sourceEditPending = false;
+    }
+    if (!isCurrent()) {
+      if (
+        !this.state.sourceEditor?.destinations.length &&
+        !this.state.sourceEditor?.message
+      )
+        await this.describeSourceEditor();
+      return;
+    }
+    let destinations: import("#contracts").SourceDestination[] = [];
+    try {
+      destinations = await this.sourceEditor.describe(
+        this.state.sources,
+        workspace.workspaceFolders?.map((folder) => folder.uri.fsPath) ?? [],
+        target,
+      );
+    } catch {
+      status = "failed";
+      message += " Could not reload destinations; reload the editor.";
+    }
+    if (!isCurrent()) return;
+    this.state = {
+      ...this.state,
+      sourceEditor: { destinations, status, message, requestId },
+    };
+    this.postState();
   }
 
   private async refreshPackages(
@@ -793,6 +975,12 @@ export class PackageManagerController implements Disposable {
   }
 
   private async setSelectedTarget(targetId: string): Promise<void> {
+    this.sourceEditorRevision++;
+    this.sourceEditor.invalidate();
+    this.state = {
+      ...this.state,
+      sourceEditor: { destinations: [], status: "idle", message: "" },
+    };
     this.cancelPackageReads();
     this.state = {
       ...this.state,
@@ -831,6 +1019,7 @@ export class PackageManagerController implements Disposable {
     this.hydratePackageDetailsCache(await this.hydrateCachedPackages());
     this.updateSolutionStatusBar();
     this.postState();
+    if (this.state.activeTab === "sources") await this.describeSourceEditor();
     await this.refreshPackages();
   }
 
