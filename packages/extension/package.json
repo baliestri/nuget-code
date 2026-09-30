@@ -22,6 +22,7 @@
     "format": "prettier . --write",
     "test": "vitest run",
     "test:integration": "vscode-test",
+    "test:dotnet": "vitest run --config vitest.dotnet.config.ts",
     "vscode:prepublish": "pnpm --filter ../.. run compile",
     "package": "pnpm vsce package --no-dependencies",
     "publish": "pnpm vsce publish --no-dependencies"

@@ -68,6 +68,9 @@ jobs:
       - name: Test effective SDK and package operations
         run: pnpm --filter @nuget-code/client run test:integration
 
+      - name: Test host data projection with the effective SDK
+        run: pnpm --filter ./packages/extension run test:dotnet
+
   gate:
     name: SDK matrix result
     if: ${{ always() }}
