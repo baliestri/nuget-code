@@ -1,4 +1,7 @@
+import type { ClientNetwork } from "#client/client-network";
+
 export interface NuGetClientSettings {
+  network?: ClientNetwork | undefined;
   credentialProviderPaths: string[];
   dotnetPath: string;
   extraConfigPaths: string[];
