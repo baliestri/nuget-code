@@ -180,6 +180,144 @@ describe("package manager store", () => {
     ).toHaveLength(2);
   });
 
+  it("preserves a version chosen from details through loading, failure and unrelated updates", () => {
+    const store = usePackageManagerStore();
+    connect(store);
+    const item = packageItem("installed:demo", "Demo", "1.0.0");
+    dispatch({
+      type: "state",
+      state: state({
+        feeds: [
+          {
+            id: "nuget",
+            name: "nuget.org",
+            url: "https://nuget",
+            enabled: true,
+          },
+        ],
+        selectedFeedId: "nuget",
+        selectedPackageId: item.id,
+        installedPackages: [item],
+        targets: [target()],
+        selectedTargetId: "app",
+      }),
+    });
+    dispatch({
+      type: "stateDelta",
+      patch: {
+        packageDetails: {
+          packageId: item.id,
+          feedId: "nuget",
+          version: "1.0.0",
+          packageItem: packageItem("details", "Demo", undefined, "2.0.0", {
+            versions: [
+              { version: "1.0.0", source: "nuget.org" },
+              { version: "2.0.0", source: "nuget.org" },
+            ],
+          }),
+        },
+      },
+    });
+    store.setSelectedVersion("2.0.0");
+    vscode.postMessage.mockClear();
+    for (const status of ["loading", "failed", "ready"] as const) {
+      dispatch({
+        type: "stateDelta",
+        patch: {
+          packageDetails: null,
+          flows: {
+            ...store.model.flows,
+            details: {
+              status,
+              stale: false,
+              error: status === "failed" ? "offline" : null,
+            },
+          },
+        },
+      });
+      expect(store.selectedVersion).toBe("2.0.0");
+      expect(store.versionsFor(store.currentPackage!)).toContain("2.0.0");
+    }
+    expect(vscode.postMessage).not.toHaveBeenCalled();
+    dispatch({
+      type: "stateDelta",
+      patch: {
+        updates: {
+          ...store.model.updates,
+          context: {
+            ...store.model.updates.context,
+            revision: "new-inventory-revision",
+          },
+        },
+      },
+    });
+    expect(store.selectedVersion).toBe("2.0.0");
+    expect(vscode.postMessage).not.toHaveBeenCalled();
+    store.runPackageCommandForProjects(
+      "upgradeSelectedPackage",
+      store.selectedVersion,
+      store.selectedDetailFeedId,
+      ["src/App.csproj"],
+    );
+    expect(vscode.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: "upgradeSelectedPackage",
+        version: "2.0.0",
+      }),
+    );
+  });
+
+  it("uses the clicked package source with All feeds instead of retaining another package's feed", () => {
+    const store = usePackageManagerStore();
+    connect(store);
+    const local = packageItem("local:demo", "Local", undefined, "1.0.0", {
+      sourceUrl: "c:/offline",
+    });
+    const remote = packageItem("remote:demo", "Remote", undefined, "2.0.0", {
+      sourceUrl: "https://nuget",
+    });
+    dispatch({
+      type: "state",
+      state: state({
+        selectedFeedId: "__all__",
+        selectedPackageId: local.id,
+        availablePackages: [local, remote],
+        feeds: [
+          {
+            id: "offline",
+            name: "VS Offline",
+            url: "c:/offline",
+            enabled: true,
+          },
+          {
+            id: "nuget",
+            name: "nuget.org",
+            url: "https://nuget",
+            enabled: true,
+          },
+        ],
+      }),
+    });
+    store.setSelectedDetailFeed("offline");
+    dispatch({ type: "stateDelta", patch: { selectedPackageId: remote.id } });
+    expect(store.selectedDetailFeedId).toBe("nuget");
+    vscode.postMessage.mockClear();
+    for (let i = 0; i < 4; i++) {
+      dispatch({
+        type: "stateDelta",
+        patch: {
+          packageDetails: null,
+          flows: {
+            ...store.model.flows,
+            details: { status: "failed", stale: false, error: "offline" },
+          },
+        },
+      });
+    }
+    expect(store.selectedVersion).toBe("2.0.0");
+    expect(vscode.postMessage).not.toHaveBeenCalled();
+  });
+
   it("updates state from extension messages", () => {
     const store = usePackageManagerStore();
     connect(store);

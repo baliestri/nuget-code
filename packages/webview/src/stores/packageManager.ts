@@ -28,10 +28,16 @@ export const usePackageManagerStore = defineStore("packageManager", () => {
   const { postMessage } = useVsCodeApi();
   const model = ref(createEmptyPackageManagerState());
   const selectedVersion = ref("");
-  const selectedVersionDirty = ref(false);
   const selectedPackageId = ref<string | undefined>();
   const selectedDetailFeedId = ref("");
   const lastDetailsRequestKey = ref("");
+  let controlsPackageKey = "";
+  // Version choices outlive transient selected-version metadata. This is presentation
+  // state only: the host still verifies the exact version/source before any mutation.
+  const detailVersions = ref<{ key: string; versions: string[] }>({
+    key: "",
+    versions: [],
+  });
   const selectedProjectPaths = ref<string[]>([]);
   const selectedProjectPathsKey = ref("");
   const pendingSearch = ref<string | undefined>();
@@ -69,6 +75,39 @@ export const usePackageManagerStore = defineStore("packageManager", () => {
       (candidate) => candidate.compatibility.status === "compatible",
     ),
   );
+  function packageControlKey(item: NuGetPackageItem): string {
+    return JSON.stringify([model.value.selectedTargetId, item.id]);
+  }
+  function detailVersionsKey(item: NuGetPackageItem): string {
+    const feed = model.value.feeds.find(
+      (feed) => feed.id === selectedDetailFeedId.value,
+    );
+    return JSON.stringify([
+      packageControlKey(item),
+      selectedDetailFeedId.value,
+      feed?.url,
+    ]);
+  }
+  function rememberDetailVersions(item: NuGetPackageItem): void {
+    const key = detailVersionsKey(item);
+    if (detailVersions.value.key !== key)
+      detailVersions.value = { key, versions: [] };
+    const details = model.value.packageDetails;
+    if (
+      details?.packageId === item.id &&
+      details.feedId === selectedDetailFeedId.value
+    ) {
+      detailVersions.value = {
+        key,
+        versions: [
+          ...new Set([
+            ...detailVersions.value.versions,
+            ...packageVersions(details.packageItem),
+          ]),
+        ],
+      };
+    }
+  }
   function versionsFor(packageItem: NuGetPackageItem): string[] {
     const installed = new Set(
       model.value.installedReferences
@@ -94,7 +133,14 @@ export const usePackageManagerStore = defineStore("packageManager", () => {
         .filter((entry) => !feed || entry.feedUrls.includes(feed.url))
         .map((entry) => entry.version) ?? [];
     return [
-      ...new Set([...packageVersions(packageItem), ...versions, ...installed]),
+      ...new Set([
+        ...packageVersions(packageItem),
+        ...versions,
+        ...installed,
+        ...(detailVersions.value.key === detailVersionsKey(packageItem)
+          ? detailVersions.value.versions
+          : []),
+      ]),
     ]
       .filter(
         (version) =>
@@ -163,7 +209,6 @@ export const usePackageManagerStore = defineStore("packageManager", () => {
   function selectTargetId(targetId: string): void {
     selectedPackageId.value = undefined;
     selectedVersion.value = "";
-    selectedVersionDirty.value = false;
     selectedProjectPaths.value = [];
     selectedProjectPathsKey.value = "";
     model.value = {
@@ -177,6 +222,7 @@ export const usePackageManagerStore = defineStore("packageManager", () => {
 
   function selectFeedId(feedId: string): void {
     model.value = { ...model.value, selectedFeedId: feedId };
+    controlsPackageKey = "";
     post({ type: "selectFeed", feedId });
     syncPackageControls();
   }
@@ -213,9 +259,10 @@ export const usePackageManagerStore = defineStore("packageManager", () => {
     selectedPackageId.value = packageItem.id;
     const selected =
       selectedPackage(model.value, packageItem.id) ?? packageItem;
-    selectedVersionDirty.value = false;
     selectedVersion.value = defaultPackageVersion(selected);
     selectedDetailFeedId.value = detailFeedId(selected, model.value);
+    controlsPackageKey = packageControlKey(selected);
+    rememberDetailVersions(selected);
     selectedProjectPaths.value = defaultSelectedProjectPaths(
       selected,
       selectedTarget(model.value),
@@ -229,23 +276,20 @@ export const usePackageManagerStore = defineStore("packageManager", () => {
   }
 
   function setSelectedVersion(version: string): void {
+    if (currentPackage.value) rememberDetailVersions(currentPackage.value);
     if (
       currentPackage.value &&
       !versionsFor(currentPackage.value).includes(version)
     )
       return;
     selectedVersion.value = version;
-    selectedVersionDirty.value = true;
     if (currentPackage.value)
       requestPackageDetails(currentPackage.value, selectedDetailFeedId.value);
   }
 
   function setSelectedDetailFeed(feedId: string): void {
     selectedDetailFeedId.value = feedId;
-    const selected = currentPackage.value;
-    if (selected) {
-      requestPackageDetails(selected, feedId);
-    }
+    syncPackageControls();
   }
 
   function setProjectSelected(projectPath: string, checked: boolean): void {
@@ -314,10 +358,11 @@ export const usePackageManagerStore = defineStore("packageManager", () => {
         clearSearchTimeout();
         pendingSearch.value = undefined;
         selectedVersion.value = "";
-        selectedVersionDirty.value = false;
         selectedPackageId.value = undefined;
         selectedDetailFeedId.value = "";
         lastDetailsRequestKey.value = "";
+        controlsPackageKey = "";
+        detailVersions.value = { key: "", versions: [] };
         selectedProjectPaths.value = [];
         selectedProjectPathsKey.value = "";
       }
@@ -409,8 +454,6 @@ export const usePackageManagerStore = defineStore("packageManager", () => {
           model.value = applyPackageDetails(model.value, message.packageItem);
           selectedDetailFeedId.value = message.feedId;
           syncPackageControls();
-        } else {
-          lastDetailsRequestKey.value = "";
         }
         return;
       case "foldersChanged":
@@ -434,33 +477,46 @@ export const usePackageManagerStore = defineStore("packageManager", () => {
 
   function syncPackageControls(): void {
     model.value.hasUpgrades = executableUpdates.value.length > 0;
+    const base = selectedPackage(
+      model.value,
+      selectedPackageId.value ?? model.value.selectedPackageId,
+    );
+    if (base && controlsPackageKey !== packageControlKey(base)) {
+      controlsPackageKey = packageControlKey(base);
+      selectedDetailFeedId.value = detailFeedId(base, model.value);
+      selectedVersion.value = "";
+    }
+    if (
+      base &&
+      !model.value.feeds.some(
+        (feed) =>
+          feed.enabled &&
+          feed.id === selectedDetailFeedId.value &&
+          feed.id !== "__all__",
+      )
+    ) {
+      selectedDetailFeedId.value = detailFeedId(base, model.value);
+    }
+    if (base) rememberDetailVersions(base);
     const current = currentPackage.value;
     if (!current) {
       selectedVersion.value = "";
-      selectedVersionDirty.value = false;
       selectedProjectPaths.value = [];
       selectedProjectPathsKey.value = "";
+      controlsPackageKey = "";
+      lastDetailsRequestKey.value = "";
+      detailVersions.value = { key: "", versions: [] };
       return;
     }
 
     if (
-      !selectedVersionDirty.value ||
+      !selectedVersion.value ||
       !versionsFor(current).includes(selectedVersion.value)
     ) {
       const preferred = defaultPackageVersion(current);
       selectedVersion.value = versionsFor(current).includes(preferred)
         ? preferred
         : (versionsFor(current).at(-1) ?? "");
-      selectedVersionDirty.value = false;
-    }
-
-    if (
-      !model.value.feeds.some(
-        (feed) =>
-          feed.id === selectedDetailFeedId.value && feed.id !== "__all__",
-      )
-    ) {
-      selectedDetailFeedId.value = detailFeedId(current, model.value);
     }
 
     const target = selectedTargetValue.value;
@@ -491,7 +547,16 @@ export const usePackageManagerStore = defineStore("packageManager", () => {
       return;
     }
 
-    const key = `${model.value.updates.context.revision}:${packageItem.id}:${feedId}:${model.value.includePrerelease}:${selectedVersion.value}`;
+    // Proof/inventory revisions do not change a user's detail request. Explicit
+    // refresh is owned by the host; loading/error deltas must not trigger retries.
+    const key = JSON.stringify([
+      model.value.selectedTargetId,
+      packageItem.id,
+      feedId,
+      model.value.feeds.find((feed) => feed.id === feedId)?.url,
+      model.value.includePrerelease,
+      selectedVersion.value,
+    ]);
     if (lastDetailsRequestKey.value === key) {
       return;
     }

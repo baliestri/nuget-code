@@ -292,7 +292,7 @@ describe("feed and version helpers", () => {
         }),
         { ...state, selectedFeedId: "offline" },
       ),
-    ).toBe("private");
+    ).toBe("offline");
     expect(feedName("private", state)).toBe("private");
     expect(feedName("missing", state)).toBe("");
   });
