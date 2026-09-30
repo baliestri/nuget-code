@@ -1,11 +1,33 @@
 <script setup lang="ts">
-import { computed, ref, useId } from "vue";
+import { computed, ref, useId, nextTick } from "vue";
 import type { UpgradeCandidate } from "#contracts";
 import VscodeIcon from "#webview/components/vscode/VscodeIcon.vue";
 
 const props = defineProps<{ candidates: readonly UpgradeCandidate[] }>();
 const tooltipId = useId();
 const open = ref(false);
+const anchor = ref<HTMLElement>();
+const tooltip = ref<HTMLElement>();
+const position = ref({ left: "0px", top: "0px" });
+async function show(): Promise<void> {
+  open.value = true;
+  await nextTick();
+  const bounds = anchor.value?.getBoundingClientRect();
+  const content = tooltip.value?.getBoundingClientRect();
+  if (!bounds || !content) return;
+  const left = Math.max(
+    8,
+    Math.min(
+      bounds.right - content.width,
+      window.innerWidth - content.width - 8,
+    ),
+  );
+  const top =
+    bounds.bottom + content.height + 8 <= window.innerHeight
+      ? bounds.bottom + 4
+      : Math.max(8, bounds.top - content.height - 4);
+  position.value = { left: `${left}px`, top: `${top}px` };
+}
 const reasons: Record<string, string> = {
   "incomplete-catalog": "Package source data is incomplete.",
   "reference-scope-unknown":
@@ -82,8 +104,9 @@ const explanation = computed(() =>
 
 <template>
   <span
+    ref="anchor"
     class="relative inline-flex text-fg-muted"
-    @mouseenter="open = true"
+    @mouseenter="show"
     @mouseleave="open = false"
   >
     <span
@@ -92,7 +115,7 @@ const explanation = computed(() =>
       :aria-label="status.label"
       :aria-describedby="tooltipId"
       class="inline-flex rounded focus-visible:outline focus-visible:outline-1 focus-visible:outline-focus"
-      @focus="open = true"
+      @focus="show"
       @blur="open = false"
       @keydown.esc.stop="open = false"
     >
@@ -104,8 +127,10 @@ const explanation = computed(() =>
     <span
       v-show="open"
       :id="tooltipId"
+      ref="tooltip"
+      :style="position"
       role="tooltip"
-      class="absolute right-0 top-full z-20 w-72 max-w-[80vw] whitespace-pre-line break-words rounded border border-border-muted bg-surface-1 p-2 text-left text-xs text-fg shadow-lg"
+      class="fixed z-50 w-72 max-h-[80vh] max-w-[80vw] overflow-auto whitespace-pre-line break-words rounded border border-border-muted bg-surface-1 p-2 text-left text-xs text-fg shadow-lg"
     >
       <strong class="mb-1 block">{{ status.label }}</strong>
       <span>{{ explanation }}</span>
