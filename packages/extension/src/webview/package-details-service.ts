@@ -10,6 +10,7 @@ import type {
 import type { ExtensionLogger } from "#extension/logger";
 import type { ExtensionSettings } from "#extension/settings";
 import { ReadCoordinator } from "#extension/webview/read-coordinator";
+import { parseNuGetVersion } from "#manager";
 
 interface PackageDetailsServiceOptions {
   getState(): PackageManagerState;
@@ -21,6 +22,9 @@ interface PackageDetailsServiceOptions {
   persistPackageCache(): Promise<void>;
 }
 export class PackageDetailsService {
+  private lastRequest:
+    | { packageId: string; feedId: string; version?: string | undefined }
+    | undefined;
   private readonly reads = new ReadCoordinator();
   constructor(private readonly options: PackageDetailsServiceOptions) {}
   cancel(): void {
@@ -30,7 +34,26 @@ export class PackageDetailsService {
   dispose(): void {
     this.reads.dispose();
   }
-  async loadPackageDetails(packageId: string, feedId: string): Promise<void> {
+  async refresh(): Promise<void> {
+    const request = this.lastRequest;
+    if (
+      request &&
+      request.packageId === this.options.getState().selectedPackageId
+    )
+      await this.loadPackageDetails(
+        request.packageId,
+        request.feedId,
+        request.version,
+      );
+  }
+  async loadPackageDetails(
+    packageId: string,
+    feedId: string,
+    version?: string,
+  ): Promise<void> {
+    if (version && !parseNuGetVersion(version))
+      throw new Error("Invalid detail version.");
+    this.lastRequest = { packageId, feedId, version };
     const state = this.options.getState();
     const settings = this.options.getSettings();
     const item = [
@@ -50,6 +73,8 @@ export class PackageDetailsService {
           .getState()
           .feeds.map((feed) => [feed.id, feed.url, feed.enabled]),
         settings.network?.context(settings),
+        settings.network?.facts.generation,
+        version,
         packageId,
         feedId,
       ]);
@@ -92,13 +117,14 @@ export class PackageDetailsService {
           settings,
           logger: this.options.logger,
           signal: ticket.signal,
+          ...(version ? { version } : {}),
         }));
       if (!current()) return;
       if (!details) throw new Error("Package details unavailable.");
       await cache.set(cacheKey, details);
       if (!current()) return;
       this.update(
-        { packageId, feedId, packageItem: details },
+        { packageId, feedId, version, packageItem: details },
         { status: "ready", stale: false, error: null },
       );
       await this.options.persistPackageCache();

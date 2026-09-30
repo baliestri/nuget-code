@@ -167,6 +167,7 @@ describe("package manager store", () => {
       type: "loadPackageDetails",
       packageId: "nuget:demo",
       feedId: "private",
+      version: "1.0.0",
     });
 
     store.setSelectedVersion("2.0.0");
@@ -176,7 +177,7 @@ describe("package manager store", () => {
       vscode.postMessage.mock.calls.filter(
         ([message]) => message.type === "loadPackageDetails",
       ),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
   });
 
   it("updates state from extension messages", () => {
@@ -217,7 +218,7 @@ describe("package manager store", () => {
       selectedPackageId: selected.id,
       hasUpgrades: true,
     });
-    expect(store.model.hasUpgrades).toBe(true);
+    expect(store.model.hasUpgrades).toBe(false);
     expect(store.model.installedPackagesStatus).toBe("ready");
 
     dispatch({
@@ -230,7 +231,7 @@ describe("package manager store", () => {
       hasUpgrades: true,
     });
     expect(store.model.installedPackages[0]?.availableVersion).toBe("2.0.0");
-    expect(store.model.hasUpgrades).toBe(true);
+    expect(store.model.hasUpgrades).toBe(false);
 
     dispatch({
       type: "packageDetailsChanged",
@@ -287,7 +288,7 @@ describe("package manager store", () => {
     });
   });
 
-  it("runs optimistic project install, update, and remove commands", () => {
+  it("emits fixed project intentions without optimistic installed-version changes", () => {
     const store = usePackageManagerStore();
     connect(store);
     const item = packageItem("nuget:demo", "Demo", "1.0.0", "2.0.0", {
@@ -339,7 +340,7 @@ describe("package manager store", () => {
       "nuget",
       ["src/App.csproj", "src/Api.csproj"],
     );
-    expect(store.model.availablePackages[0]?.installedVersion).toBe("2.0.0");
+    expect(store.model.availablePackages[0]?.installedVersion).toBe("1.0.0");
     expect(vscode.postMessage).toHaveBeenCalledWith({
       type: "runCommand",
       command: "upgradeSelectedPackage",
@@ -351,7 +352,10 @@ describe("package manager store", () => {
     store.runPackageCommandForProjects("removePackage", "", "nuget", [
       "src/App.csproj",
     ]);
-    expect(store.selectedProjectPaths).toEqual(["src/Api.csproj"]);
+    expect(store.selectedProjectPaths).toEqual([
+      "src/App.csproj",
+      "src/Api.csproj",
+    ]);
     expect(vscode.postMessage).toHaveBeenCalledWith({
       type: "runCommand",
       command: "removePackage",
@@ -553,6 +557,9 @@ function state(
   return {
     flows: createReadFlowStates(),
     updates: createEmptyUpdateProjection(),
+    operations: [],
+    installedReferences: [],
+    catalogs: [],
     activeTab: "packages",
     targets: [],
     selectedTargetId: "",

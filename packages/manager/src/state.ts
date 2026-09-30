@@ -31,6 +31,9 @@ export function createInitialPackageManagerState(
   return {
     flows: createReadFlowStates(),
     updates: createEmptyUpdateProjection(),
+    operations: [],
+    installedReferences: [],
+    catalogs: [],
     packageDetails: null,
     activeTab: "packages",
     targets: [],
@@ -55,6 +58,9 @@ export function createEmptyPackageManagerState(): PackageManagerState {
   return {
     flows: createReadFlowStates(),
     updates: createEmptyUpdateProjection(),
+    operations: [],
+    installedReferences: [],
+    catalogs: [],
     packageDetails: null,
     activeTab: "packages",
     targets: [],

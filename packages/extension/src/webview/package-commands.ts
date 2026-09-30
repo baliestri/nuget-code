@@ -1,89 +1,100 @@
 import path from "node:path";
-import { ProgressLocation, window } from "vscode";
-import type { NuGetCli } from "#client";
+import { randomUUID } from "node:crypto";
+import { window } from "vscode";
 import type {
-  NuGetPackageItem,
-  PackageFeed,
-  PackageManagerCommand,
-  PackageManagerOperationKind,
+  MutationPlan,
+  MutationStep,
   PackageManagerState,
+  UpgradeContext,
+  WorkspaceTarget,
 } from "#contracts";
 import {
-  PackageManagementCore,
-  packageChangeAction,
-  projectName,
-  executableCandidates,
+  createUpgradePlan,
+  freezeMutationPlan,
+  getSelectedPackage,
+  getSelectedTarget,
+  parseNuGetVersion,
+  compareNuGetVersions,
 } from "#manager";
-import type { WorkspaceDiscovery } from "#extension/discovery";
+import { pathKey } from "#client/project-files";
 
-interface PackageCommandServiceOptions {
-  executeVerifiedUpgrades?: () => Promise<void>;
-  getState: () => PackageManagerState;
-  getDiscovery: () => WorkspaceDiscovery;
-  getCli: () => NuGetCli;
-  runOperation: (
-    kind: PackageManagerOperationKind,
-    label: string,
-    action: () => Promise<void>,
-  ) => Promise<void>;
-  refreshPackages: (options?: {
-    forceInventory?: boolean | undefined;
-  }) => Promise<void>;
+interface Options {
+  getState(): PackageManagerState;
+  submit(
+    plan: MutationPlan,
+    target: WorkspaceTarget,
+    context: UpgradeContext,
+    automatic: boolean,
+  ): Promise<unknown>;
 }
-
 export class PackageCommandService {
-  constructor(private readonly options: PackageCommandServiceOptions) {}
-
+  constructor(private readonly options: Options) {}
   async restorePackages(): Promise<void> {
-    const target = PackageManagementCore.selection.getSelectedTarget(
-      this.options.getState(),
-    );
+    const state = this.options.getState();
+    const target = getSelectedTarget(state);
     if (!target) {
-      window.showWarningMessage("No .NET solution or project was found.");
+      void window.showWarningMessage("No .NET target is selected.");
       return;
     }
-
-    await this.options.runOperation(
-      "restore",
-      `Restoring ${target.name}`,
-      async () => {
-        const result = await this.options
-          .getCli()
-          .runDotnet(["restore", target.path], path.dirname(target.path));
-
-        if (result.code === 0) {
-          window.showInformationMessage(
-            `Restored packages for ${target.name}.`,
-          );
-        } else {
-          window.showErrorMessage(
-            `Failed to restore packages for ${target.name}.`,
-          );
-        }
-      },
-    );
+    const captured = structuredClone(target);
+    const projects =
+      target.kind === "project" ? [target.path] : [...target.projectPaths];
+    const context = {
+      ...state.updates.context,
+      targetId: target.id,
+      projectPaths: projects,
+    };
+    const plan = freezeMutationPlan({
+      id: randomUUID(),
+      targetId: target.id,
+      contextRevision: context.revision,
+      steps: projects.map((file, index) => ({
+        id: String(index),
+        kind: "restore",
+        action: "restore",
+        projectPaths: [file],
+        packageId: null,
+        version: null,
+        feedUrls: [],
+      })),
+    });
+    await this.options.submit(plan, captured, context, false);
   }
-
   async upgradePackages(): Promise<void> {
-    const candidates = executableCandidates(
-      this.options.getState().updates.evaluation,
+    const state = this.options.getState();
+    const target = getSelectedTarget(state);
+    if (!target) return;
+    const plan = createUpgradePlan(
+      randomUUID(),
+      state.updates.context,
+      state.updates.evaluation,
     );
-    if (candidates.length === 0) {
-      window.showInformationMessage("No package upgrades are available.");
+    if (!plan.steps.length) {
+      void window.showInformationMessage("No verified upgrades are available.");
       return;
     }
-    // O3 supplies the bound-plan executor. Never translate a proof back to legacy availableVersion/CLI edits.
-    if (!this.options.executeVerifiedUpgrades) {
-      window.showWarningMessage(
-        "No verified execution plan is available for automatic updates.",
-      );
-      return;
-    }
-    await this.options.executeVerifiedUpgrades();
+    await this.options.submit(
+      plan,
+      structuredClone(target),
+      structuredClone(state.updates.context),
+      true,
+    );
   }
-
   async addOrUpgradeSelectedPackage(
-    command: "addPackage" | "upgradeSelectedPackage",
+    _command: "addPackage" | "upgradeSelectedPackage",
+    options: {
+      version?: string | undefined;
+      feedId?: string | undefined;
+      projectPaths?: string[] | undefined;
+    },
+  ): Promise<void> {
+    await this.packageOperation("update", options);
+  }
+  async removeSelectedPackage(projectPaths?: string[]): Promise<void> {
+    await this.packageOperation("remove", { projectPaths });
+  }
+  private async packageOperation(
+    action: "update" | "remove",
     options: {
       version?: string | undefined;
       feedId?: string | undefined;
@@ -91,244 +102,115 @@ export class PackageCommandService {
     },
   ): Promise<void> {
     const state = this.options.getState();
-    const packageItem =
-      PackageManagementCore.selection.getSelectedPackage(state);
-    if (!packageItem) {
-      return;
-    }
-
-    const version = options.version;
-    const feed = options.feedId
-      ? state.feeds.find((item) => item.id === options.feedId)
-      : undefined;
-
-    if (!version) {
-      window.showWarningMessage(
-        "Select an explicit package version before changing a project.",
-      );
-      return;
-    }
-
-    const projects =
-      options.projectPaths ??
-      (await this.pickProjects(packageItem.projectPaths));
-    if (!projects || projects.length === 0) {
-      return;
-    }
-
-    const action = packageChangeAction(command, packageItem, version, projects);
-    await this.options.runOperation(
-      action === "Installing" ? "addPackage" : "upgrade",
-      `${action} ${packageItem.name}`,
-      async () => {
-        await this.applyPackageToProjectsWithProgress(
-          packageItem,
-          version,
-          feed,
-          projects,
-          action,
-        );
-      },
-    );
-    await this.options.refreshPackages({ forceInventory: true });
-  }
-
-  async removeSelectedPackage(
-    projectPaths?: string[] | undefined,
-  ): Promise<void> {
-    const packageItem = PackageManagementCore.selection.getSelectedPackage(
-      this.options.getState(),
-    );
-    if (!packageItem) {
-      return;
-    }
-
-    const projects =
-      projectPaths ?? (await this.pickProjects(packageItem.projectPaths));
-    if (!projects || projects.length === 0) {
-      return;
-    }
-
-    await this.options.runOperation(
-      "removePackage",
-      `Removing ${packageItem.name}`,
-      async () => {
-        await this.removePackageFromProjectsWithProgress(packageItem, projects);
-
-        await this.options.refreshPackages({ forceInventory: true });
-      },
-    );
-  }
-
-  handles(command: PackageManagerCommand): boolean {
-    return [
-      "restore",
-      "upgradePackages",
-      "addPackage",
-      "upgradeSelectedPackage",
-      "removePackage",
-    ].includes(command);
-  }
-
-  private async applyPackageToProjects(
-    packageItem: NuGetPackageItem,
-    version: string | undefined,
-    feed: PackageFeed | undefined = undefined,
-    projectPaths?: string[] | undefined,
-    action = "Updating",
-    progress?: { report(value: { message?: string }): void } | undefined,
-  ): Promise<void> {
-    if (!version) {
-      return;
-    }
-
-    const projects =
-      projectPaths ?? (await this.pickProjects(packageItem.projectPaths));
-    if (!projects || projects.length === 0) {
-      return;
-    }
-
-    for (const projectPath of projects) {
-      progress?.report({
-        message: `${packageItem.name} in ${projectName(projectPath)}`,
-      });
-      await this.applyPackageToProject(
-        packageItem,
-        version,
-        projectPath,
-        feed,
-        action,
-      );
-    }
-  }
-
-  private async applyPackageToProjectsWithProgress(
-    packageItem: NuGetPackageItem,
-    version: string,
-    feed: PackageFeed | undefined,
-    projectPaths: string[],
-    action: "Installing" | "Updating" | "Downgrading" | "Changing",
-  ): Promise<void> {
-    await window.withProgress(
-      {
-        location: ProgressLocation.Notification,
-        title: `${action} ${packageItem.name}`,
-        cancellable: false,
-      },
-      async (progress) => {
-        for (const projectPath of projectPaths) {
-          progress.report({
-            message: `in ${projectName(projectPath)}`,
-          });
-          await this.applyPackageToProject(
-            packageItem,
-            version,
-            projectPath,
-            feed,
-            action,
-          );
-        }
-      },
-    );
-  }
-
-  private async applyPackageToProject(
-    packageItem: NuGetPackageItem,
-    version: string,
-    projectPath: string,
-    feed: PackageFeed | undefined,
-    action: string,
-  ): Promise<void> {
-    const args = [
-      "package",
-      "add",
-      packageItem.name,
-      "--project",
-      projectPath,
-      "--version",
-      version,
-    ];
+    const target = getSelectedTarget(state);
+    const item = getSelectedPackage(state);
+    if (!target || !item) return;
     if (
-      feed &&
-      feed.id !== PackageManagementCore.feeds.allFeeds.id &&
-      feed.url
-    ) {
-      args.push("--source", feed.url);
-    }
-
-    const result = await this.options.getCli().runDotnet(args);
-    if (result.code !== 0) {
+      item.name.length > 100 ||
+      !/^[\p{L}\p{Mn}\p{Nd}\p{Pc}]+(?:[.-][\p{L}\p{Mn}\p{Nd}\p{Pc}]+)*(?![\s\S])/u.test(
+        item.name,
+      )
+    )
+      throw new Error("Invalid NuGet package identity.");
+    if (
+      action !== "remove" &&
+      (!options.version || !parseNuGetVersion(options.version))
+    )
+      throw new Error("Select a concrete package version.");
+    const captured = structuredClone(target);
+    const allowed =
+      target.kind === "project" ? [target.path] : [...target.projectPaths];
+    const feeds = state.feeds
+      .filter(
+        (feed) =>
+          feed.enabled &&
+          feed.id !== "__all__" &&
+          (!options.feedId ||
+            options.feedId === "__all__" ||
+            feed.id === options.feedId),
+      )
+      .map((feed) => feed.url);
+    const context = structuredClone({
+      ...state.updates.context,
+      targetId: target.id,
+      feedUrls: feeds,
+      includePrerelease: state.includePrerelease,
+    });
+    const requested =
+      options.projectPaths ??
+      (
+        await window.showQuickPick(
+          allowed.map((file) => ({
+            label: path.basename(file),
+            description: file,
+            picked: item.projectPaths.some(
+              (value) => pathKey(value) === pathKey(file),
+            ),
+            file,
+          })),
+          {
+            canPickMany: true,
+            placeHolder: "Select projects",
+            ignoreFocusOut: true,
+          },
+        )
+      )?.map((item) => item.file);
+    if (!requested?.length) return;
+    const projects = [
+      ...new Set(
+        requested.map(
+          (file) =>
+            allowed.find((known) => pathKey(known) === pathKey(file)) ?? "",
+        ),
+      ),
+    ];
+    if (projects.some((file) => !file))
       throw new Error(
-        `${action} ${packageItem.name} failed for ${projectName(projectPath)}: ${commandError(result.stderr)}`,
+        "The requested projects are outside the captured target.",
       );
-    }
-  }
-
-  private async removePackageFromProjectsWithProgress(
-    packageItem: NuGetPackageItem,
-    projectPaths: string[],
-  ): Promise<void> {
-    await window.withProgress(
-      {
-        location: ProgressLocation.Notification,
-        title: `Removing ${packageItem.name}`,
-        cancellable: false,
-      },
-      async (progress) => {
-        for (const projectPath of projectPaths) {
-          progress.report({
-            message: `from ${projectName(projectPath)}`,
-          });
-          await this.removePackageFromProject(packageItem, projectPath);
-        }
-      },
+    context.projectPaths = projects;
+    const steps: MutationStep[] = projects.map((file, index) => {
+      const references = state.installedReferences.filter(
+        (reference) =>
+          reference.direct &&
+          pathKey(reference.projectPath) === pathKey(file) &&
+          reference.packageId.toLowerCase() === item.name.toLowerCase(),
+      );
+      const nextAction =
+        action === "remove"
+          ? "remove"
+          : !references.length
+            ? "add"
+            : references.some(
+                  (reference) =>
+                    reference.resolvedVersion &&
+                    compareNuGetVersions(
+                      options.version!,
+                      reference.resolvedVersion,
+                    ) < 0,
+                )
+              ? "downgrade"
+              : "update";
+      return {
+        id: String(index),
+        kind: "package",
+        action: nextAction,
+        projectPaths: [file],
+        packageId: item.name,
+        version: action === "remove" ? null : options.version!,
+        feedUrls: feeds,
+      };
+    });
+    await this.options.submit(
+      freezeMutationPlan({
+        id: randomUUID(),
+        targetId: captured.id,
+        contextRevision: context.revision,
+        steps,
+      }),
+      captured,
+      context,
+      false,
     );
   }
-
-  private async removePackageFromProject(
-    packageItem: NuGetPackageItem,
-    projectPath: string,
-  ): Promise<void> {
-    const result = await this.options
-      .getCli()
-      .runDotnet([
-        "package",
-        "remove",
-        packageItem.name,
-        "--project",
-        projectPath,
-      ]);
-
-    if (result.code !== 0) {
-      throw new Error(
-        `Removing ${packageItem.name} failed for ${projectName(projectPath)}: ${commandError(result.stderr)}`,
-      );
-    }
-  }
-
-  private async pickProjects(
-    defaultProjectPaths: string[],
-  ): Promise<string[] | undefined> {
-    const selectedDefaults = new Set(defaultProjectPaths);
-    const items = this.options
-      .getDiscovery()
-      .projectPaths.map((projectPath) => ({
-        label: path.basename(projectPath, path.extname(projectPath)),
-        description: projectPath,
-        picked: selectedDefaults.has(projectPath),
-        projectPath,
-      }));
-
-    const selected = await window.showQuickPick(items, {
-      canPickMany: true,
-      placeHolder: "Select project(s)",
-      ignoreFocusOut: true,
-    });
-
-    return selected?.map((item) => item.projectPath);
-  }
-}
-
-function commandError(stderr: string): string {
-  return stderr.trim() || "dotnet exited with a non-zero code";
 }

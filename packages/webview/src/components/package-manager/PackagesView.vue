@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { storeToRefs } from "pinia";
 import FeedSelect from "#webview/components/package-manager/FeedSelect.vue";
 import PackageDetails from "#webview/components/package-manager/PackageDetails.vue";
+import OperationSummary from "#webview/components/package-manager/OperationSummary.vue";
 import PackageSection from "#webview/components/package-manager/PackageSection.vue";
 import TargetSelect from "#webview/components/package-manager/TargetSelect.vue";
 import VscodeSplitPane from "#webview/components/vscode/VscodeSplitPane.vue";
@@ -10,7 +11,7 @@ import { sortPackages, type PackageSortMode } from "#webview/lib/packageSort";
 import {
   filterPackagesForTarget,
   latestPackageVersion,
-  selectedPackage,
+  isPrereleaseVersion,
 } from "#manager";
 import { usePackageManagerStore } from "#webview/stores/packageManager";
 
@@ -19,14 +20,9 @@ const props = defineProps<{
 }>();
 
 const store = usePackageManagerStore();
-const { model, selectedPackageId, selectedTargetValue } = storeToRefs(store);
+const { model, selectedTargetValue } = storeToRefs(store);
 
-const selected = computed(() =>
-  selectedPackage(
-    model.value,
-    selectedPackageId.value ?? model.value.selectedPackageId,
-  ),
-);
+const selected = computed(() => store.currentPackage);
 const selectedVersion = computed(
   () =>
     store.selectedVersion ||
@@ -71,12 +67,44 @@ const implicitPackages = computed(() =>
   ),
 );
 const displayedAvailablePackages = computed(() =>
-  model.value.availablePackages.slice(0, 100),
+  model.value.availablePackages
+    .filter(
+      (item) =>
+        model.value.includePrerelease ||
+        !item.availableVersion ||
+        !isPrereleaseVersion(item.availableVersion),
+    )
+    .slice(0, 100),
 );
 
 function onSearchInput(event: Event): void {
   store.setSearch((event.target as HTMLInputElement).value);
 }
+
+const inventoryLoading = computed(
+  () =>
+    model.value.installedPackagesStatus === "loading" &&
+    installedPackages.value.length === 0,
+);
+const inventoryFailed = computed(
+  () =>
+    model.value.installedPackagesStatus === "failed" &&
+    installedPackages.value.length === 0,
+);
+const implicitLoading = computed(
+  () =>
+    model.value.implicitPackagesStatus === "loading" &&
+    implicitPackages.value.length === 0,
+);
+const implicitFailed = computed(
+  () =>
+    model.value.implicitPackagesStatus === "failed" &&
+    implicitPackages.value.length === 0,
+);
+const displayedOperations = computed(() => [
+  ...model.value.operations.filter((operation) => !operation.outcome),
+  ...model.value.operations.filter((operation) => operation.outcome).slice(-3),
+]);
 
 function onPrereleaseChange(event: Event): void {
   store.setIncludePrerelease((event.target as HTMLInputElement).checked);
@@ -117,14 +145,22 @@ function onPrereleaseChange(event: Event): void {
           </label>
         </div>
         <div class="min-h-0 flex-1 overflow-auto">
+          <OperationSummary
+            v-for="operation in displayedOperations"
+            :key="operation.plan.id"
+            :operation="operation"
+            @cancel="store.cancelOperation"
+            @retry="store.retryOperation"
+            @confirm="store.confirmOperation"
+          />
           <PackageSection
-            v-if="model.installedPackagesStatus === 'loading'"
+            v-if="inventoryLoading"
             :title="`Installed Packages in ${selectedTargetValue?.name ?? 'workspace'}`"
             :packages="[]"
             loading
           />
           <PackageSection
-            v-else-if="model.installedPackagesStatus === 'failed'"
+            v-else-if="inventoryFailed"
             :title="`Installed Packages in ${selectedTargetValue?.name ?? 'workspace'}`"
             :packages="[]"
             error
@@ -135,13 +171,13 @@ function onPrereleaseChange(event: Event): void {
             :packages="installedPackages"
           />
           <PackageSection
-            v-if="model.implicitPackagesStatus === 'loading'"
+            v-if="implicitLoading"
             :title="`Implicitly Installed Packages in ${selectedTargetValue?.name ?? 'workspace'}`"
             :packages="[]"
             loading
           />
           <PackageSection
-            v-else-if="model.implicitPackagesStatus === 'failed'"
+            v-else-if="implicitFailed"
             :title="`Implicitly Installed Packages in ${selectedTargetValue?.name ?? 'workspace'}`"
             :packages="[]"
             error

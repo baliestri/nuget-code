@@ -8,16 +8,30 @@ import {
 } from "#contracts/package-manager";
 import { NuGetCacheFolder, NuGetPackageItem } from "#contracts/nuget";
 import type { StateRevision, DeltaRevision } from "#contracts/package-loads";
+import type { MutationOutcome, MutationPlan } from "#contracts/operations";
 
 export type WebviewToExtensionMessage =
   | { type: "ready" }
+  | { type: "cancelOperation"; operationId: string }
+  | { type: "retryOperation"; operationId: string }
+  | {
+      type: "confirmOperation";
+      operationId: string;
+      contextRevision: string;
+      accepted: boolean;
+    }
   | { type: "setActiveTab"; tab: PackageManagerTab }
   | { type: "selectTarget"; targetId: string }
   | { type: "selectFeed"; feedId: string }
   | { type: "setSearch"; search: string }
   | { type: "setIncludePrerelease"; includePrerelease: boolean }
   | { type: "selectPackage"; packageId: string }
-  | { type: "loadPackageDetails"; packageId: string; feedId: string }
+  | {
+      type: "loadPackageDetails";
+      packageId: string;
+      feedId: string;
+      version?: string | undefined;
+    }
   | { type: "selectSource"; sourceId: string }
   | { type: "toggleFolder"; folderId: string }
   | {
@@ -30,6 +44,8 @@ export type WebviewToExtensionMessage =
 
 /** Internal host events; the controller adds the wire envelope exactly once. */
 export type PackageManagerEvent =
+  | { type: "operationResult"; outcome: MutationOutcome }
+  | { type: "operationConfirmation"; plan: MutationPlan }
   | { type: "state"; state: PackageManagerState }
   | { type: "stateDelta"; patch: Partial<PackageManagerState> }
   | ({ type: "operationStarted" } & PackageManagerOperationMessage)

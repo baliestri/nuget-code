@@ -16,6 +16,8 @@ import type {
   UpgradeContext,
   LoadState,
   ReadFlow,
+  MutationPlan,
+  WorkspaceTarget,
   PackageManagerState,
   PackageManagerTab,
   WebviewToExtensionMessage,
@@ -65,6 +67,10 @@ import { PackageReferenceWatcher } from "#extension/webview/package-reference-wa
 import { SolutionSelector } from "#extension/solution-selector";
 import { StateMessageSequence } from "#extension/webview/state-message-sequence";
 import { PackageDataService } from "#extension/webview/package-data-service";
+import { randomUUID } from "node:crypto";
+import { MutationService } from "#extension/webview/mutation-service";
+import { PackageMutationPort } from "#extension/webview/package-mutation-port";
+import { packageStatus } from "#extension/webview/package-status";
 import {
   PackageDataAdapter,
   type DataEnvironment,
@@ -85,6 +91,7 @@ export class PackageManagerController implements Disposable {
   private packageReferenceFingerprint = "";
   private readonly data: PackageDataService;
   private readonly dataAdapter: PackageDataAdapter;
+  private readonly mutations: MutationService;
   private inputPaths: readonly string[] = [];
   private dataGeneration = 0;
   private activeDataContextKey = "";
@@ -104,6 +111,7 @@ export class PackageManagerController implements Disposable {
   private readonly folders: FolderService;
   private readonly packageReferenceWatcher: PackageReferenceWatcher;
   private readonly solutionStatusBar: StatusBarItem;
+  private readonly packageStatusBar: StatusBarItem;
   private readonly disposables: Disposable[] = [];
 
   constructor(
@@ -118,6 +126,10 @@ export class PackageManagerController implements Disposable {
     );
     this.cli = new NuGetCli(this.settings, this.logger);
     this.state = this.createInitialState();
+    this.mutations = new MutationService((operations) => {
+      this.state = { ...this.state, operations };
+      this.publishPackageEvent({ type: "stateDelta", patch: { operations } });
+    });
     this.dataAdapter = new PackageDataAdapter(
       (targetId) => this.dataEnvironment(targetId),
       logger,
@@ -145,15 +157,29 @@ export class PackageManagerController implements Disposable {
             this.dataAdapter.fingerprint(snapshot.revision) ?? "";
           this.packageReferenceWatcher.setInputs(snapshot.inputPaths);
           const inventory = referenceInventory(snapshot);
+          const installedReferences = snapshot.references.filter((reference) =>
+            snapshot.projectPaths.includes(reference.projectPath),
+          );
           this.state = PackageManagementCore.state.applyPackageInventory(
             this.state,
             inventory,
             this.state.availablePackages,
           );
+          this.state = {
+            ...this.state,
+            installedReferences,
+            targets: this.state.targets.map((target) =>
+              target.id === snapshot.targetId
+                ? { ...target, projectPaths: [...snapshot.projectPaths] }
+                : target,
+            ),
+          };
           this.publishPackageEvent({
             type: "stateDelta",
             patch: {
               installedPackages: this.state.installedPackages,
+              installedReferences,
+              targets: this.state.targets,
               implicitPackages: this.state.implicitPackages,
               installedPackagesStatus: "ready",
               implicitPackagesStatus: "ready",
@@ -182,6 +208,12 @@ export class PackageManagerController implements Disposable {
       100,
     );
     this.solutionStatusBar.command = "nuget-code.selectSolution";
+    this.packageStatusBar = window.createStatusBarItem(
+      StatusBarAlignment.Left,
+      99,
+    );
+    this.packageStatusBar.name = "NuGet package status";
+    this.packageStatusBar.command = "nuget-code.refreshPackages";
     this.operations = new PackageManagerOperationRunner(
       this.logger,
       (message) => {
@@ -208,11 +240,8 @@ export class PackageManagerController implements Disposable {
     });
     this.packageCommands = new PackageCommandService({
       getState: () => this.state,
-      getDiscovery: () => this.discovery,
-      getCli: () => this.cli,
-      runOperation: (kind, label, action) =>
-        this.runOperation(kind, label, action),
-      refreshPackages: (options) => this.refreshPackages(options),
+      submit: (plan, target, context, automatic) =>
+        this.submitMutation(plan, target, context, automatic),
     });
     this.folders = new FolderService({
       getState: () => this.state,
@@ -222,6 +251,32 @@ export class PackageManagerController implements Disposable {
       logger: this.logger,
       publish: (message) => this.publishPackageEvent(message),
       persistFolderSizeCache: (folders) => this.persistFolderSizeCache(folders),
+      mutateCaches: async (folders, action) => {
+        const plan: MutationPlan = {
+          id: randomUUID(),
+          targetId: this.state.selectedTargetId,
+          contextRevision: this.state.updates.context.revision,
+          steps: [
+            {
+              id: "cache",
+              kind: "clear-cache",
+              action: "clear",
+              projectPaths: [],
+              packageId: null,
+              version: null,
+              feedUrls: [],
+              cachePaths: folders.map((folder) => folder.path),
+            },
+          ],
+        };
+        await this.mutations.submit(plan, {
+          prepare: async () => ({ plan, execute: async () => action() }),
+          reconcile: async () => {
+            this.data.invalidate(this.state.selectedTargetId);
+            await this.refreshPackages({ forceInventory: true });
+          },
+        });
+      },
       runOperation: (kind, label, action) =>
         this.runOperation(kind, label, action),
     });
@@ -263,6 +318,7 @@ export class PackageManagerController implements Disposable {
         });
       }),
       this.solutionStatusBar,
+      this.packageStatusBar,
       this.events.subscribe((message) => {
         this.webview?.postMessage(message);
       }),
@@ -301,25 +357,66 @@ export class PackageManagerController implements Disposable {
   }
 
   async handleMessage(message: WebviewToExtensionMessage): Promise<void> {
+    if (!message || typeof message.type !== "string")
+      throw new Error("Invalid package-manager message.");
+    if (
+      message.type === "runCommand" &&
+      (typeof message.command !== "string" ||
+        (message.projectPaths !== undefined &&
+          (!Array.isArray(message.projectPaths) ||
+            message.projectPaths.some((file) => typeof file !== "string"))) ||
+        (message.version !== undefined && typeof message.version !== "string"))
+    )
+      throw new Error("Invalid operation arguments.");
     switch (message.type) {
       case "ready":
         this.postState();
+        return;
+      case "cancelOperation":
+        if (typeof message.operationId === "string")
+          this.mutations.cancel(message.operationId);
+        return;
+      case "retryOperation":
+        if (typeof message.operationId === "string")
+          await this.mutations.retry(message.operationId);
+        return;
+      case "confirmOperation":
+        if (
+          typeof message.operationId === "string" &&
+          typeof message.contextRevision === "string" &&
+          typeof message.accepted === "boolean"
+        )
+          this.mutations.confirm(
+            message.operationId,
+            message.contextRevision,
+            message.accepted,
+          );
         return;
       case "setActiveTab":
         await this.setActiveTab(message.tab);
         return;
       case "selectTarget":
+        if (
+          !this.state.targets.some((target) => target.id === message.targetId)
+        )
+          throw new Error("The selected target is no longer available.");
         await this.setSelectedTarget(message.targetId);
         return;
       case "selectFeed":
+        if (!this.state.feeds.some((feed) => feed.id === message.feedId))
+          throw new Error("The selected feed is no longer available.");
         await this.setSelectedFeed(message.feedId);
         return;
       case "setSearch":
+        if (typeof message.search !== "string")
+          throw new Error("Invalid search text.");
         this.state = { ...this.state, search: message.search };
         this.postState();
         await this.refreshAvailablePackages();
         return;
       case "setIncludePrerelease":
+        if (typeof message.includePrerelease !== "boolean")
+          throw new Error("Invalid preview filter.");
         this.cancelSearchReads();
         this.state = {
           ...this.state,
@@ -338,6 +435,7 @@ export class PackageManagerController implements Disposable {
         await this.packageDetails.loadPackageDetails(
           message.packageId,
           message.feedId,
+          message.version,
         );
         return;
       case "selectSource":
@@ -357,6 +455,13 @@ export class PackageManagerController implements Disposable {
     }
   }
 
+  reportMessageError(error: unknown): void {
+    const message =
+      error instanceof Error ? error.message : "Package operation failed.";
+    this.logger.warning("vscode", message);
+    void window.showErrorMessage(message);
+  }
+
   async runCommand(
     command: PackageManagerCommand,
     options: {
@@ -367,10 +472,7 @@ export class PackageManagerController implements Disposable {
   ): Promise<void> {
     switch (command) {
       case "restore":
-        await this.packageReferenceWatcher.suspendDuring(async () => {
-          await this.packageCommands.restorePackages();
-          await this.refreshPackages({ forceInventory: true });
-        });
+        await this.packageCommands.restorePackages();
         return;
       case "refreshPackages":
         if (options.feedId) {
@@ -407,14 +509,13 @@ export class PackageManagerController implements Disposable {
         return;
       case "addPackage":
       case "upgradeSelectedPackage":
-        await this.packageReferenceWatcher.suspendDuring(() =>
-          this.packageCommands.addOrUpgradeSelectedPackage(command, options),
+        await this.packageCommands.addOrUpgradeSelectedPackage(
+          command,
+          options,
         );
         return;
       case "removePackage":
-        await this.packageReferenceWatcher.suspendDuring(() =>
-          this.packageCommands.removeSelectedPackage(options.projectPaths),
-        );
+        await this.packageCommands.removeSelectedPackage(options.projectPaths);
         return;
       case "clearLogs":
         this.logger.clear();
@@ -488,6 +589,7 @@ export class PackageManagerController implements Disposable {
   }
 
   dispose(): void {
+    this.mutations.dispose();
     this.network.dispose();
     this.data.dispose();
     this.dataAdapter.dispose();
@@ -523,14 +625,19 @@ export class PackageManagerController implements Disposable {
       "Loading NuGet workspace",
       async () => {
         this.discovery = await discoverWorkspace(this.logger);
-        const sources = await loadPackageSources(this.settings, this.logger);
+        const selectedTargetId = await this.resolveSelectedTarget();
+        const sources = await loadPackageSources(
+          this.settings,
+          this.logger,
+          this.discovery.targets.find(
+            (target) => target.id === selectedTargetId,
+          ),
+        );
         const effectiveFeeds = sources[0]?.feeds ?? [];
         const folders = PackageManagementCore.folders.applyCachedFolderSizes(
           await NuGetClient.loadCacheFolders(this.cli, this.logger),
           this.storage.get<FolderSizeCache>(folderSizeCacheKey, {}),
         );
-
-        const selectedTargetId = await this.resolveSelectedTarget();
 
         this.state = {
           ...this.state,
@@ -573,7 +680,13 @@ export class PackageManagerController implements Disposable {
 
   private async reloadSources(): Promise<void> {
     await this.runOperation("sources", "Reloading NuGet sources", async () => {
-      const sources = await loadPackageSources(this.settings, this.logger);
+      const targetId = this.state.selectedTargetId;
+      const sources = await loadPackageSources(
+        this.settings,
+        this.logger,
+        this.discovery.targets.find((target) => target.id === targetId),
+      );
+      if (this.state.selectedTargetId !== targetId) return;
       const effectiveFeeds = sources[0]?.feeds ?? [];
       this.packageDetailsCache.clear();
 
@@ -598,11 +711,72 @@ export class PackageManagerController implements Disposable {
   private async refreshPackages(
     options: { forceInventory?: boolean | undefined } = {},
   ): Promise<void> {
+    if (options.forceInventory) {
+      this.packageDetails.cancel();
+      this.packageDetailsCache.clear();
+    }
     this.syncDataContext();
     await Promise.all([
       this.data.refresh({ force: options.forceInventory ?? false }),
       this.data.search(this.state.search),
     ]);
+    if (options.forceInventory) await this.packageDetails.refresh();
+  }
+
+  private async submitMutation(
+    plan: MutationPlan,
+    target: WorkspaceTarget,
+    context: UpgradeContext,
+    automatic: boolean,
+  ): Promise<unknown> {
+    const captured = {
+      ...this.dataEnvironment(target.id),
+      target: structuredClone(target),
+    };
+    const port = new PackageMutationPort(
+      { context: structuredClone(context), environment: captured, automatic },
+      () => this.dataEnvironment(target.id),
+      this.logger,
+      async (environment) => {
+        const adapter = new PackageDataAdapter(() => environment, this.logger);
+        try {
+          const snapshot = await adapter.loadInventory(
+            { ...context, revision: environment.sourceRevision },
+            new AbortController().signal,
+          );
+          const inventory = referenceInventory(snapshot);
+          const cacheState = {
+            ...this.state,
+            selectedTargetId: target.id,
+            installedPackages: inventory.installed,
+            implicitPackages: inventory.implicit,
+            installedPackagesStatus: "ready" as const,
+            implicitPackagesStatus: "ready" as const,
+            availablePackages: [],
+          };
+          await this.packageCache.persist(cacheState, {
+            fingerprint: adapter.fingerprint(snapshot.revision),
+          });
+          if (this.state.selectedTargetId === target.id) {
+            this.data.invalidate(target.id);
+            await this.refreshPackages({ forceInventory: true });
+            if (this.state.flows.inventory.status === "failed")
+              throw new Error("Package inventory could not be reconciled.");
+          }
+        } finally {
+          adapter.dispose();
+        }
+      },
+    );
+    // Keep the queue slot through reconciliation; suspend watchers only while this queued job runs.
+    const wrapped = {
+      run: <T>(work: () => Promise<T>) =>
+        this.packageReferenceWatcher.suspendDuring(work),
+      prepare: (next: MutationPlan, signal: AbortSignal) =>
+        port.prepare(next, signal),
+      reconcile: (next: MutationPlan) => port.reconcile(next),
+    };
+    return this.mutations.submit(plan, wrapped);
   }
 
   private async refreshAvailablePackages(): Promise<void> {
@@ -625,13 +799,35 @@ export class PackageManagerController implements Disposable {
       selectedTargetId: targetId,
       selectedPackageId: undefined,
       installedPackages: [],
+      installedReferences: [],
+      catalogs: [],
       implicitPackages: [],
       availablePackages: [],
       installedPackagesStatus: "idle",
       implicitPackagesStatus: "idle",
       hasUpgrades: false,
     };
-
+    const sources = await loadPackageSources(
+      this.settings,
+      this.logger,
+      this.discovery.targets.find((target) => target.id === targetId),
+    );
+    if (this.state.selectedTargetId !== targetId) return;
+    const feeds = [
+      PackageManagementCore.feeds.allFeeds,
+      ...(sources[0]?.feeds ?? []),
+    ];
+    this.state = {
+      ...this.state,
+      sources,
+      feeds,
+      selectedSourceId: sources[0]?.id,
+      selectedFeedId: PackageManagementCore.feeds.selectInitialFeed(
+        feeds,
+        this.state.selectedFeedId,
+        this.settings.defaultFeed,
+      ),
+    };
     this.hydratePackageDetailsCache(await this.hydrateCachedPackages());
     this.updateSolutionStatusBar();
     this.postState();
@@ -699,6 +895,12 @@ export class PackageManagerController implements Disposable {
   }
 
   private publishPackageEvent(message: PackageManagerEvent): void {
+    if (this.packageStatusBar) {
+      const status = packageStatus(this.state);
+      this.packageStatusBar.text = status.text;
+      this.packageStatusBar.tooltip = status.tooltip;
+      this.packageStatusBar.show();
+    }
     this.events.publish(this.messages.next(message));
   }
 
@@ -950,7 +1152,11 @@ export class PackageManagerController implements Disposable {
 
     this.discovery = await discoverWorkspace(this.logger);
     const selectedTargetId = await this.resolveSelectedTarget();
-    const sources = await loadPackageSources(this.settings, this.logger);
+    const sources = await loadPackageSources(
+      this.settings,
+      this.logger,
+      this.discovery.targets.find((target) => target.id === selectedTargetId),
+    );
     const feeds = [
       PackageManagementCore.feeds.allFeeds,
       ...(sources[0]?.feeds ?? []),

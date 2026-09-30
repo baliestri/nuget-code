@@ -104,7 +104,7 @@ function serialize(element: XmlElement): string {
     .join("");
   return `<${element.name}${attributes}>${body}</${element.name}>`;
 }
-function isolatedConfig(
+export function isolatedConfig(
   text: string,
   original: string,
   packagesPath: string,

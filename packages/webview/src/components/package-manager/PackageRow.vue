@@ -4,7 +4,6 @@ import { storeToRefs } from "pinia";
 import type { NuGetPackageItem } from "#contracts";
 import FeedBadges from "#webview/components/package-manager/FeedBadges.vue";
 import PackageIcon from "#webview/components/package-manager/PackageIcon.vue";
-import { upgradablePackageVersion } from "#manager";
 import { rowClass } from "#webview/lib/ui";
 import { usePackageManagerStore } from "#webview/stores/packageManager";
 
@@ -19,10 +18,35 @@ const selected = computed(
     props.packageItem.id ===
     (selectedPackageId.value ?? model.value.selectedPackageId),
 );
-const installed = computed(() => props.packageItem.installedVersion ?? "");
+const installed = computed(
+  () =>
+    [
+      ...new Set(
+        (props.packageItem.projectStates ?? [])
+          .map((state) => state.installedVersion)
+          .filter(Boolean),
+      ),
+    ].join(" / ") ||
+    props.packageItem.installedVersion ||
+    "",
+);
+const updates = computed(() =>
+  store.visibleUpdates.filter(
+    (candidate) =>
+      candidate.packageId.toLowerCase() ===
+      props.packageItem.name.toLowerCase(),
+  ),
+);
 const available = computed(() =>
   installed.value
-    ? upgradablePackageVersion(props.packageItem)
+    ? [
+        ...new Set(
+          updates.value.map(
+            (candidate) =>
+              `${candidate.version} (${candidate.compatibility.status})`,
+          ),
+        ),
+      ].join(" · ")
     : props.packageItem.availableVersion,
 );
 </script>

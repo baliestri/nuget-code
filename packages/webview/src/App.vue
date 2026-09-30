@@ -62,7 +62,9 @@ const railActions = computed<PackageActionRailItem[]>(() => {
           id: "upgradePackages",
           icon: "arrow-up",
           label: "Upgrade packages in selected context",
-          disabled: !model.value.hasUpgrades,
+          disabled:
+            !model.value.hasUpgrades ||
+            model.value.operations.some((operation) => !operation.outcome),
           run: () => store.runCommand("upgradePackages"),
         },
         settings,

@@ -1,8 +1,18 @@
 import { expect, it, vi } from "vitest";
 import { createEmptyPackageManagerState } from "#manager";
 import { PackageCommandService } from "./package-commands";
-it("does not turn legacy availableVersion metadata or an unbound verdict into automatic CLI execution", async () => {
+it("captures destination/version before enqueueing and never uses availableVersion as authority", async () => {
   const state = createEmptyPackageManagerState();
+  state.targets = [
+    {
+      id: "a",
+      kind: "project",
+      path: "/a.csproj",
+      name: "A",
+      projectPaths: ["/a.csproj"],
+    },
+  ];
+  state.selectedTargetId = "a";
   state.installedPackages = [
     {
       id: "demo",
@@ -14,36 +24,33 @@ it("does not turn legacy availableVersion metadata or an unbound verdict into au
     },
   ];
   state.selectedPackageId = "demo";
-  const cli = vi.fn();
-  const run = vi.fn();
-  const service = new PackageCommandService({
-    getState: () => state,
-    getDiscovery: () => ({
-      targets: [],
-      projectPaths: [],
-      centralPackageFiles: [],
-    }),
-    getCli: cli,
-    runOperation: run,
-    refreshPackages: async () => {},
+  const submit = vi.fn(async (plan: import("#contracts").MutationPlan) => {
+    expect(plan.targetId).toBe("a");
   });
+  const service = new PackageCommandService({ getState: () => state, submit });
   await service.upgradePackages();
-  state.updates.evaluation = {
-    candidates: [
-      {
-        key: "candidate",
-        packageId: "Demo",
-        projectPath: "/a.csproj",
-        referenceIds: ["ref"],
-        version: "1.5.0",
-        feedUrls: ["feed"],
-        compatibility: { status: "compatible", diagnostics: [] },
-      },
-    ],
-    blocked: [],
-  };
-  await service.upgradePackages();
-  await service.addOrUpgradeSelectedPackage("upgradeSelectedPackage", {});
-  expect(cli).not.toHaveBeenCalled();
-  expect(run).not.toHaveBeenCalled();
+  expect(submit).not.toHaveBeenCalled();
+  await expect(
+    service.addOrUpgradeSelectedPackage("upgradeSelectedPackage", {}),
+  ).rejects.toThrow("concrete");
+  await service.addOrUpgradeSelectedPackage("upgradeSelectedPackage", {
+    version: "1.5.0",
+    projectPaths: ["/a.csproj"],
+  });
+  expect(submit).toHaveBeenCalledWith(
+    expect.objectContaining({
+      targetId: "a",
+      steps: [
+        expect.objectContaining({
+          version: "1.5.0",
+          projectPaths: ["/a.csproj"],
+        }),
+      ],
+    }),
+    expect.anything(),
+    expect.anything(),
+    false,
+  );
+  state.selectedTargetId = "other";
+  expect(submit.mock.calls[0]?.[0]).toMatchObject({ targetId: "a" });
 });

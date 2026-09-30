@@ -12,6 +12,7 @@ import type {
   UpgradeContext,
 } from "#contracts";
 import type { CompatibilityRequest } from "#client";
+import { cachePolicy } from "#client/cache";
 import { candidateKey, evaluateUpgrades } from "#manager";
 import {
   ReadCoordinator,
@@ -50,6 +51,7 @@ export interface PackageDataPort {
   ): Promise<{ packages: NuGetPackageItem[]; complete: boolean }>;
 }
 interface DataEvents {
+  catalogs?(catalogs: readonly PackageCatalog[], context: UpgradeContext): void;
   inventory?(snapshot: InventorySnapshot, context: UpgradeContext): void;
   search?(
     packages: NuGetPackageItem[],
@@ -79,6 +81,7 @@ export class PackageDataService {
   private inventoryFresh = false;
   private catalogs: PackageCatalog[] = [];
   private catalogsLoaded = false;
+  private catalogsLoadedAt = 0;
   private readonly evidence = new Map<string, CompatibilityEvidence>();
   private readonly verified = new Map<string, VerifiedCandidate>();
   private inventoryWork: { key: string; promise: Promise<void> } | undefined;
@@ -172,7 +175,11 @@ export class PackageDataService {
     let error: string | null = null;
     this.flow("catalog", "loading", this.catalogs.length > 0);
     try {
-      if (options.force || !this.catalogsLoaded) {
+      if (
+        options.force ||
+        !this.catalogsLoaded ||
+        Date.now() - this.catalogsLoadedAt >= cachePolicy.metadataTtlMs
+      ) {
         const catalogs = await this.port.loadCatalogs(
           this.snapshot,
           this.effectiveContext(),
@@ -181,7 +188,8 @@ export class PackageDataService {
         );
         if (!this.reads.isCurrent(ticket)) return;
         this.catalogs = catalogs;
-        this.catalogsLoaded = true;
+        this.catalogsLoaded = catalogs.every((catalog) => catalog.complete);
+        this.catalogsLoadedAt = Date.now();
         this.evidence.clear();
         this.verified.clear();
       }
@@ -189,6 +197,7 @@ export class PackageDataService {
         status = "failed";
         error = "One or more package sources could not be loaded.";
       }
+      this.events.catalogs?.(this.catalogs, this.effectiveContext());
       this.emit();
       void this.verifyCandidates(ticket).catch(() => {
         /* The verification loop converts failures to inconclusive evidence. */

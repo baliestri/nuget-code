@@ -11,7 +11,6 @@ import type {
 import {
   NuGetClient,
   evaluateProject,
-  resolveDotnetSdk,
   prepareCompatibilityRequest,
   verifyPackageCompatibility,
   compatibilityRequestKey,
@@ -25,7 +24,9 @@ import {
   verifyProjectInputs,
 } from "#client/project-files";
 import type { NuGetClientSettings, NuGetClientLogger } from "#client/types";
+import { networkFor } from "#client/client-network";
 import { createPackageReferenceFingerprint } from "#extension/webview/package-fingerprint";
+import { resolveProjectSdkSnapshot } from "#extension/webview/project-sdk-snapshot";
 import type {
   CandidateVerification,
   PackageDataPort,
@@ -41,6 +42,7 @@ export interface DataEnvironment {
   sourceRevision: string;
 }
 interface RecordSnapshot {
+  generation: number;
   snapshot: InventorySnapshot;
   environment: DataEnvironment;
   projects: Map<string, EvaluatedProject>;
@@ -73,8 +75,11 @@ export class PackageDataAdapter implements PackageDataPort {
   async loadInventory(
     context: UpgradeContext,
     signal: AbortSignal,
+    force = false,
   ): Promise<InventorySnapshot> {
     const environment = this.capture(context.targetId);
+    const network = networkFor(environment.settings);
+    const generation = force ? network.refresh() : network.facts.generation;
     const target = environment.target;
     if (!target) {
       const fingerprint = await createPackageReferenceFingerprint({
@@ -96,6 +101,7 @@ export class PackageDataAdapter implements PackageDataPort {
         ]),
       };
       this.records.set(snapshot.revision, {
+        generation,
         snapshot,
         environment,
         projects: new Map(),
@@ -116,6 +122,10 @@ export class PackageDataAdapter implements PackageDataPort {
         ),
       ),
     ].sort();
+    this.logger.information(
+      "nuget.packages",
+      `Loading inventory for ${target.name}: ${projectPaths.length} project(s).`,
+    );
     const roots = await Promise.all(
       environment.allowedRoots.map((root) => fs.realpath(root)),
     );
@@ -177,14 +187,25 @@ export class PackageDataAdapter implements PackageDataPort {
         ? evaluated.contextRevision
         : null;
     }
-    const sdks: Record<string, string> = {};
-    for (const project of projectPaths)
-      sdks[project] =
-        projects
-          .get(project)
-          ?.projects.find((node) => pathKey(node.path) === pathKey(project))
-          ?.sdk.version ??
-        (await resolveDotnetSdk(environment.cli, project, signal)).version;
+    const sdkSelection = await resolveProjectSdkSnapshot(
+      environment.cli,
+      projectPaths,
+      roots,
+      environment.settings.dotnetPath,
+      signal,
+      this.logger,
+    );
+    const sdks = Object.fromEntries(
+      [...sdkSelection.sdks].map(([file, sdk]) => [file, sdk.version]),
+    );
+    for (const file of sdkSelection.inputPaths) inputs.add(file);
+    for (const file of projectPaths) {
+      const evaluated = projects
+        .get(file)
+        ?.projects.find((node) => pathKey(node.path) === pathKey(file));
+      if (evaluated && evaluated.sdk.version !== sdks[file])
+        throw new Error("The SDK changed after project evaluation.");
+    }
     const listed = await NuGetClient.loadInstalledReferences({
       target: {
         ...target,
@@ -195,13 +216,9 @@ export class PackageDataAdapter implements PackageDataPort {
       logger: this.logger,
       signal,
       readOnly: true,
+      resolvedSdks: sdkSelection.sdks,
     });
-    for (const project of projectPaths)
-      if (
-        sdks[project] !==
-        (await resolveDotnetSdk(environment.cli, project, signal)).version
-      )
-        throw new Error("The project SDK changed during inventory loading.");
+    await sdkSelection.revalidate();
     const evaluatedReferences = new Map(
       [...evaluatedRoots.values()]
         .flatMap((project) => project.references)
@@ -270,7 +287,13 @@ export class PackageDataAdapter implements PackageDataPort {
       ]),
     };
     signal.throwIfAborted();
+    const verifiedProjects = Object.values(revisions).filter(Boolean).length;
+    this.logger.information(
+      "nuget.packages",
+      `Inventory ready for ${target.name}: ${projectPaths.length} project(s), ${listed.length} reference(s); ${verifiedProjects} project context(s) available for automatic verification.`,
+    );
     this.records.set(snapshot.revision, {
+      generation,
       snapshot,
       environment,
       projects,
@@ -284,8 +307,11 @@ export class PackageDataAdapter implements PackageDataPort {
     snapshot: InventorySnapshot,
     context: UpgradeContext,
     signal: AbortSignal,
+    force = false,
   ): Promise<Awaited<ReturnType<PackageDataPort["loadCatalogs"]>>> {
     const record = this.record(snapshot);
+    const network = networkFor(record.environment.settings);
+    const generation = force ? record.generation : network.facts.generation;
     const feeds = record.environment.feeds.filter((feed) =>
       context.feedUrls.includes(feed.url),
     );
@@ -308,6 +334,7 @@ export class PackageDataAdapter implements PackageDataPort {
           settings: record.environment.settings,
           logger: this.logger,
           signal,
+          generation,
         }),
       ),
     );
@@ -387,6 +414,12 @@ export class PackageDataAdapter implements PackageDataPort {
   }
   fingerprint(revision: string): string | undefined {
     return this.records.get(revision)?.fingerprint;
+  }
+  evaluation(
+    revision: string,
+    projectPath: string,
+  ): EvaluatedProject | undefined {
+    return this.records.get(revision)?.projects.get(projectPath);
   }
   private record(snapshot: InventorySnapshot): RecordSnapshot {
     const record = this.records.get(snapshot.revision);

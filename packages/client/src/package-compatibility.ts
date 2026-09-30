@@ -232,7 +232,7 @@ export async function prepareCompatibilityRequest(
       compareNuGetVersions(
         candidate.version,
         reference.resolvedVersion ?? reference.requestedVersion,
-      ) <= 0
+      ) < 0
     )
       throw new VersionEditError(
         "stale-context",
@@ -260,6 +260,19 @@ export async function prepareCompatibilityRequest(
     });
   }
   const documents = [];
+  if (
+    !selected.some(
+      (reference) =>
+        compareNuGetVersions(
+          candidate.version,
+          reference.resolvedVersion ?? reference.requestedVersion!,
+        ) > 0,
+    )
+  )
+    throw new VersionEditError(
+      "stale-context",
+      "The requested version is already resolved for every affected reference.",
+    );
   for (const file of new Set(changes.map((change) => change.declarationPath))) {
     const input = project.inputs.find(
       (item) => pathKey(item.path) === pathKey(file),
@@ -280,11 +293,6 @@ export async function prepareCompatibilityRequest(
     selectedProjectPaths: intent.selectedProjectPaths,
     contextRevision: project.contextRevision,
   });
-  if (!plan.files.length)
-    throw new VersionEditError(
-      "stale-context",
-      "The plan contains no upgrade.",
-    );
   return Object.freeze({
     project,
     candidate: Object.freeze({
@@ -332,7 +340,12 @@ async function restoreCandidate(
     io: sandboxVersionEditIO(sandbox),
   });
   const affected = new Set(
-    plan.changes.flatMap((change) => change.affectedProjectPaths).map(pathKey),
+    project.references
+      .filter((reference) =>
+        candidate.referenceIds.includes(reference.referenceId),
+      )
+      .flatMap((reference) => reference.affectedProjectPaths)
+      .map(pathKey),
   );
   const results: CompatibilityResult[] = [];
   for (const node of project.projects.filter((item) =>

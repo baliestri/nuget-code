@@ -689,6 +689,9 @@ function stateWithPackages(
   return {
     flows: createReadFlowStates(),
     updates: createEmptyUpdateProjection(),
+    operations: [],
+    installedReferences: [],
+    catalogs: [],
     activeTab: "packages",
     targets: [],
     selectedTargetId: "",

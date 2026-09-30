@@ -6,7 +6,8 @@ import FeedSelect from "#webview/components/package-manager/FeedSelect.vue";
 import IconAction from "#webview/components/package-manager/IconAction.vue";
 import PackageIcon from "#webview/components/package-manager/PackageIcon.vue";
 import ProjectRow from "#webview/components/package-manager/ProjectRow.vue";
-import { feedName, packageVersions, selectedTarget } from "#manager";
+import { feedName, selectedTarget } from "#manager";
+import LoadStatus from "#webview/components/package-manager/LoadStatus.vue";
 import { splitAuthors } from "#webview/lib/ui";
 import { formatDate } from "#webview/lib/format";
 import { usePackageManagerStore } from "#webview/stores/packageManager";
@@ -16,6 +17,7 @@ const props = defineProps<{
 }>();
 
 const store = usePackageManagerStore();
+const busy = computed(() => store.isPackageBusy(props.packageItem.name));
 const { model, selectedVersion, selectedDetailFeedId } = storeToRefs(store);
 const selectedProjectPaths = computed(() =>
   store.selectedProjectPathsForTarget(),
@@ -87,6 +89,18 @@ function dependencyKey(group: NuGetPackageDependencyGroup): string {
 
 <template>
   <div class="flex min-h-full flex-col gap-4 p-4">
+    <LoadStatus
+      :state="model.flows.details"
+      label="selected-version details"
+      @retry="
+        store.post({
+          type: 'loadPackageDetails',
+          packageId: packageItem.id,
+          feedId: selectedDetailFeedId,
+          version: selectedVersion,
+        })
+      "
+    />
     <div
       v-if="packageItem.deprecated"
       class="rounded border border-warning bg-surface-2 p-3 text-warning"
@@ -117,7 +131,7 @@ function dependencyKey(group: NuGetPackageDependencyGroup): string {
         @change="onVersionChange"
       >
         <option
-          v-for="version in packageVersions(packageItem)"
+          v-for="version in store.versionsFor(packageItem)"
           :key="version"
           :value="version"
         >
@@ -135,32 +149,37 @@ function dependencyKey(group: NuGetPackageDependencyGroup): string {
           icon="add"
           label="Add to selected projects"
           tone="add"
-          :disabled="globalActions.add.length === 0"
+          :disabled="globalActions.add.length === 0 || busy"
           @run="runGlobalAdd"
         />
         <IconAction
           icon="arrow-up"
           label="Update selected projects"
           tone="update"
-          :disabled="globalActions.update.length === 0"
+          :disabled="globalActions.update.length === 0 || busy"
           @run="runGlobalUpdate"
         />
         <IconAction
           icon="arrow-down"
           label="Downgrade selected projects"
           tone="update"
-          :disabled="globalActions.downgrade.length === 0"
+          :disabled="globalActions.downgrade.length === 0 || busy"
           @run="runGlobalDowngrade"
         />
         <IconAction
           icon="trash"
           label="Remove from selected projects"
           tone="remove"
-          :disabled="globalActions.remove.length === 0"
+          :disabled="globalActions.remove.length === 0 || busy"
           @run="runGlobalRemove"
         />
       </div>
     </div>
+
+    <p class="text-xs text-fg-muted">
+      Manual version changes are revalidated against the selected projects. Only
+      verified candidates are included in Update All.
+    </p>
 
     <section
       class="min-h-0 overflow-hidden rounded border border-border-muted bg-surface-1"
