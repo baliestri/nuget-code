@@ -16,6 +16,7 @@ export const ignoredProjectDirectories = new Set([
   "node_modules",
   "bin",
   "obj",
+  "artifacts",
 ]);
 export function pathKey(value: string): string {
   const normalized = path.resolve(value);

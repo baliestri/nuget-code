@@ -61,6 +61,16 @@ export interface NuGetPackageItem {
 }
 
 export interface NuGetConfigFile {
+  sourceDirectives?: readonly {
+    action: "add" | "remove" | "clear";
+    key?: string;
+  }[];
+  disabledDirectives?: readonly {
+    action: "add" | "remove" | "clear";
+    key?: string;
+    disabled?: boolean;
+  }[];
+  credentialNames?: readonly string[];
   id: string;
   name: string;
   path: string;

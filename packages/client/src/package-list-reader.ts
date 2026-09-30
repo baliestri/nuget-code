@@ -8,9 +8,11 @@ import {
   dotnetArguments,
   resolveDotnetSdk,
   supportsListNoRestore,
+  type DotnetSdk,
 } from "#client/dotnet-sdk";
 
 export interface PackageInventoryOptions {
+  resolvedSdks?: ReadonlyMap<string, DotnetSdk>;
   readOnly?: boolean;
   target: WorkspaceTarget | undefined;
   cli: NuGetCli;
@@ -40,11 +42,9 @@ export async function readTargetPackageList(
   ];
   for (const projectPath of paths) {
     options.signal?.throwIfAborted();
-    const sdk = await resolveDotnetSdk(
-      options.cli,
-      projectPath,
-      options.signal,
-    );
+    const sdk =
+      options.resolvedSdks?.get(projectPath) ??
+      (await resolveDotnetSdk(options.cli, projectPath, options.signal));
     const action = {
       kind: "list" as const,
       projectPath,

@@ -393,7 +393,7 @@ function runCredentialProviderCommand(
       windowsHide: true,
     });
     const stdout: Buffer[] = [];
-    let launchError = false;
+    let launchError: string | undefined;
     const abort = () => {
       child.kill();
     };
@@ -401,8 +401,9 @@ function runCredentialProviderCommand(
 
     child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
     child.stderr.resume();
-    child.on("error", () => {
-      launchError = true;
+    child.on("error", (error: NodeJS.ErrnoException) => {
+      launchError =
+        error.code && /^[A-Z0-9_]+$/.test(error.code) ? error.code : "UNKNOWN";
     });
     child.on("close", (code) => {
       signal?.removeEventListener("abort", abort);
@@ -412,8 +413,9 @@ function runCredentialProviderCommand(
       }
       if (launchError) {
         resolve({
-          providerFound: false,
-          error: "Could not start credential provider",
+          providerFound:
+            provider.argsPrefix.length > 0 || launchError !== "ENOENT",
+          error: `Could not start credential provider executable ${path.basename(provider.command)} (${launchError})`,
         });
         return;
       }

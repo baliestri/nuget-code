@@ -120,6 +120,68 @@ describe("NuGet config loading", () => {
       expect.stringContaining(`Failed to read ${badPath}`),
     );
   });
+
+  it("limits effective sources to project ancestors and honors clear/remove and inherited disable directives", async () => {
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), "nuget-scoped-config-"),
+    );
+    try {
+      const a = path.join(root, "A");
+      const b = path.join(root, "B");
+      const artifact = path.join(root, "artifacts", "review");
+      for (const folder of [a, b, artifact])
+        await fs.mkdir(folder, { recursive: true });
+      const configs = [root, a, b, artifact].map((folder) =>
+        path.join(folder, "NuGet.Config"),
+      );
+      await fs.writeFile(
+        configs[0]!,
+        '<configuration><packageSources><clear/><add key="base" value="https://base.test/index.json"/><add key="removed" value="https://removed.test/index.json"/></packageSources></configuration>',
+      );
+      await fs.writeFile(
+        configs[1]!,
+        '<configuration><packageSources><remove key="removed"/><add key="private" value="https://a.test/index.json"/></packageSources><disabledPackageSources><add key="base" value="true"/></disabledPackageSources></configuration>',
+      );
+      await fs.writeFile(
+        configs[2]!,
+        '<configuration><packageSources><clear/><add key="private" value="https://b.test/index.json"/></packageSources></configuration>',
+      );
+      await fs.writeFile(
+        configs[3]!,
+        '<configuration><packageSources><add key="local-assuan" value="missing/artifacts/packages"/></packageSources></configuration>',
+      );
+      const options = {
+        workspaceConfigPaths: configs,
+        workspaceFolderPaths: [root],
+        projectPaths: [path.join(a, "A.csproj")],
+      };
+      const sources = await loadSources(settings(), logger(), options);
+      expect(
+        sources.some(
+          (source) => source.path === configs[3] || source.path === configs[2],
+        ),
+      ).toBe(false);
+      expect(sources[0]?.feeds.map((feed) => feed.name).sort()).toEqual([
+        "base",
+        "private",
+      ]);
+      expect(
+        sources[0]?.feeds.find((feed) => feed.name === "base")?.enabled,
+      ).toBe(false);
+      const union = await loadSources(settings(), logger(), {
+        ...options,
+        projectPaths: [...options.projectPaths, path.join(b, "B.csproj")],
+      });
+      expect(
+        union[0]?.feeds.filter((feed) => feed.name === "private"),
+      ).toHaveLength(2);
+      expect(new Set(union[0]?.feeds.map((feed) => feed.id)).size).toBe(
+        union[0]?.feeds.length,
+      );
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
 });
 
 function settings(): NuGetClientSettings {

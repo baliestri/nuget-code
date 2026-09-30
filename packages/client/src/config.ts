@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import type { NuGetConfigFile, PackageFeed } from "#contracts/nuget";
 import type {
   NuGetClientSettings,
@@ -15,10 +16,22 @@ export async function loadSources(
   logger: NuGetClientLogger,
   options: NuGetWorkspaceConfigOptions = {},
 ): Promise<NuGetConfigFile[]> {
+  const workspacePaths = (options.workspaceConfigPaths ?? []).filter(
+    (file) =>
+      options.projectPaths === undefined ||
+      options.projectPaths.some((project) =>
+        isParent(path.dirname(file), path.dirname(project)),
+      ),
+  );
+  const defaults = getDefaultConfigPaths();
   const paths = unique([
-    ...getDefaultConfigPaths(),
+    ...defaults,
+    ...workspacePaths.sort(
+      (a, b) =>
+        a.split(path.sep).length - b.split(path.sep).length ||
+        a.localeCompare(b),
+    ),
     ...settings.extraConfigPaths,
-    ...(options.workspaceConfigPaths ?? []),
   ]);
   const configs = await Promise.all(
     paths.map((configPath) => readConfig(configPath, logger, options)),
@@ -26,7 +39,11 @@ export async function loadSources(
   const existingConfigs = configs.filter(
     (config): config is NuGetConfigFile => config !== undefined,
   );
-  const effective = createEffectiveConfig(existingConfigs);
+  const effective = createEffectiveConfig(
+    existingConfigs,
+    options,
+    new Set([...defaults, ...settings.extraConfigPaths]),
+  );
 
   logger.information(
     "nuget.config",
@@ -116,6 +133,26 @@ async function readConfig(
       }));
 
     return {
+      sourceDirectives: childElements(
+        firstElement(configuration, "packageSources"),
+      )
+        .filter((element) => ["add", "remove", "clear"].includes(element.name))
+        .map((element) => ({
+          action: element.name as "add" | "remove" | "clear",
+          ...(element.attributes.key ? { key: element.attributes.key } : {}),
+        })),
+      disabledDirectives: childElements(
+        firstElement(configuration, "disabledPackageSources"),
+      )
+        .filter((element) => ["add", "remove", "clear"].includes(element.name))
+        .map((element) => ({
+          action: element.name as "add" | "remove" | "clear",
+          ...(element.attributes.key ? { key: element.attributes.key } : {}),
+          ...(element.attributes.value !== undefined
+            ? { disabled: element.attributes.value.toLowerCase() === "true" }
+            : {}),
+        })),
+      credentialNames: [...credentialKeys],
       id: configPath,
       name: path.basename(configPath),
       path: configPath,
@@ -133,15 +170,58 @@ async function readConfig(
   }
 }
 
-function createEffectiveConfig(configs: NuGetConfigFile[]): NuGetConfigFile {
-  const feeds = new Map<string, PackageFeed>();
-  for (const config of configs) {
-    for (const feed of config.feeds) {
-      feeds.set(feed.name, { ...feed, id: `effective:${feed.name}` });
+function createEffectiveConfig(
+  configs: NuGetConfigFile[],
+  options: NuGetWorkspaceConfigOptions,
+  explicit: ReadonlySet<string>,
+): NuGetConfigFile {
+  const union = new Map<string, PackageFeed>();
+  for (const project of options.projectPaths?.length
+    ? options.projectPaths
+    : [undefined]) {
+    const feeds = new Map<string, PackageFeed>();
+    const disabled = new Map<string, boolean>();
+    const credentials = new Set<string>();
+    for (const config of configs) {
+      if (
+        project &&
+        config.origin === "workspace" &&
+        !explicit.has(config.path) &&
+        !isParent(path.dirname(config.path), path.dirname(project))
+      )
+        continue;
+      for (const directive of config.sourceDirectives ?? []) {
+        if (directive.action === "clear") feeds.clear();
+        else if (directive.action === "remove" && directive.key)
+          feeds.delete(directive.key);
+        else if (directive.key) {
+          const feed = [...config.feeds]
+            .reverse()
+            .find((feed) => feed.name === directive.key);
+          if (feed) feeds.set(feed.name, feed);
+        }
+      }
+      for (const directive of config.disabledDirectives ?? []) {
+        if (directive.action === "clear") disabled.clear();
+        else if (directive.action === "remove" && directive.key)
+          disabled.delete(directive.key);
+        else if (directive.key)
+          disabled.set(directive.key, directive.disabled ?? false);
+      }
+      for (const name of config.credentialNames ?? []) credentials.add(name);
+    }
+    for (const feed of feeds.values()) {
+      const key = `${feed.name}\0${feed.url}`;
+      const previous = union.get(key);
+      union.set(key, {
+        ...feed,
+        enabled: (previous?.enabled ?? false) || !disabled.get(feed.name),
+        hasCredentials: credentials.has(feed.name),
+      });
     }
   }
-  if (!feeds.has("nuget.org")) {
-    feeds.set("nuget.org", {
+  if (!configs.length) {
+    union.set("nuget.org", {
       id: "effective:nuget.org",
       name: "nuget.org",
       url: "https://api.nuget.org/v3/index.json",
@@ -149,14 +229,18 @@ function createEffectiveConfig(configs: NuGetConfigFile[]): NuGetConfigFile {
     });
   }
 
+  const feeds = [...union.values()].map((feed) => ({
+    ...feed,
+    id: `effective:${feed.name}${[...union.values()].filter((item) => item.name === feed.name).length > 1 ? `:${createHash("sha256").update(feed.url).digest("hex").slice(0, 12)}` : ""}`,
+  }));
   return {
     id: "__effective__",
     name: "[Effective NuGet.config]",
     path: "",
     origin: "effective",
-    hasCredentials: configs.some((config) => config.hasCredentials),
+    hasCredentials: feeds.some((feed) => feed.hasCredentials),
     scope: "Merged NuGet configuration",
-    feeds: Array.from(feeds.values()),
+    feeds,
   };
 }
 
@@ -164,6 +248,8 @@ function getConfigOrigin(
   configPath: string,
   workspaceFolderPaths: string[],
 ): NuGetConfigFile["origin"] {
+  if (workspaceFolderPaths.some((folder) => isParent(folder, configPath)))
+    return "workspace";
   const lower = configPath.toLowerCase();
   if (lower.includes("\\program files") || lower.includes("/program files")) {
     return "machine";
@@ -179,6 +265,20 @@ function getConfigOrigin(
     return "workspace";
   }
   return "unknown";
+}
+
+function isParent(parent: string, child: string): boolean {
+  const normalize = (value: string) =>
+    process.platform === "win32"
+      ? path.resolve(value).toLowerCase()
+      : path.resolve(value);
+  const relative = path.relative(normalize(parent), normalize(child));
+  return (
+    relative === "" ||
+    (relative !== ".." &&
+      !relative.startsWith(`..${path.sep}`) &&
+      !path.isAbsolute(relative))
+  );
 }
 
 function unique(values: string[]): string[] {

@@ -6,7 +6,7 @@ import { ExtensionLogger } from "#extension/logger";
 
 export const projectFileGlob = "**/*.{csproj,fsproj,vbproj}";
 export const solutionFileGlob = "**/*.{sln,slnx}";
-const excludeGlob = "**/{node_modules,bin,obj}/**";
+const excludeGlob = "**/{node_modules,bin,obj,artifacts,.git}/**";
 
 const classicProjectLinePattern =
   /^Project\("\{[0-9A-F-]+\}"\)\s*=\s*"[^"]*",\s*"([^"]+)"/gim;
@@ -100,6 +100,20 @@ async function resolveSolutionProjectPaths(
     const match = byNormalizedPath.get(normalizeProjectPath(absolute));
     if (match) {
       resolved.push(match);
+    } else if (
+      knownProjectExtensions.has(path.extname(absolute).toLowerCase()) &&
+      workspace.workspaceFolders?.some((folder) => {
+        const relative = path.relative(folder.uri.fsPath, absolute);
+        return (
+          relative !== ".." &&
+          !relative.startsWith(`..${path.sep}`) &&
+          !path.isAbsolute(relative)
+        );
+      })
+    ) {
+      // Excluding generated trees from discovery must not discard an explicit solution reference.
+      const stat = await fs.lstat(absolute).catch(() => undefined);
+      if (stat?.isFile() && !stat.isSymbolicLink()) resolved.push(absolute);
     }
   }
   return unique(resolved);

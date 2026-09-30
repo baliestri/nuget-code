@@ -19,6 +19,7 @@ export interface NuGetClientLogger {
 }
 
 export interface NuGetWorkspaceConfigOptions {
+  projectPaths?: readonly string[];
   workspaceConfigPaths?: string[];
   workspaceFolderPaths?: string[];
 }
