@@ -26,6 +26,37 @@ describe("package cache", () => {
     vscodeMock.__resetVscodeMock();
   });
 
+  it("shares search cache for equal resolved URL sets while explicit empty retains inventory only", async () => {
+    const cache = new PackageCache(
+      new CacheStore(memoryCacheStorage(), 1024 * 1024, Date.now),
+    );
+    const state = stateWithPackages({
+      feeds: [
+        { id: "a", name: "A", url: "https://a.test/index.json", enabled: true },
+        { id: "b", name: "B", url: "https://b.test/index.json", enabled: true },
+      ],
+      feedFilter: { mode: "selected", ids: ["b", "a"] },
+      installedPackagesStatus: "ready",
+      implicitPackagesStatus: "ready",
+      availablePackages: [packageItem("search", "Search")],
+    });
+    await cache.persist(state, { fingerprint: "facts" });
+    expect(
+      (
+        await cache.read({
+          ...state,
+          feedFilter: { mode: "selected", ids: ["a", "b"] },
+        })
+      )?.availablePackages,
+    ).toHaveLength(1);
+    const empty = await cache.read({
+      ...state,
+      feedFilter: { mode: "selected", ids: [] },
+    });
+    expect(empty?.availablePackages).toEqual([]);
+    expect(empty?.installedPackages).toEqual(state.installedPackages);
+  });
+
   it("hydrates cached packages and optionally preserves selection", () => {
     const cached = packageItem("cached", "Cached");
     const state = stateWithPackages({ selectedPackageId: "current" });

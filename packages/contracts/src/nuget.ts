@@ -42,6 +42,13 @@ export interface NuGetPackageDependencyGroup {
 }
 
 export interface NuGetPackageItem {
+  projectUrl?: string | undefined;
+  licenseUrl?: string | undefined;
+  licenseExpression?: string | undefined;
+  packageUrl?: string | undefined;
+  totalDownloads?: number | undefined;
+  frameworks?: string[] | undefined;
+  localInstallations?: { version: string; path: string }[] | undefined;
   id: string;
   name: string;
   installedVersion?: string | undefined;

@@ -10,8 +10,12 @@ import { usePackageManagerStore } from "#webview/stores/packageManager";
 
 const props = defineProps<{
   packageItem: NuGetPackageItem;
+  batch?: boolean;
+  checked?: boolean;
+  eligible?: boolean;
 }>();
 
+const emit = defineEmits<{ toggle: [checked: boolean] }>();
 const store = usePackageManagerStore();
 const { model, selectedPackageId } = storeToRefs(store);
 const selected = computed(
@@ -53,15 +57,27 @@ const available = computed(() =>
 <template>
   <div
     :class="
-      rowClass(
-        selected,
-        'grid w-full grid-cols-[1fr_auto] items-center gap-3 px-3 py-1.5 text-left',
-      )
+      rowClass(selected, 'flex w-full items-center gap-2 px-3 py-1.5 text-left')
     "
   >
+    <input
+      v-if="batch"
+      type="checkbox"
+      :checked="checked"
+      :disabled="!eligible"
+      :aria-label="`Select update for ${packageItem.name}`"
+      :title="
+        eligible
+          ? 'Include this package in selected updates'
+          : 'Compatibility must be verified before selecting this update'
+      "
+      @change="emit('toggle', ($event.target as HTMLInputElement).checked)"
+    />
     <button
       type="button"
-      class="flex min-w-0 items-center gap-2 text-left"
+      class="flex min-w-0 flex-1 items-center gap-2 text-left"
+      :title="packageItem.name"
+      :aria-pressed="selected"
       @click="store.selectPackageItem(packageItem)"
     >
       <PackageIcon :package-item="packageItem" size-class="h-4 w-4" />

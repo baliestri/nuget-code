@@ -19,6 +19,7 @@ export interface CatalogVersion {
 }
 
 export interface PackageCatalog {
+  iconUrl?: string | undefined;
   packageId: string;
   versions: readonly CatalogVersion[];
   complete: boolean;

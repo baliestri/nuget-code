@@ -1,5 +1,8 @@
+import { packageInstallations } from "#client/package-installations";
 import {
   commands,
+  env,
+  Uri,
   window,
   workspace,
   StatusBarAlignment,
@@ -10,6 +13,7 @@ import {
 } from "vscode";
 import type {
   PackageManagerEvent,
+  PackageFeedFilter,
   NuGetPackageItem,
   PackageManagerCommand,
   PackageManagerOperationKind,
@@ -33,6 +37,9 @@ import {
 import type { PackageDetailsCache } from "#client/package-details";
 import {
   PackageManagementCore,
+  normalizeFeedFilter,
+  queryFeedUrls,
+  packageMetadataUrl,
   referenceInventory,
   type FolderSizeCache,
 } from "#manager";
@@ -103,6 +110,7 @@ export class PackageManagerController implements Disposable {
   private inputPaths: readonly string[] = [];
   private dataGeneration = 0;
   private activeDataContextKey = "";
+  private feedFilterTargetId = "";
   private authenticationRefreshPending = false;
   private readonly packageDetailsCache = new MemoryCache(
     500,
@@ -157,6 +165,27 @@ export class PackageManagerController implements Disposable {
         void this.updateHasUpgradesContext().catch(() => {});
       },
       {
+        catalogs: (catalogs, context) => {
+          if (context.targetId !== this.state.selectedTargetId) return;
+          const icons = new Map(
+            catalogs.map((catalog) => [
+              catalog.packageId.toLowerCase(),
+              catalog.iconUrl,
+            ]),
+          );
+          const enrich = (items: NuGetPackageItem[]) =>
+            items.map((item) => ({
+              ...item,
+              iconUrl: icons.get(item.name.toLowerCase()) ?? item.iconUrl,
+            }));
+          const patch = {
+            catalogs,
+            installedPackages: enrich(this.state.installedPackages),
+            implicitPackages: enrich(this.state.implicitPackages),
+          };
+          this.state = { ...this.state, ...patch };
+          this.publishPackageEvent({ type: "stateDelta", patch });
+        },
         inventory: (snapshot) => {
           if (snapshot.targetId !== this.state.selectedTargetId) return;
           this.packageDetails.cancel();
@@ -201,10 +230,25 @@ export class PackageManagerController implements Disposable {
             query !== this.state.search
           )
             return;
-          this.state = { ...this.state, availablePackages };
+          const icons = new Map(
+            availablePackages
+              .filter((item) => item.iconUrl)
+              .map((item) => [item.name.toLowerCase(), item.iconUrl]),
+          );
+          const enrich = (items: NuGetPackageItem[]) =>
+            items.map((item) => ({
+              ...item,
+              iconUrl: item.iconUrl ?? icons.get(item.name.toLowerCase()),
+            }));
+          const patch = {
+            availablePackages,
+            installedPackages: enrich(this.state.installedPackages),
+            implicitPackages: enrich(this.state.implicitPackages),
+          };
+          this.state = { ...this.state, ...patch };
           this.publishPackageEvent({
             type: "stateDelta",
-            patch: { availablePackages },
+            patch,
           });
           void this.persistPackageCache().catch(() => {});
         },
@@ -409,6 +453,49 @@ export class PackageManagerController implements Disposable {
         )
           throw new Error("The selected target is no longer available.");
         await this.setSelectedTarget(message.targetId);
+        return;
+      case "openPackageLink": {
+        const item = this.state.packageDetails?.packageItem;
+        const url = packageMetadataUrl(message.url);
+        if (
+          !url ||
+          !item ||
+          ![item.projectUrl, item.licenseUrl, item.packageUrl].includes(url)
+        )
+          throw new Error("The package link is no longer available.");
+        await env.openExternal(Uri.parse(url));
+        return;
+      }
+      case "openPackageFolder": {
+        const item = this.state.packageDetails?.packageItem;
+        const installation = item?.localInstallations?.find(
+          (entry) => entry.path === message.path,
+        );
+        if (!item || !installation)
+          throw new Error("The package installation is no longer available.");
+        const installations = await packageInstallations(
+          item.name,
+          [installation.version],
+          this.state.folders
+            .filter((folder) => folder.title === "global-packages")
+            .map((folder) => folder.path),
+        );
+        if (!installations.some((entry) => entry.path === installation.path))
+          throw new Error("The package installation is no longer available.");
+        await commands.executeCommand(
+          "revealFileInOS",
+          Uri.file(installation.path),
+        );
+        return;
+      }
+      case "setFeedFilter":
+        await this.setFeedFilter(message.filter);
+        return;
+      case "upgradeCandidates":
+        await this.packageCommands.upgradeCandidates(
+          message.keys,
+          message.revision,
+        );
         return;
       case "selectFeed":
         if (!this.state.feeds.some((feed) => feed.id === message.feedId))
@@ -660,6 +747,7 @@ export class PackageManagerController implements Disposable {
           ...this.state,
           targets: this.discovery.targets,
           selectedTargetId,
+          searchResultLimit: this.settings.maxSearchResults,
           feeds: [PackageManagementCore.feeds.allFeeds, ...effectiveFeeds],
           selectedFeedId: PackageManagementCore.feeds.selectInitialFeed(
             [PackageManagementCore.feeds.allFeeds, ...effectiveFeeds],
@@ -671,6 +759,7 @@ export class PackageManagerController implements Disposable {
           folders,
         };
 
+        this.restoreFeedFilter();
         this.packageReferenceWatcher.register();
         const fingerprint = await this.createPackageReferenceFingerprint();
         const cached = await this.hydrateCachedPackages();
@@ -723,6 +812,7 @@ export class PackageManagerController implements Disposable {
         ),
       };
 
+      this.restoreFeedFilter();
       this.postState();
       void this.feedHealth.check(effectiveFeeds);
       this.data.invalidate(targetId);
@@ -985,6 +1075,8 @@ export class PackageManagerController implements Disposable {
     this.state = {
       ...this.state,
       selectedTargetId: targetId,
+      feedFilter: undefined,
+      selectedFeedId: this.settings.defaultFeed,
       selectedPackageId: undefined,
       installedPackages: [],
       installedReferences: [],
@@ -1016,6 +1108,7 @@ export class PackageManagerController implements Disposable {
         this.settings.defaultFeed,
       ),
     };
+    this.restoreFeedFilter();
     this.hydratePackageDetailsCache(await this.hydrateCachedPackages());
     this.updateSolutionStatusBar();
     this.postState();
@@ -1023,38 +1116,76 @@ export class PackageManagerController implements Disposable {
     await this.refreshPackages();
   }
 
-  private async setSelectedFeed(feedId: string): Promise<void> {
-    this.cancelSearchReads();
+  private restoreFeedFilter(): void {
+    const stored = this.storage.get<PackageFeedFilter>(
+      `nuget-code.packageManager.feedFilter:${this.state.selectedTargetId}`,
+    );
     this.state = {
       ...this.state,
-      selectedFeedId: feedId,
+      feedFilter: normalizeFeedFilter(
+        stored ??
+          (this.feedFilterTargetId === this.state.selectedTargetId
+            ? this.state.feedFilter
+            : undefined),
+        this.state.feeds,
+        this.feedFilterTargetId &&
+          this.feedFilterTargetId !== this.state.selectedTargetId
+          ? this.settings.defaultFeed
+          : this.state.selectedFeedId,
+      ),
+    };
+    this.feedFilterTargetId = this.state.selectedTargetId;
+    if (JSON.stringify(stored) !== JSON.stringify(this.state.feedFilter))
+      void this.storage
+        .update(
+          `nuget-code.packageManager.feedFilter:${this.state.selectedTargetId}`,
+          this.state.feedFilter,
+        )
+        .then(undefined, () =>
+          this.logger.warning(
+            "nuget.feeds",
+            "Could not persist the package feed preference.",
+          ),
+        );
+  }
+
+  private async setFeedFilter(filter: PackageFeedFilter): Promise<void> {
+    if (
+      !filter ||
+      (filter.mode !== "all" &&
+        (filter.mode !== "selected" ||
+          !Array.isArray(filter.ids) ||
+          filter.ids.some((id) => typeof id !== "string")))
+    )
+      throw new Error("Invalid package feed filter.");
+    this.cancelSearchReads();
+    const feedFilter = normalizeFeedFilter(filter, this.state.feeds);
+    this.feedFilterTargetId = this.state.selectedTargetId;
+    this.state = {
+      ...this.state,
+      feedFilter,
       selectedPackageId: undefined,
       availablePackages: [],
     };
-
-    this.hydratePackageDetailsCache(await this.hydrateCachedPackages());
+    this.syncDataContext();
     this.postState();
+    await this.storage.update(
+      `nuget-code.packageManager.feedFilter:${this.state.selectedTargetId}`,
+      feedFilter,
+    );
     await this.refreshAvailablePackages();
   }
 
+  private async setSelectedFeed(feedId: string): Promise<void> {
+    await this.setFeedFilter(
+      feedId === "__all__"
+        ? { mode: "all" }
+        : { mode: "selected", ids: [feedId] },
+    );
+  }
+
   private async setSelectedFeedForRefresh(feedId: string): Promise<void> {
-    if (
-      feedId === this.state.selectedFeedId ||
-      !this.state.feeds.some((feed) => feed.id === feedId)
-    ) {
-      return;
-    }
-
-    this.cancelSearchReads();
-    this.state = {
-      ...this.state,
-      selectedFeedId: feedId,
-      selectedPackageId: undefined,
-      availablePackages: [],
-    };
-
-    this.hydratePackageDetailsCache(await this.hydrateCachedPackages());
-    this.postState();
+    await this.setSelectedFeed(feedId);
   }
 
   private async runOperation(
@@ -1197,14 +1328,7 @@ export class PackageManagerController implements Disposable {
           ? [target.path]
           : target.projectPaths
         : [],
-      feedUrls: environment.feeds
-        .filter(
-          (feed) =>
-            feed.enabled &&
-            (this.state.selectedFeedId === "__all__" ||
-              this.state.selectedFeedId === feed.id),
-        )
-        .map((feed) => feed.url),
+      feedUrls: queryFeedUrls(this.state),
       includePrerelease: this.state.includePrerelease,
       revision: environment.sourceRevision,
     };
@@ -1366,6 +1490,7 @@ export class PackageManagerController implements Disposable {
       ),
     };
 
+    this.restoreFeedFilter();
     this.updateSolutionStatusBar();
     this.postState();
     await this.refreshPackages({ forceInventory: true });
@@ -1391,7 +1516,8 @@ function sameCacheContext(
 ): boolean {
   return (
     left.selectedTargetId === right.selectedTargetId &&
-    left.selectedFeedId === right.selectedFeedId &&
+    JSON.stringify(queryFeedUrls(left)) ===
+      JSON.stringify(queryFeedUrls(right)) &&
     left.search === right.search &&
     left.includePrerelease === right.includePrerelease &&
     left.feeds === right.feeds &&

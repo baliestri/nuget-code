@@ -17,7 +17,12 @@ import type { MutationOperation } from "#contracts/operations";
 export type PackageManagerTab = "packages" | "sources" | "folders" | "logs";
 export type PackageListStatus = "idle" | "loading" | "ready" | "failed";
 
+export type PackageFeedFilter =
+  | { mode: "all" }
+  | { mode: "selected"; ids: string[] };
+
 export interface PackageManagerState {
+  feedFilter?: PackageFeedFilter | undefined;
   sourceEditor?: import("#contracts/nuget").SourceEditorState;
   flows: Record<ReadFlow, LoadState>;
   updates: UpdateProjection;
@@ -40,6 +45,7 @@ export interface PackageManagerState {
   selectedFeedId: string;
   includePrerelease: boolean;
   search: string;
+  searchResultLimit?: number | undefined;
   installedPackages: NuGetPackageItem[];
   installedPackagesStatus: PackageListStatus;
   implicitPackages: NuGetPackageItem[];

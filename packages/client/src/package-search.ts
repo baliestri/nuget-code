@@ -7,6 +7,7 @@ import { toFeedSummary } from "#client/package-details";
 import type { SearchResponse } from "#client/package-types";
 import {
   comparePackageVersions,
+  packageMetadataUrl,
   isHttpUrl,
   isPrereleaseVersion,
   mergePackageResults,
@@ -218,7 +219,17 @@ async function searchFeed(
           sourceName: feed.name,
           sourceUrl: feed.url,
           availableFeeds: [toFeedSummary(feed)],
-          iconUrl: item.iconUrl,
+          iconUrl: packageMetadataUrl(item.iconUrl),
+          projectUrl: packageMetadataUrl(item.projectUrl),
+          licenseUrl: packageMetadataUrl(item.licenseUrl),
+          licenseExpression: item.licenseExpression,
+          packageUrl: packageMetadataUrl(item.packageDetailsUrl),
+          totalDownloads:
+            typeof item.totalDownloads === "number" &&
+            Number.isFinite(item.totalDownloads) &&
+            item.totalDownloads >= 0
+              ? item.totalDownloads
+              : undefined,
           description: item.description,
           authors: Array.isArray(item.authors)
             ? item.authors.join(", ")

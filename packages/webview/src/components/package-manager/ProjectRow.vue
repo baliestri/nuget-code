@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import csprojIcon from "#webview/assets/icons/csproj.svg";
+import fsprojIcon from "#webview/assets/icons/fsproj.svg";
+import vbprojIcon from "#webview/assets/icons/vbproj.svg";
 import { computed } from "vue";
 import { storeToRefs } from "pinia";
 import type { NuGetPackageItem } from "#contracts";
@@ -17,6 +20,13 @@ const props = defineProps<{
   selectedVersion: string;
 }>();
 
+const projectIcon = computed(() =>
+  props.projectPath.endsWith(".fsproj")
+    ? fsprojIcon
+    : props.projectPath.endsWith(".vbproj")
+      ? vbprojIcon
+      : csprojIcon,
+);
 const store = usePackageManagerStore();
 const { model, selectedDetailFeedId, selectedProjectPaths } =
   storeToRefs(store);
@@ -104,8 +114,12 @@ function onProjectChecked(event: Event): void {
       :checked="checked"
       @change="onProjectChecked"
     />
-    <span class="min-w-0 truncate" :title="projectPath">
-      {{ projectName(projectPath) }}
+    <span class="flex min-w-0 items-center gap-2" :title="projectPath">
+      <img :src="projectIcon" alt="" class="h-4 w-4 shrink-0" /><span
+        class="truncate"
+      >
+        {{ projectName(projectPath) }}</span
+      >
     </span>
     <span class="shrink-0 text-fg-muted">
       {{

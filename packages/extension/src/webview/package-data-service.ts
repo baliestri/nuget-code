@@ -356,6 +356,7 @@ export class PackageDataService {
       projectPaths,
       revision: hash([
         context.targetId,
+        context.includePrerelease,
         [...projectPaths].sort(),
         [...context.feedUrls].sort(),
         context.revision,

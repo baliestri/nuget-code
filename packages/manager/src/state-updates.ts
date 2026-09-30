@@ -60,6 +60,12 @@ export function presentPackageDetails(
 ): NuGetPackageItem {
   return {
     ...details,
+    iconUrl: details.iconUrl ?? base.iconUrl,
+    totalDownloads: details.totalDownloads ?? base.totalDownloads,
+    projectUrl: details.projectUrl ?? base.projectUrl,
+    licenseUrl: details.licenseUrl ?? base.licenseUrl,
+    licenseExpression: details.licenseExpression ?? base.licenseExpression,
+    packageUrl: details.packageUrl ?? base.packageUrl,
     id: base.id,
     name: base.name,
     installedVersion: base.installedVersion,

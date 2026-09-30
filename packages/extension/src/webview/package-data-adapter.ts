@@ -1,3 +1,4 @@
+import { normalizeCatalogFeedUrl } from "#manager";
 import fs from "node:fs/promises";
 import { createHash } from "node:crypto";
 import type {
@@ -313,7 +314,7 @@ export class PackageDataAdapter implements PackageDataPort {
     const network = networkFor(record.environment.settings);
     const generation = force ? record.generation : network.facts.generation;
     const feeds = record.environment.feeds.filter((feed) =>
-      context.feedUrls.includes(feed.url),
+      context.feedUrls.includes(normalizeCatalogFeedUrl(feed.url) ?? feed.url),
     );
     const names = [
       ...new Set(
@@ -389,7 +390,9 @@ export class PackageDataAdapter implements PackageDataPort {
     let complete = true;
     const packages = await NuGetClient.searchPackages({
       feeds: environment.feeds.filter((feed) =>
-        context.feedUrls.includes(feed.url),
+        context.feedUrls.includes(
+          normalizeCatalogFeedUrl(feed.url) ?? feed.url,
+        ),
       ),
       selectedFeedId: "__all__",
       query,

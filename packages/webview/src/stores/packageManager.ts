@@ -5,6 +5,7 @@ import type {
   NuGetPackageItem,
   PackageManagerCommand,
   WebviewToExtensionMessage,
+  PackageFeedFilter,
 } from "#contracts";
 import { useVsCodeApi } from "#webview/composables/useVsCodeApi";
 import {
@@ -220,10 +221,28 @@ export const usePackageManagerStore = defineStore("packageManager", () => {
     syncPackageControls();
   }
 
+  function setFeedFilter(filter: PackageFeedFilter): void {
+    model.value = { ...model.value, feedFilter: filter };
+    post({ type: "setFeedFilter", filter });
+  }
+  function upgradeCandidates(keys: string[], revision: string): void {
+    post({ type: "upgradeCandidates", keys, revision });
+  }
+  function openPackageLink(url: string): void {
+    post({ type: "openPackageLink", url });
+  }
+  function openPackageFolder(path: string): void {
+    post({ type: "openPackageFolder", path });
+  }
   function selectFeedId(feedId: string): void {
+    setFeedFilter(
+      feedId === "__all__"
+        ? { mode: "all" }
+        : { mode: "selected", ids: [feedId] },
+    );
     model.value = { ...model.value, selectedFeedId: feedId };
     controlsPackageKey = "";
-    post({ type: "selectFeed", feedId });
+
     syncPackageControls();
   }
 
@@ -582,6 +601,10 @@ export const usePackageManagerStore = defineStore("packageManager", () => {
     setSearch,
     selectTargetId,
     selectFeedId,
+    setFeedFilter,
+    upgradeCandidates,
+    openPackageLink,
+    openPackageFolder,
     setIncludePrerelease,
     selectSourceId,
     toggleFolder,

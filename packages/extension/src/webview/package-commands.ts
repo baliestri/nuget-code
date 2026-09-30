@@ -10,6 +10,7 @@ import type {
 } from "#contracts";
 import {
   createUpgradePlan,
+  executableCandidates,
   freezeMutationPlan,
   getSelectedPackage,
   getSelectedTarget,
@@ -77,6 +78,48 @@ export class PackageCommandService {
       plan,
       structuredClone(target),
       structuredClone(state.updates.context),
+      true,
+    );
+  }
+  async upgradeCandidates(keys: string[], revision: string): Promise<void> {
+    const state = this.options.getState();
+    const target = getSelectedTarget(state);
+    const context = state.updates.context;
+    if (
+      !target ||
+      target.id !== context.targetId ||
+      revision !== context.revision
+    )
+      throw new Error("The update selection is stale. Select packages again.");
+    if (
+      !Array.isArray(keys) ||
+      !keys.length ||
+      keys.some((key) => typeof key !== "string") ||
+      new Set(keys).size !== keys.length
+    )
+      throw new Error("Invalid update selection.");
+    const eligible = new Map(
+      executableCandidates(state.updates.evaluation).map((candidate) => [
+        candidate.key,
+        candidate,
+      ]),
+    );
+    const candidates = keys.map((key) => {
+      const candidate = eligible.get(key);
+      if (!candidate)
+        throw new Error(
+          "An update is no longer eligible. Select packages again.",
+        );
+      return candidate;
+    });
+    const plan = createUpgradePlan(randomUUID(), context, {
+      candidates,
+      blocked: [],
+    });
+    await this.options.submit(
+      plan,
+      structuredClone(target),
+      structuredClone(context),
       true,
     );
   }

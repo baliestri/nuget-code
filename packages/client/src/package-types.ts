@@ -53,6 +53,11 @@ export interface SearchPackage {
   version?: string;
   description?: string;
   iconUrl?: string;
+  projectUrl?: string;
+  licenseUrl?: string;
+  licenseExpression?: string;
+  packageDetailsUrl?: string;
+  totalDownloads?: number;
   authors?: string[] | string;
   tags?: string[];
   published?: string;
@@ -84,6 +89,11 @@ export interface RegistrationCatalogEntry {
   version: string;
   description?: string;
   iconUrl?: string;
+  projectUrl?: string;
+  licenseUrl?: string;
+  licenseExpression?: string;
+  packageDetailsUrl?: string;
+  totalDownloads?: number;
   authors?: string[] | string;
   tags?: string[] | string;
   published?: string;

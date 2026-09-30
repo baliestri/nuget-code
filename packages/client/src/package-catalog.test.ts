@@ -120,7 +120,18 @@ describe("version catalogs", () => {
             JSON.stringify({
               count: 2,
               items: [
-                { count: 2, items: [leaf("1.0.0"), leaf("2.0.0-beta.1")] },
+                {
+                  count: 2,
+                  items: [
+                    {
+                      catalogEntry: {
+                        ...leaf("1.0.0").catalogEntry,
+                        iconUrl: "https://images.test/demo.png",
+                      },
+                    },
+                    leaf("2.0.0-beta.1"),
+                  ],
+                },
                 { count: 1, "@id": `${base}/page` },
               ],
             }),
@@ -139,6 +150,7 @@ describe("version catalogs", () => {
       settings,
       logger,
     });
+    expect(catalog.iconUrl).toBe("https://images.test/demo.png");
     expect(catalog.complete).toBe(true);
     expect(catalog.versions.map((v) => [v.version, v.listed])).toEqual([
       ["1.0.0", true],

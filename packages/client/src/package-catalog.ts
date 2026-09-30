@@ -9,7 +9,7 @@ import {
 } from "#client/package-registration";
 import { readLocalPackageVersions } from "#client/local-package-catalog";
 import type { RegistrationIndex } from "#client/package-types";
-import { isHttpUrl, mergeCatalogs } from "#manager";
+import { isHttpUrl, mergeCatalogs, packageMetadataUrl } from "#manager";
 import { networkFor } from "#client/client-network";
 import { cachePolicy } from "#client/cache";
 
@@ -111,7 +111,7 @@ async function loadFeedCatalogUncached(
       ...options,
       packageId,
     });
-    return catalog(
+    const value = catalog(
       packageId,
       feed.url,
       result.entries.map((entry) => ({
@@ -121,6 +121,10 @@ async function loadFeedCatalogUncached(
       })),
       result.complete,
     );
+    value.iconUrl = result.entries
+      .map((entry) => packageMetadataUrl(entry.catalogEntry.iconUrl))
+      .find((url) => !!url);
+    return value;
   } catch (error) {
     if (
       signal?.aborted ||

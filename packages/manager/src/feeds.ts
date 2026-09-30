@@ -3,6 +3,7 @@ import type {
   PackageFeed,
   PackageManagerState,
 } from "#contracts";
+import { queryFeeds } from "#manager/feed-filter";
 import { allFeeds } from "#manager/constants";
 
 export function selectInitialFeed(
@@ -28,8 +29,11 @@ export function detailFeedId(
   const feeds = state.feeds.filter(
     (feed) => feed.enabled && feed.id !== allFeeds.id,
   );
-  const selected =
-    state.selectedFeedId !== allFeeds.id
+  const selected = state.feedFilter
+    ? queryFeeds(state).length === 1
+      ? queryFeeds(state)[0]
+      : undefined
+    : state.selectedFeedId !== allFeeds.id
       ? feeds.find((feed) => feed.id === state.selectedFeedId)
       : undefined;
   if (selected) {

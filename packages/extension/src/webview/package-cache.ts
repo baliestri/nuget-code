@@ -1,3 +1,4 @@
+import { queryFeedUrls } from "#manager";
 import { createHash } from "node:crypto";
 import { workspace, type Memento } from "vscode";
 import type { NuGetPackageItem, PackageManagerState } from "#contracts";
@@ -390,7 +391,7 @@ export async function persistFolderSizeCache(
 function packageCacheEntryKey(state: PackageManagerState): string {
   return JSON.stringify({
     targetId: state.selectedTargetId,
-    feedId: state.selectedFeedId,
+    feedUrls: queryFeedUrls(state),
     search: state.search,
     includePrerelease: state.includePrerelease,
   });

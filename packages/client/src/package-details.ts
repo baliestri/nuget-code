@@ -7,6 +7,7 @@ import { networkFor } from "#client/client-network";
 import { cachePolicy } from "#client/cache";
 import {
   sameNuGetVersion,
+  packageMetadataUrl,
   compareNuGetVersions,
   parseNuGetVersion,
 } from "#manager";
@@ -230,7 +231,24 @@ async function loadDetailsUncached(
       availableVersion: latestEntry.version,
       sourceName: feed.name,
       sourceUrl: feed.url,
-      iconUrl: latestEntry.iconUrl,
+      iconUrl: packageMetadataUrl(latestEntry.iconUrl),
+      projectUrl: packageMetadataUrl(latestEntry.projectUrl),
+      licenseUrl: packageMetadataUrl(latestEntry.licenseUrl),
+      licenseExpression: latestEntry.licenseExpression,
+      packageUrl: packageMetadataUrl(latestEntry.packageDetailsUrl),
+      totalDownloads:
+        typeof latestEntry.totalDownloads === "number" &&
+        Number.isFinite(latestEntry.totalDownloads) &&
+        latestEntry.totalDownloads >= 0
+          ? latestEntry.totalDownloads
+          : undefined,
+      frameworks: [
+        ...new Set(
+          (latestEntry.dependencyGroups ?? [])
+            .map((group) => group.targetFramework)
+            .filter((value): value is string => !!value),
+        ),
+      ],
       description: latestEntry.description,
       authors: Array.isArray(latestEntry.authors)
         ? latestEntry.authors.join(", ")

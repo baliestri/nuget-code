@@ -82,7 +82,17 @@ function mergePackageCatalogs(
     complete,
     versions,
   ]);
-  return { packageId, versions, complete, revision };
+  const iconUrl = catalogs
+    .map((catalog) => catalog.iconUrl)
+    .filter((url): url is string => !!url)
+    .sort()[0];
+  return {
+    packageId,
+    versions,
+    complete,
+    revision,
+    ...(iconUrl ? { iconUrl } : {}),
+  };
 }
 
 /** Compose source catalogs without allowing feed arrival order to select updates. */

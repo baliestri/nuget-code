@@ -26,6 +26,13 @@ export type WebviewToExtensionMessage =
   | { type: "setActiveTab"; tab: PackageManagerTab }
   | { type: "selectTarget"; targetId: string }
   | { type: "selectFeed"; feedId: string }
+  | {
+      type: "setFeedFilter";
+      filter: import("#contracts/package-manager").PackageFeedFilter;
+    }
+  | { type: "upgradeCandidates"; keys: string[]; revision: string }
+  | { type: "openPackageLink"; url: string }
+  | { type: "openPackageFolder"; path: string }
   | { type: "setSearch"; search: string }
   | { type: "setIncludePrerelease"; includePrerelease: boolean }
   | { type: "selectPackage"; packageId: string }

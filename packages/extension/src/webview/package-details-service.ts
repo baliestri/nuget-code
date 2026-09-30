@@ -1,3 +1,4 @@
+import { packageInstallations } from "#client/package-installations";
 import {
   loadPackageDetailsFromFeed,
   type PackageDetailsCache,
@@ -121,10 +122,31 @@ export class PackageDetailsService {
         }));
       if (!current()) return;
       if (!details) throw new Error("Package details unavailable.");
+      const localInstallations = await packageInstallations(
+        item.name,
+        [
+          ...new Set([
+            ...(item.projectStates ?? [])
+              .map((project) => project.installedVersion)
+              .filter((value): value is string => !!value),
+            ...(item.installedVersion ? [item.installedVersion] : []),
+          ]),
+        ],
+        state.folders
+          .filter((folder) => folder.title === "global-packages")
+          .map((folder) => folder.path),
+        ticket.signal,
+      );
+      if (!current()) return;
       await cache.set(cacheKey, details);
       if (!current()) return;
       this.update(
-        { packageId, feedId, version, packageItem: details },
+        {
+          packageId,
+          feedId,
+          version,
+          packageItem: { ...details, localInstallations },
+        },
         { status: "ready", stale: false, error: null },
       );
       await this.options.persistPackageCache();

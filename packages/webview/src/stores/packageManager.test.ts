@@ -89,8 +89,8 @@ describe("package manager store", () => {
       targetId: "app",
     });
     expect(vscode.postMessage).toHaveBeenCalledWith({
-      type: "selectFeed",
-      feedId: "nuget",
+      type: "setFeedFilter",
+      filter: { mode: "selected", ids: ["nuget"] },
     });
     expect(vscode.postMessage).toHaveBeenCalledWith({
       type: "selectSource",
