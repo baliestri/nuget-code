@@ -4,10 +4,13 @@ import os from "node:os";
 import path from "node:path";
 import type { NuGetClientLogger, NuGetClientSettings } from "#client/types";
 import type { PackageFeed } from "#contracts/nuget";
+import { networkFor } from "#client/client-network";
 
 const defaultCredentialProviderName = "CredentialProvider.Microsoft";
-const credentialCache = new Map<string, string>();
-const credentialRequests = new Map<string, Promise<FeedCredentialResult>>();
+const credentialCaches = new WeakMap<
+  NuGetClientSettings,
+  Map<string, string>
+>();
 
 export interface CredentialProviderCommand {
   command: string;
@@ -64,8 +67,16 @@ export async function getFeedAuthorizationHeader(options: {
   logger: NuGetClientLogger;
   interactive?: boolean | undefined;
   retry?: boolean | undefined;
+  signal?: AbortSignal | undefined;
 }): Promise<FeedCredentialResult> {
-  const cacheKey = options.feed.url.toLowerCase();
+  options.signal?.throwIfAborted();
+  const network = networkFor(options.settings);
+  let credentialCache = credentialCaches.get(options.settings);
+  if (!credentialCache) {
+    credentialCache = new Map();
+    credentialCaches.set(options.settings, credentialCache);
+  }
+  const cacheKey = new URL(options.feed.url).toString();
   if (!options.retry && !options.interactive) {
     const cached = credentialCache.get(cacheKey);
     if (cached) {
@@ -73,37 +84,51 @@ export async function getFeedAuthorizationHeader(options: {
     }
   }
 
-  const requestKey = `${cacheKey}\0${options.retry === true}\0${options.interactive === true}`;
-  const existingRequest = credentialRequests.get(requestKey);
-  if (existingRequest) {
-    return existingRequest;
-  }
-
-  const request = resolveFeedAuthorizationHeader(options, cacheKey);
-  credentialRequests.set(requestKey, request);
-  try {
-    return await request;
-  } finally {
-    credentialRequests.delete(requestKey);
-  }
+  const requestKey = network.key([
+    "credential",
+    network.context(options.settings),
+    cacheKey,
+    options.retry === true,
+    options.interactive === true,
+  ]);
+  if (options.retry) credentialCache.delete(cacheKey);
+  const cache = credentialCache;
+  return network.authentication.run(
+    requestKey,
+    async (signal) => {
+      const result = await resolveFeedAuthorizationHeader({
+        ...options,
+        signal,
+      });
+      signal.throwIfAborted();
+      if (
+        result.authorizationHeader &&
+        result.authorizationHeader !== cache.get(cacheKey)
+      )
+        network.invalidateAuthentication(options.settings);
+      if (result.authorizationHeader)
+        cache.set(cacheKey, result.authorizationHeader);
+      return result;
+    },
+    options.signal,
+  );
 }
 
-async function resolveFeedAuthorizationHeader(
-  options: {
-    feed: PackageFeed;
-    settings: NuGetClientSettings;
-    logger: NuGetClientLogger;
-    interactive?: boolean | undefined;
-    retry?: boolean | undefined;
-  },
-  cacheKey: string,
-): Promise<FeedCredentialResult> {
+async function resolveFeedAuthorizationHeader(options: {
+  feed: PackageFeed;
+  settings: NuGetClientSettings;
+  logger: NuGetClientLogger;
+  interactive?: boolean | undefined;
+  retry?: boolean | undefined;
+  signal?: AbortSignal | undefined;
+}): Promise<FeedCredentialResult> {
   const result = await runCredentialProviders(
     findCredentialProviders(options.settings),
     options.feed.url,
     {
       interactive: options.interactive ?? false,
       retry: options.retry ?? false,
+      signal: options.signal,
     },
   );
 
@@ -123,7 +148,6 @@ async function resolveFeedAuthorizationHeader(
     };
   }
 
-  credentialCache.set(cacheKey, authorizationHeader);
   return { authorizationHeader, providerFound: true };
 }
 
@@ -226,7 +250,11 @@ function providerCommand(
 async function runCredentialProviders(
   providers: CredentialProviderCommand[],
   feedUrl: string,
-  options: { interactive: boolean; retry: boolean },
+  options: {
+    interactive: boolean;
+    retry: boolean;
+    signal?: AbortSignal | undefined;
+  },
 ): Promise<{
   providerFound: boolean;
   credentials?: CredentialProviderCredentials | undefined;
@@ -239,6 +267,7 @@ async function runCredentialProviders(
   let providerFound = false;
   let lastError: string | undefined;
   for (const provider of providers) {
+    options.signal?.throwIfAborted();
     const result = await runCredentialProvider(provider, feedUrl, options);
     providerFound ||= result.providerFound;
 
@@ -268,7 +297,11 @@ async function runCredentialProviders(
 async function runCredentialProvider(
   provider: CredentialProviderCommand,
   feedUrl: string,
-  options: { interactive: boolean; retry: boolean },
+  options: {
+    interactive: boolean;
+    retry: boolean;
+    signal?: AbortSignal | undefined;
+  },
 ): Promise<{
   providerFound: boolean;
   credentials?: CredentialProviderCredentials | undefined;
@@ -278,6 +311,7 @@ async function runCredentialProvider(
   const result = await runCredentialProviderCommand(
     provider,
     genericCredentialProviderArgs(provider, feedUrl, options),
+    options.signal,
   );
   if (
     result.error === "Credential provider output did not contain credentials" &&
@@ -286,6 +320,7 @@ async function runCredentialProvider(
     return runCredentialProviderCommand(
       provider,
       microsoftCredentialProviderArgs(provider, feedUrl, options),
+      options.signal,
     );
   }
   return result;
@@ -337,28 +372,48 @@ function isMicrosoftCredentialProvider(
 function runCredentialProviderCommand(
   provider: CredentialProviderCommand,
   args: string[],
+  signal?: AbortSignal,
 ): Promise<{
   providerFound: boolean;
   credentials?: CredentialProviderCredentials | undefined;
   error?: string | undefined;
   notApplicable?: boolean | undefined;
 }> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
     const child = spawn(provider.command, args, {
-      shell: process.platform === "win32" && !path.isAbsolute(provider.command),
+      shell: false,
       windowsHide: true,
     });
     const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
+    let launchError = false;
+    const abort = () => {
+      child.kill();
+    };
+    signal?.addEventListener("abort", abort, { once: true });
 
     child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
-    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-    child.on("error", (error) => {
-      resolve({ providerFound: false, error: error.message });
+    child.stderr.resume();
+    child.on("error", () => {
+      launchError = true;
     });
     child.on("close", (code) => {
+      signal?.removeEventListener("abort", abort);
+      if (signal?.aborted) {
+        reject(signal.reason);
+        return;
+      }
+      if (launchError) {
+        resolve({
+          providerFound: false,
+          error: "Could not start credential provider",
+        });
+        return;
+      }
       const output = Buffer.concat(stdout).toString("utf8").trim();
-      const errorOutput = Buffer.concat(stderr).toString("utf8").trim();
       if (code === 1 && !output) {
         resolve({ providerFound: true, notApplicable: true });
         return;
@@ -366,8 +421,7 @@ function runCredentialProviderCommand(
       if (code !== 0) {
         resolve({
           providerFound: true,
-          error:
-            errorOutput || output || `Credential provider exited with ${code}`,
+          error: `Credential provider exited with ${code}`,
         });
         return;
       }

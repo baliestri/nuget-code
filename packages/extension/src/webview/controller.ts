@@ -19,7 +19,7 @@ import type {
   WebviewToExtensionMessage,
 } from "#contracts";
 import { ExtensionLogger } from "#extension/logger";
-import { NuGetCli, NuGetClient } from "#client";
+import { NuGetCli, NuGetClient, ClientNetwork } from "#client";
 import type { PackageDetailsCache } from "#client/package-details";
 import { PackageManagementCore, type FolderSizeCache } from "#manager";
 import { getSettings, type ExtensionSettings } from "#extension/settings";
@@ -51,6 +51,7 @@ import { PackageReferenceWatcher } from "#extension/webview/package-reference-wa
 import { SolutionSelector } from "#extension/solution-selector";
 
 export class PackageManagerController implements Disposable {
+  private readonly network = new ClientNetwork();
   private webview: Webview | undefined;
   private settings: ExtensionSettings;
   private cli: NuGetCli;
@@ -83,7 +84,7 @@ export class PackageManagerController implements Disposable {
     private readonly storage: Memento,
     private readonly solutionSelector: SolutionSelector,
   ) {
-    this.settings = getSettings();
+    this.settings = { ...getSettings(), network: this.network };
     this.cli = new NuGetCli(this.settings, this.logger);
     this.state = this.createInitialState();
     this.solutionStatusBar = window.createStatusBarItem(
@@ -158,7 +159,7 @@ export class PackageManagerController implements Disposable {
         if (!event.affectsConfiguration("nuget-code")) {
           return;
         }
-        this.settings = getSettings();
+        this.settings = { ...getSettings(), network: this.network };
         this.cli = new NuGetCli(this.settings, this.logger);
         this.logger.updateSettings(this.settings);
         this.logger.information(
@@ -362,6 +363,7 @@ export class PackageManagerController implements Disposable {
   }
 
   dispose(): void {
+    this.network.dispose();
     this.packageRefreshAbort?.abort();
     this.packageReferenceWatcher.dispose();
     for (const disposable of this.disposables) {

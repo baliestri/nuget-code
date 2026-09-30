@@ -1,8 +1,9 @@
 import path from "node:path";
 import { workspace } from "vscode";
 import type { LogLevel } from "#contracts/logging";
+import type { NuGetClientSettings } from "#client/types";
 
-export interface ExtensionSettings {
+export interface ExtensionSettings extends NuGetClientSettings {
   tabButtonStyle: "icons" | "labels";
   logLevel: LogLevel;
   maxLogEntries: number;

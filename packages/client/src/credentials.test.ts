@@ -6,8 +6,84 @@ import {
   findCredentialProvider,
   getFeedAuthorizationHeader,
 } from "./credentials.js";
+import { ClientNetwork } from "./client-network";
 
 describe("NuGet credentials", () => {
+  it("shares provider work, detaches cancelled consumers, and isolates credential caches", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "nuget-cred-shared-"));
+    const provider = path.join(root, "CredentialProvider.Test.dll");
+    const network = new ClientNetwork();
+    const settings = {
+      network,
+      dotnetPath: process.execPath,
+      nugetPath: "nuget",
+      extraConfigPaths: [],
+      credentialProviderPaths: [provider],
+      proxy: "",
+      maxSearchResults: 20,
+    };
+    const options = {
+      settings,
+      feed: {
+        id: "test",
+        name: "Test",
+        url: "https://test.invalid/index.json",
+        enabled: true,
+      },
+      logger: {
+        verbose: vi.fn(),
+        information: vi.fn(),
+        warning: vi.fn(),
+        error: vi.fn(),
+      },
+    };
+    try {
+      fs.writeFileSync(
+        provider,
+        "setTimeout(() => console.log(JSON.stringify({Username:'user',Password:'first'})), 30);",
+      );
+      const controller = new AbortController();
+      const first = getFeedAuthorizationHeader({
+        ...options,
+        signal: controller.signal,
+      });
+      const rejected = expect(first).rejects.toMatchObject({
+        name: "AbortError",
+      });
+      const second = getFeedAuthorizationHeader(options);
+      controller.abort();
+      await rejected;
+      expect((await second).authorizationHeader).toBe(
+        `Basic ${Buffer.from("user:first").toString("base64")}`,
+      );
+      expect(network.authentication.metrics().started).toBe(1);
+      fs.writeFileSync(
+        provider,
+        "console.log(JSON.stringify({Username:'user',Password:'second'}));",
+      );
+      expect(
+        (
+          await getFeedAuthorizationHeader({
+            ...options,
+            settings: { ...settings },
+          })
+        ).authorizationHeader,
+      ).toBe(`Basic ${Buffer.from("user:second").toString("base64")}`);
+      fs.writeFileSync(provider, "setInterval(() => {}, 1000);");
+      await expect(
+        getFeedAuthorizationHeader({
+          ...options,
+          retry: true,
+          signal: AbortSignal.timeout(50),
+        }),
+      ).rejects.toMatchObject({ name: "AbortError" });
+      await network.authentication.run("drained", async () => undefined);
+      expect(network.authentication.metrics().active).toBe(0);
+    } finally {
+      network.dispose();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
   it("finds configured exe and dll credential providers", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "nuget-cred-"));
     const exePath = path.join(root, "CredentialProvider.Microsoft.exe");
