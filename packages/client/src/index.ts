@@ -34,6 +34,7 @@ export * from "#client/package-compatibility";
 export * from "#client/compatibility-queue";
 export * from "#client/request-broker";
 export * from "#client/client-network";
+export * from "#client/cache";
 export { ProjectContextError } from "#client/project-context";
 export * from "#client/types";
 

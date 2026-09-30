@@ -19,7 +19,13 @@ import type {
   WebviewToExtensionMessage,
 } from "#contracts";
 import { ExtensionLogger } from "#extension/logger";
-import { NuGetCli, NuGetClient, ClientNetwork } from "#client";
+import {
+  NuGetCli,
+  NuGetClient,
+  ClientNetwork,
+  MemoryCache,
+  cachePolicy,
+} from "#client";
 import type { PackageDetailsCache } from "#client/package-details";
 import { PackageManagementCore, type FolderSizeCache } from "#manager";
 import { getSettings, type ExtensionSettings } from "#extension/settings";
@@ -41,8 +47,9 @@ import {
   hydrateCachedPackages,
   type PackageStateCacheEntry,
   persistFolderSizeCache as persistFolderSizeCacheEntry,
-  persistPackageCache as persistPackageCacheEntry,
-  readPackageCacheEntry,
+  PackageCache,
+  packageDetailCacheIdentity,
+  migrateLegacyPackageCache,
 } from "#extension/webview/package-cache";
 import { PackageDetailsService } from "#extension/webview/package-details-service";
 import { PackageCommandService } from "#extension/webview/package-commands";
@@ -66,7 +73,11 @@ export class PackageManagerController implements Disposable {
   private packageAvailabilityRequestId = 0;
   private packageReferenceFingerprint = "";
   private packageRefreshAbort: AbortController | undefined;
-  private packageDetailsCache = new Map<string, NuGetPackageItem>();
+  private readonly packageDetailsCache = new MemoryCache(
+    500,
+    Date.now,
+    cachePolicy.workspaceBytes,
+  );
   private initialization: Promise<void> | undefined;
   private discoveryRefreshChain: Promise<void> = Promise.resolve();
   private readonly events = new PackageManagerEventBus();
@@ -83,8 +94,12 @@ export class PackageManagerController implements Disposable {
     private readonly logger: ExtensionLogger,
     private readonly storage: Memento,
     private readonly solutionSelector: SolutionSelector,
+    private readonly packageCache: PackageCache,
   ) {
     this.settings = { ...getSettings(), network: this.network };
+    this.packageCache.setConfigurationRevision(() =>
+      this.network.context(this.settings),
+    );
     this.cli = new NuGetCli(this.settings, this.logger);
     this.state = this.createInitialState();
     this.solutionStatusBar = window.createStatusBarItem(
@@ -160,6 +175,10 @@ export class PackageManagerController implements Disposable {
           return;
         }
         this.settings = { ...getSettings(), network: this.network };
+        this.packageCache.setConfigurationRevision(() =>
+          this.network.context(this.settings),
+        );
+        this.packageDetailsCache.clear();
         this.cli = new NuGetCli(this.settings, this.logger);
         this.logger.updateSettings(this.settings);
         this.logger.information(
@@ -196,7 +215,7 @@ export class PackageManagerController implements Disposable {
         return;
       case "setSearch":
         this.state = { ...this.state, search: message.search };
-        this.hydrateCachedPackages({ preserveSelection: true });
+        await this.hydrateCachedPackages({ preserveSelection: true });
         this.postState();
         await this.refreshAvailablePackages();
         return;
@@ -205,7 +224,7 @@ export class PackageManagerController implements Disposable {
           ...this.state,
           includePrerelease: message.includePrerelease,
         };
-        this.hydrateCachedPackages({ preserveSelection: true });
+        await this.hydrateCachedPackages({ preserveSelection: true });
         this.postState();
         await this.refreshAvailablePackages();
         return;
@@ -250,7 +269,7 @@ export class PackageManagerController implements Disposable {
         return;
       case "refreshPackages":
         if (options.feedId) {
-          this.setSelectedFeedForRefresh(options.feedId);
+          await this.setSelectedFeedForRefresh(options.feedId);
         }
         await this.refreshPackages({ forceInventory: true });
         return;
@@ -371,9 +390,17 @@ export class PackageManagerController implements Disposable {
     }
 
     this.events.dispose();
+    this.packageDetailsCache.clear();
+    void this.packageCache.flush();
   }
 
   private async initializeCore(): Promise<void> {
+    await migrateLegacyPackageCache(this.storage).catch(() =>
+      this.logger.warning(
+        "cache",
+        "Could not remove a legacy package cache; it will not be read.",
+      ),
+    );
     await commands.executeCommand(
       "setContext",
       "nuget-code.packageManager.activeTab",
@@ -414,7 +441,7 @@ export class PackageManagerController implements Disposable {
 
         this.packageReferenceWatcher.register();
         const fingerprint = await this.createPackageReferenceFingerprint();
-        const cached = this.hydrateCachedPackages();
+        const cached = await this.hydrateCachedPackages();
         this.hydratePackageDetailsCache(cached);
         this.packageReferenceFingerprint = fingerprint;
         await this.folders.updateSelectedCacheFolderContext();
@@ -440,6 +467,7 @@ export class PackageManagerController implements Disposable {
     await this.runOperation("sources", "Reloading NuGet sources", async () => {
       const sources = await loadPackageSources(this.settings, this.logger);
       const effectiveFeeds = sources[0]?.feeds ?? [];
+      this.packageDetailsCache.clear();
 
       this.state = {
         ...this.state,
@@ -462,9 +490,17 @@ export class PackageManagerController implements Disposable {
   private async refreshPackages(
     options: { forceInventory?: boolean | undefined } = {},
   ): Promise<void> {
+    const cacheState = this.state;
+    const settings = this.settings;
     const signal = this.beginPackageRefresh();
     const fingerprint = await this.createPackageReferenceFingerprint();
-    const cached = readPackageCacheEntry(this.storage, this.state);
+    const cached = await this.packageCache.read(cacheState);
+    if (
+      signal.aborted ||
+      this.settings !== settings ||
+      !sameCacheContext(this.state, cacheState)
+    )
+      return;
     this.packageReferenceFingerprint = fingerprint;
     if (!options.forceInventory && cached?.fingerprint === fingerprint) {
       const requestId = ++this.availablePackagesRequestId;
@@ -749,7 +785,7 @@ export class PackageManagerController implements Disposable {
       hasUpgrades: false,
     };
 
-    this.hydratePackageDetailsCache(this.hydrateCachedPackages());
+    this.hydratePackageDetailsCache(await this.hydrateCachedPackages());
     this.updateSolutionStatusBar();
     this.postState();
     await this.refreshPackages();
@@ -763,12 +799,12 @@ export class PackageManagerController implements Disposable {
       availablePackages: [],
     };
 
-    this.hydratePackageDetailsCache(this.hydrateCachedPackages());
+    this.hydratePackageDetailsCache(await this.hydrateCachedPackages());
     this.postState();
     await this.refreshAvailablePackages();
   }
 
-  private setSelectedFeedForRefresh(feedId: string): void {
+  private async setSelectedFeedForRefresh(feedId: string): Promise<void> {
     if (
       feedId === this.state.selectedFeedId ||
       !this.state.feeds.some((feed) => feed.id === feedId)
@@ -783,7 +819,7 @@ export class PackageManagerController implements Disposable {
       availablePackages: [],
     };
 
-    this.hydratePackageDetailsCache(this.hydrateCachedPackages());
+    this.hydratePackageDetailsCache(await this.hydrateCachedPackages());
     this.postState();
   }
 
@@ -836,18 +872,42 @@ export class PackageManagerController implements Disposable {
     this.events.publish(message);
   }
 
-  private hydrateCachedPackages(
+  private async hydrateCachedPackages(
     options: { preserveSelection?: boolean | undefined } = {},
-  ): PackageStateCacheEntry | undefined {
-    const entry = readPackageCacheEntry(this.storage, this.state);
-    this.state = hydrateCachedPackages(this.state, entry, options);
+  ): Promise<PackageStateCacheEntry | undefined> {
+    const snapshot = this.state;
+    const settings = this.settings;
+    const entry = await this.packageCache.read(snapshot);
+    if (this.settings !== settings || !sameCacheContext(this.state, snapshot))
+      return undefined;
+    this.state = hydrateCachedPackages(this.state, entry, {
+      ...options,
+      preserveSelection:
+        options.preserveSelection ||
+        this.state.selectedPackageId !== snapshot.selectedPackageId,
+    });
     return entry;
   }
 
   private async persistPackageCache(): Promise<void> {
-    await persistPackageCacheEntry(this.storage, this.state, {
+    const details = this.packageDetailsCache
+      .snapshot()
+      .filter(
+        (entry) =>
+          entry.revision === this.network.context(this.settings) &&
+          (entry.expiresAt === null || entry.expiresAt > Date.now()),
+      );
+    await this.packageCache.persist(this.state, {
       fingerprint: this.packageReferenceFingerprint,
-      packageDetails: Object.fromEntries(this.packageDetailsCache),
+      packageDetails: Object.fromEntries(
+        details.map((entry) => [entry.key, entry.value as NuGetPackageItem]),
+      ),
+      detailExpirations: Object.fromEntries(
+        details.map((entry) => [
+          entry.key,
+          entry.expiresAt ?? Date.now() + cachePolicy.metadataTtlMs,
+        ]),
+      ),
     });
   }
 
@@ -881,16 +941,50 @@ export class PackageManagerController implements Disposable {
   private hydratePackageDetailsCache(
     entry: PackageStateCacheEntry | undefined,
   ): void {
-    this.packageDetailsCache = new Map(
-      Object.entries(entry?.packageDetails ?? {}),
-    );
+    this.packageDetailsCache.clear();
+    const now = Date.now();
+    for (const [key, value] of Object.entries(entry?.packageDetails ?? {}))
+      this.packageDetailsCache.put({
+        schema: 2,
+        key,
+        value,
+        revision: entry?.metadataRevision ?? "",
+        savedAt: now,
+        accessedAt: now,
+        expiresAt:
+          entry?.detailExpirations?.[key] ?? now + cachePolicy.metadataTtlMs,
+      });
   }
 
   private packageDetailsCacheAdapter(): PackageDetailsCache {
+    const settings = this.settings;
+    const feeds = this.state.feeds;
+    const revision = this.network.context(settings);
+    const current = () =>
+      this.settings === settings &&
+      this.state.feeds === feeds &&
+      this.network.context(settings) === revision;
     return {
-      get: (key) => this.packageDetailsCache.get(key),
+      get: (key) => {
+        if (!current()) return undefined;
+        const hit = this.packageDetailsCache.get<NuGetPackageItem>(
+          packageDetailCacheIdentity(key),
+          false,
+        );
+        return hit?.revision === revision ? hit.value : undefined;
+      },
       set: (key, value) => {
-        this.packageDetailsCache.set(key, value);
+        if (!current()) return;
+        const now = Date.now();
+        this.packageDetailsCache.put({
+          schema: 2,
+          key: packageDetailCacheIdentity(key),
+          value,
+          revision,
+          savedAt: now,
+          accessedAt: now,
+          expiresAt: now + cachePolicy.metadataTtlMs,
+        });
       },
     };
   }
@@ -954,6 +1048,20 @@ export class PackageManagerController implements Disposable {
       this.solutionStatusBar.hide();
     }
   }
+}
+
+function sameCacheContext(
+  left: PackageManagerState,
+  right: PackageManagerState,
+): boolean {
+  return (
+    left.selectedTargetId === right.selectedTargetId &&
+    left.selectedFeedId === right.selectedFeedId &&
+    left.search === right.search &&
+    left.includePrerelease === right.includePrerelease &&
+    left.feeds === right.feeds &&
+    left.targets === right.targets
+  );
 }
 
 function isAbortError(error: unknown): boolean {
