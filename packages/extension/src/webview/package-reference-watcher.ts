@@ -1,4 +1,5 @@
-import { workspace, type Disposable } from "vscode";
+import { workspace, RelativePattern, type Disposable } from "vscode";
+import path from "node:path";
 import { projectFileGlob, solutionFileGlob } from "../discovery.js";
 import type { ExtensionLogger } from "#extension/logger";
 
@@ -6,6 +7,12 @@ export class PackageReferenceWatcher implements Disposable {
   private refreshTimeout: ReturnType<typeof setTimeout> | undefined;
   private watchers: Disposable[] = [];
   private structuralChangePending = false;
+  private inputWatchers: Disposable[] = [];
+  private inputKey = "";
+  private disposed = false;
+  private suspension = 0;
+  private refreshPending = false;
+  private chain: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly logger: ExtensionLogger,
@@ -16,9 +23,11 @@ export class PackageReferenceWatcher implements Disposable {
       forceInventory?: boolean | undefined;
     }) => Promise<void>,
     private readonly refreshDiscovery: () => Promise<void>,
+    private readonly invalidate: () => void = () => {},
   ) {}
 
   register(): void {
+    this.disposed = false;
     this.disposeWatchers();
 
     const projectWatcher = workspace.createFileSystemWatcher(projectFileGlob);
@@ -33,6 +42,9 @@ export class PackageReferenceWatcher implements Disposable {
     });
 
     const solutionWatcher = workspace.createFileSystemWatcher(solutionFileGlob);
+    solutionWatcher.onDidChange(() => {
+      this.scheduleStructuralRefresh();
+    });
     solutionWatcher.onDidCreate(() => {
       this.scheduleStructuralRefresh();
     });
@@ -53,14 +65,69 @@ export class PackageReferenceWatcher implements Disposable {
       this.scheduleRefresh();
     });
 
-    this.watchers = [projectWatcher, solutionWatcher, centralPackageWatcher];
+    const contextWatcher = workspace.createFileSystemWatcher(
+      "**/{*.props,*.targets,global.json}",
+    );
+    contextWatcher.onDidCreate(() => this.scheduleRefresh());
+    contextWatcher.onDidChange(() => this.scheduleRefresh());
+    contextWatcher.onDidDelete(() => this.scheduleRefresh());
+    const configWatcher = workspace.createFileSystemWatcher(
+      "**/{NuGet.config,nuget.config,NuGet.Config}",
+    );
+    configWatcher.onDidCreate(() => this.scheduleStructuralRefresh());
+    configWatcher.onDidChange(() => this.scheduleStructuralRefresh());
+    configWatcher.onDidDelete(() => this.scheduleStructuralRefresh());
+    this.watchers = [
+      projectWatcher,
+      solutionWatcher,
+      centralPackageWatcher,
+      contextWatcher,
+      configWatcher,
+    ];
+  }
+
+  setInputs(inputs: readonly string[]): void {
+    const files = [...new Set(inputs)].sort();
+    const key = JSON.stringify(files);
+    if (key === this.inputKey || this.disposed) return;
+    for (const watcher of this.inputWatchers) watcher.dispose();
+    this.inputKey = key;
+    this.inputWatchers = files.map((file) => {
+      const pattern = path
+        .basename(file)
+        .replace(/[[\]*?{}]/g, (character) => `[${character}]`);
+      const watcher = workspace.createFileSystemWatcher(
+        new RelativePattern(path.dirname(file), pattern),
+      );
+      const changed = () =>
+        path.basename(file).toLowerCase() === "nuget.config"
+          ? this.scheduleStructuralRefresh()
+          : this.scheduleRefresh();
+      watcher.onDidCreate(changed);
+      watcher.onDidChange(changed);
+      watcher.onDidDelete(changed);
+      return watcher;
+    });
+  }
+
+  async suspendDuring<T>(action: () => Promise<T>): Promise<T> {
+    this.suspension++;
+    try {
+      return await action();
+    } finally {
+      if (--this.suspension === 0 && this.refreshPending) this.resetTimer();
+    }
   }
 
   dispose(): void {
+    this.disposed = true;
     if (this.refreshTimeout) {
       clearTimeout(this.refreshTimeout);
     }
     this.disposeWatchers();
+    for (const watcher of this.inputWatchers) watcher.dispose();
+    this.inputWatchers = [];
+    this.inputKey = "";
   }
 
   private disposeWatchers(): void {
@@ -80,20 +147,33 @@ export class PackageReferenceWatcher implements Disposable {
   }
 
   private resetTimer(): void {
+    if (this.disposed) return;
+    this.refreshPending = true;
     if (this.refreshTimeout) {
       clearTimeout(this.refreshTimeout);
     }
 
     this.refreshTimeout = setTimeout(() => {
-      void this.runScheduledRefresh();
+      this.chain = this.chain
+        .catch(() => {})
+        .then(() => this.runScheduledRefresh())
+        .catch(() => {
+          this.logger.warning(
+            "workspace",
+            "Could not refresh changed project inputs.",
+          );
+        });
     }, 750);
   }
 
   private async runScheduledRefresh(): Promise<void> {
+    if (this.disposed || this.suspension) return;
+    this.refreshPending = false;
     const structural = this.structuralChangePending;
     this.structuralChangePending = false;
 
     if (structural) {
+      this.invalidate();
       this.logger.information(
         "workspace",
         "Workspace structure changed, re-running discovery",
@@ -107,6 +187,10 @@ export class PackageReferenceWatcher implements Disposable {
 
   private async refreshChangedPackageReferences(): Promise<void> {
     const fingerprint = await this.createFingerprint();
+    if (this.disposed || this.suspension) {
+      this.refreshPending = true;
+      return;
+    }
     if (fingerprint === this.getFingerprint()) {
       this.logger.verbose(
         "workspace",
@@ -120,6 +204,7 @@ export class PackageReferenceWatcher implements Disposable {
       "PackageReference change detected, refreshing packages",
     );
     this.setFingerprint(fingerprint);
+    this.invalidate();
     await this.refreshPackages({ forceInventory: true });
   }
 }

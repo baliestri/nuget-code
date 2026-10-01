@@ -259,3 +259,4 @@ fabric.properties
 
 media/
 *.vsix
+release-artifacts/

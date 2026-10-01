@@ -1,0 +1,254 @@
+name: Recover release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Original stable version (X.Y.Z)
+        required: true
+        type: string
+      run_id:
+        description: Original release workflow run ID
+        required: true
+        type: string
+      run_attempt:
+        description: Original release workflow attempt
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      source_sha: ${{ steps.locate.outputs.source_sha }}
+      artifact_name: ${{ steps.locate.outputs.artifact_name }}
+      promote: ${{ steps.plan.outputs.promote }}
+      publish_marketplace: ${{ steps.plan.outputs.publish_marketplace }}
+      create_github_release: ${{ steps.plan.outputs.create_github_release }}
+      sync: ${{ steps.plan.outputs.sync }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Locate original VSIX and passed gates
+        id: locate
+        shell: bash
+        env:
+          ORIGINAL_RUN: ${{ inputs.run_id }}
+          ORIGINAL_ATTEMPT: ${{ inputs.run_attempt }}
+        run: |
+          [[ "$ORIGINAL_RUN" =~ ^[1-9][0-9]*$ ]]
+          [[ "$ORIGINAL_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ORIGINAL_RUN/artifacts?per_page=100" > artifacts.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ORIGINAL_RUN" > run.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ORIGINAL_RUN/attempts/$ORIGINAL_ATTEMPT/jobs?per_page=100" > jobs.json
+          # The template literals belong to JavaScript and must stay literal in bash.
+          # shellcheck disable=SC2016
+          node -e '
+            const fs=require("fs");
+            const artifacts=JSON.parse(fs.readFileSync("artifacts.json")).artifacts;
+            const original=JSON.parse(fs.readFileSync("run.json"));
+            const jobs=JSON.parse(fs.readFileSync("jobs.json")).jobs;
+            const run=process.env.ORIGINAL_RUN, attempt=process.env.ORIGINAL_ATTEMPT;
+            if(original.event!=="workflow_dispatch"||original.head_branch!=="develop"||!original.path.startsWith(".github/workflows/release.yml")||original.run_attempt<Number(attempt)) throw Error("Original run is not a matching release workflow attempt.");
+            const matches=artifacts.filter(a=>!a.expired && new RegExp(`^vsix-[0-9a-f]{40}-${run}-${attempt}$`).test(a.name));
+            if(matches.length!==1) throw Error("Original VSIX artifact absent, expired or ambiguous.");
+            for(const gate of ["CI result","Package result"]) if(!jobs.some(j=>j.name.includes(gate)&&j.conclusion==="success")) throw Error(`Original ${gate} did not succeed.`);
+            const sha=matches[0].name.split("-")[1];
+            fs.appendFileSync(process.env.GITHUB_OUTPUT,`source_sha=${sha}\nartifact_name=${matches[0].name}\n`);
+          '
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ steps.locate.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          run_install: false
+          cache: true
+          cache_dependency_path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ steps.locate.outputs.artifact_name }}
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+          path: release-artifacts/
+      - name: Validate original identity and find publication receipt
+        shell: bash
+        env:
+          ORIGINAL_RUN: ${{ inputs.run_id }}
+          ORIGINAL_ATTEMPT: ${{ inputs.run_attempt }}
+          VERSION: ${{ inputs.version }}
+          SOURCE_SHA: ${{ steps.locate.outputs.source_sha }}
+        run: |
+          node scripts/verify-vsix.mjs --manifest release-artifacts/artifact.json
+          node -e 'const a=require("./release-artifacts/artifact.json");if(a.runId!==process.env.ORIGINAL_RUN||String(a.runAttempt)!==process.env.ORIGINAL_ATTEMPT||a.version!==process.env.VERSION||a.sourceSha!==process.env.SOURCE_SHA)throw Error("Original artifact identity differs.")'
+          receipt_name="marketplace-${SOURCE_SHA}-${ORIGINAL_RUN}-${ORIGINAL_ATTEMPT}"
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100&name=$receipt_name" > receipts.json
+          receipt_run="$(node -e 'const a=require("./receipts.json").artifacts.filter(x=>!x.expired);if(a.length)process.stdout.write(String(a.sort((x,y)=>y.created_at.localeCompare(x.created_at))[0].workflow_run.id))')"
+          if [[ -n "$receipt_run" ]]; then
+            gh run download "$receipt_run" --name "$receipt_name" --dir release-artifacts
+          else
+            printf 'null\n' > release-artifacts/marketplace-receipt.json
+          fi
+      - name: Classify pending steps
+        id: plan
+        run: node scripts/release/cli.mjs plan-recovery release-artifacts/artifact.json release-artifacts/marketplace-receipt.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: recovery-input-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-artifacts/marketplace-receipt.json
+          if-no-files-found: error
+          retention-days: 90
+
+  promote:
+    needs: inspect
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.inspect.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          run_install: false
+          cache: true
+          cache_dependency_path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ needs.inspect.outputs.artifact_name }}
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+          path: release-artifacts/
+      - name: Promote only if pending
+        if: needs.inspect.outputs.promote == 'true'
+        env:
+          SOURCE_SHA: ${{ needs.inspect.outputs.source_sha }}
+        run: node scripts/release/cli.mjs promote release-artifacts/artifact.json "$SOURCE_SHA" "$SOURCE_SHA"
+
+  marketplace:
+    needs: [inspect, promote]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.inspect.outputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          run_install: false
+          cache: true
+          cache_dependency_path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ needs.inspect.outputs.artifact_name }}
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+          path: release-artifacts/
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: recovery-input-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-artifacts/
+      - name: Verify or publish the same VSIX
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: node scripts/release/cli.mjs marketplace release-artifacts/artifact.json release-artifacts/marketplace-receipt.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: marketplace-${{ needs.inspect.outputs.source_sha }}-${{ inputs.run_id }}-${{ inputs.run_attempt }}
+          path: release-artifacts/marketplace-receipt.json
+          if-no-files-found: error
+          retention-days: 90
+
+  finish:
+    needs: [inspect, marketplace]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.inspect.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          run_install: false
+          cache: true
+          cache_dependency_path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ needs.inspect.outputs.artifact_name }}
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+          path: release-artifacts/
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: marketplace-${{ needs.inspect.outputs.source_sha }}-${{ inputs.run_id }}-${{ inputs.run_attempt }}
+          path: release-artifacts/
+      - name: Verify or create GitHub Release
+        run: node scripts/release/cli.mjs github release-artifacts/artifact.json release-artifacts/marketplace-receipt.json
+      - name: Sync develop if pending
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          node scripts/release/cli.mjs sync release-artifacts/artifact.json
+
+  summary:
+    if: ${{ always() }}
+    needs: [inspect, promote, marketplace, finish]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report recovery outcome
+        shell: bash
+        env:
+          SHA: ${{ needs.inspect.outputs.source_sha }}
+          INSPECT: ${{ needs.inspect.result }}
+          PROMOTE: ${{ needs.promote.result }}
+          MARKETPLACE: ${{ needs.marketplace.result }}
+          FINISH: ${{ needs.finish.result }}
+        run: |
+          printf '## Recovery\n\nOriginal SHA: %s\n\nInspection: %s\nPromotion: %s\nMarketplace: %s\nRelease and sync: %s\n' "$SHA" "$INSPECT" "$PROMOTE" "$MARKETPLACE" "$FINISH" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$INSPECT" != success || "$PROMOTE" != success || "$MARKETPLACE" != success || "$FINISH" != success ]]; then exit 1; fi

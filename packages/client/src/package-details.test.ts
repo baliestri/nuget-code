@@ -124,6 +124,47 @@ describe("package details", () => {
     expect(details?.dependencyGroups).toEqual([]);
   });
 
+  it("maps optional metadata without inventing missing facts or losing known zero downloads", async () => {
+    vi.mocked(getServiceResource).mockResolvedValue({
+      "@id": "https://nuget/registration/",
+      "@type": "RegistrationsBaseUrl",
+    });
+    vi.mocked(getFeedJson).mockResolvedValue({
+      items: [
+        {
+          items: [
+            {
+              catalogEntry: {
+                id: "Metadata",
+                version: "1.0.0",
+                projectUrl: "https://project.test/",
+                licenseUrl: "javascript:alert(1)",
+                licenseExpression: "MIT",
+                totalDownloads: 0,
+                dependencyGroups: [
+                  { targetFramework: "net8.0", dependencies: [] },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const details = await loadPackageDetailsFromFeedCached(
+      "Metadata",
+      feed("metadata"),
+      { settings: settings(), logger: logger() },
+    );
+    expect(details).toMatchObject({
+      projectUrl: "https://project.test/",
+      licenseUrl: undefined,
+      licenseExpression: "MIT",
+      totalDownloads: 0,
+      packageUrl: undefined,
+      frameworks: ["net8.0"],
+    });
+  });
+
   it("returns undefined and logs when registration is missing or fails", async () => {
     const log = logger();
     vi.mocked(getServiceResource).mockResolvedValueOnce({});
@@ -211,7 +252,7 @@ describe("package details", () => {
     expect(getServiceResource).toHaveBeenCalledTimes(2);
   });
 
-  it("uses injected persisted details before hitting the feed", async () => {
+  it("does not accept legacy persisted details without URL/authentication/version identity", async () => {
     const cache = new Map<string, NuGetPackageItem>([
       [
         "nuget:cached:true",
@@ -238,12 +279,9 @@ describe("package details", () => {
         settings: settings(),
         logger: logger(),
       }),
-    ).resolves.toMatchObject({
-      name: "Cached",
-      availableVersion: "1.0.0",
-    });
+    ).resolves.toBeUndefined();
 
-    expect(getServiceResource).not.toHaveBeenCalled();
+    expect(getServiceResource).toHaveBeenCalledOnce();
   });
 
   it("summarizes feeds with display name and color", () => {

@@ -1,4 +1,7 @@
 import { getFeedAuthorizationHeader } from "#client/credentials";
+import { networkFor } from "#client/client-network";
+import { deadline } from "#client/http-retry";
+import { cachePolicy } from "#client/cache";
 import type { NuGetClientLogger, NuGetClientSettings } from "#client/types";
 import { getJson, HttpError } from "#client/utils";
 import { isHttpUrl } from "#manager";
@@ -42,20 +45,43 @@ export async function getServiceResource(
   settings: NuGetClientSettings,
   logger: NuGetClientLogger,
   signal?: AbortSignal | undefined,
+  options: { force?: boolean; generation?: number | undefined } = {},
 ): Promise<ServiceResource | undefined> {
-  const serviceIndex = await getFeedJson<ServiceIndex>({
-    url: feed.url,
-    feed,
-    settings,
-    logger,
+  const network = networkFor(settings);
+  const generation =
+    options.generation ??
+    (options.force ? network.refresh() : network.facts.generation);
+  const serviceIndex = await network.facts.read(
+    network.key(["service-index", feed.url, network.context(settings)]),
+    cachePolicy.metadataTtlMs,
+    generation,
+    (signal) =>
+      getFeedJson<ServiceIndex>({
+        url: feed.url,
+        feed,
+        settings,
+        logger,
+        signal,
+        generation,
+      }),
     signal,
-  });
-  return serviceIndex.resources?.find((resource) =>
+  );
+  const resources = serviceIndex.resources?.filter((resource) =>
     resource["@type"]?.toLowerCase().startsWith(resourceType),
   );
+  if (resourceType === "registrationsbaseurl") {
+    return (
+      resources?.find(
+        (resource) =>
+          resource["@type"]?.toLowerCase() === "registrationsbaseurl/3.6.0",
+      ) ?? resources?.[0]
+    );
+  }
+  return resources?.[0];
 }
 
 export async function getFeedJson<T>(options: {
+  generation?: number | undefined;
   url: string;
   feed: PackageFeed;
   settings: NuGetClientSettings;
@@ -63,82 +89,82 @@ export async function getFeedJson<T>(options: {
   signal?: AbortSignal | undefined;
   timeoutMs?: number | undefined;
 }): Promise<T> {
+  const budget = deadline(
+    options.signal,
+    Math.min(90_000, options.timeoutMs ?? 90_000),
+  );
+  let headers: Record<string, string> | undefined;
+  const retryState = { attempt: 0 };
   try {
-    return await getJson<T>(
-      options.url,
-      options.settings.proxy,
-      requestOptions(options),
-    );
-  } catch (error) {
-    if (
-      !(error instanceof HttpError) ||
-      (error.statusCode !== 401 && error.statusCode !== 403)
-    ) {
-      throw error;
+    for (let attempt = 0; ; attempt++) {
+      budget.signal.throwIfAborted();
+      try {
+        return await requestFeedJson<T>(
+          {
+            ...options,
+            signal: budget.signal,
+            deadlineAt: budget.expiresAt,
+            retryState,
+          },
+          headers,
+        );
+      } catch (error) {
+        if (budget.signal.aborted) throw budget.signal.reason;
+        if (
+          attempt >= 2 ||
+          !(error instanceof HttpError) ||
+          !error.authenticationAllowed ||
+          ![401, 403].includes(error.statusCode)
+        )
+          throw error;
+        // The failed HTTP attempt has released its slot before provider interaction starts.
+        const credential = await getFeedAuthorizationHeader({
+          feed: options.feed,
+          settings: options.settings,
+          logger: options.logger,
+          retry: attempt > 0,
+          signal: budget.signal,
+        });
+        budget.signal.throwIfAborted();
+        if (!credential.authorizationHeader)
+          throw new Error(
+            credential.providerFound
+              ? (credential.error ?? "NuGet feed authentication required")
+              : "NuGet credential provider was not found",
+            { cause: error },
+          );
+        headers = { Authorization: credential.authorizationHeader };
+      }
     }
-
-    return getFeedJsonWithCredentials(options, false);
+  } catch (error) {
+    if (budget.signal.aborted) throw budget.signal.reason;
+    throw error;
+  } finally {
+    budget.dispose();
   }
 }
 
-async function getFeedJsonWithCredentials<T>(
+async function requestFeedJson<T>(
   options: {
+    generation?: number | undefined;
     url: string;
-    feed: PackageFeed;
     settings: NuGetClientSettings;
-    logger: NuGetClientLogger;
     signal?: AbortSignal | undefined;
     timeoutMs?: number | undefined;
-  },
-  retry: boolean,
-): Promise<T> {
-  const credential = await getFeedAuthorizationHeader({
-    feed: options.feed,
-    settings: options.settings,
-    logger: options.logger,
-    retry,
-  });
-  if (!credential.authorizationHeader) {
-    throw new Error(
-      credential.providerFound
-        ? (credential.error ?? "NuGet feed authentication required")
-        : "NuGet credential provider was not found",
-    );
-  }
-
-  try {
-    return await getJson<T>(
-      options.url,
-      options.settings.proxy,
-      requestOptions(options, {
-        Authorization: credential.authorizationHeader,
-      }),
-    );
-  } catch (error) {
-    if (
-      retry ||
-      !(error instanceof HttpError) ||
-      (error.statusCode !== 401 && error.statusCode !== 403)
-    ) {
-      throw error;
-    }
-
-    return getFeedJsonWithCredentials(options, true);
-  }
-}
-
-function requestOptions(
-  options: {
-    signal?: AbortSignal | undefined;
-    timeoutMs?: number | undefined;
+    deadlineAt?: number | undefined;
+    retryState?: { attempt: number } | undefined;
   },
   headers?: Record<string, string> | undefined,
 ) {
-  return {
-    ...(headers ? { headers } : {}),
-    ...(options.signal ? { signal: options.signal } : {}),
-    ...(options.timeoutMs !== undefined
-      ? { timeoutMs: options.timeoutMs }
-      : {}),
-  };
+  const network = networkFor(options.settings);
+  return getJson<T>(options.url, options.settings.proxy, {
+    headers,
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+    deadlineAt: options.deadlineAt,
+    retryState: options.retryState,
+    network,
+    authContext: network.context(options.settings),
+    generation: options.generation,
+  });
 }

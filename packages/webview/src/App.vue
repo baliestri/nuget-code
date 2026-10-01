@@ -62,7 +62,9 @@ const railActions = computed<PackageActionRailItem[]>(() => {
           id: "upgradePackages",
           icon: "arrow-up",
           label: "Upgrade packages in selected context",
-          disabled: !model.value.hasUpgrades,
+          disabled:
+            !model.value.hasUpgrades ||
+            model.value.operations.some((operation) => !operation.outcome),
           run: () => store.runCommand("upgradePackages"),
         },
         settings,
@@ -72,9 +74,12 @@ const railActions = computed<PackageActionRailItem[]>(() => {
         restore,
         {
           id: "reloadSources",
-          icon: "server-process",
+          icon: "refresh",
           label: "Reload NuGet sources",
-          run: () => store.runCommand("reloadSources"),
+          disabled: ["loading", "saving"].includes(
+            model.value.sourceEditor?.status ?? "",
+          ),
+          run: () => store.post({ type: "sourceEditor", reload: true }),
         },
         settings,
       ];

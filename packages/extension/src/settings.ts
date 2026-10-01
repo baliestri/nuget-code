@@ -1,8 +1,10 @@
 import path from "node:path";
 import { workspace } from "vscode";
 import type { LogLevel } from "#contracts/logging";
+import type { NuGetClientSettings } from "#client/types";
 
-export interface ExtensionSettings {
+export interface ExtensionSettings extends NuGetClientSettings {
+  sourceSaveIn?: string;
   tabButtonStyle: "icons" | "labels";
   logLevel: LogLevel;
   maxLogEntries: number;
@@ -25,6 +27,7 @@ export function getSettings(): ExtensionSettings {
   const proxy = config.get<string>("proxy", "");
 
   return {
+    sourceSaveIn: config.get<string>("sources.saveIn", "workspace"),
     tabButtonStyle: config.get<"icons" | "labels">("tabButtonStyle", "labels"),
     logLevel: config.get<LogLevel>("logLevel", "information"),
     maxLogEntries: config.get<number>("maxLogEntries", 1000),

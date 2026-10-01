@@ -7,16 +7,41 @@ import {
   PackageManagerState,
 } from "#contracts/package-manager";
 import { NuGetCacheFolder, NuGetPackageItem } from "#contracts/nuget";
+import type { StateRevision, DeltaRevision } from "#contracts/package-loads";
+import type { MutationOutcome, MutationPlan } from "#contracts/operations";
+import type { SourceEditRequest } from "#contracts/nuget";
 
 export type WebviewToExtensionMessage =
+  | { type: "sourceEditor"; reload?: boolean }
+  | { type: "editSource"; request: SourceEditRequest }
   | { type: "ready" }
+  | { type: "cancelOperation"; operationId: string }
+  | { type: "retryOperation"; operationId: string }
+  | {
+      type: "confirmOperation";
+      operationId: string;
+      contextRevision: string;
+      accepted: boolean;
+    }
   | { type: "setActiveTab"; tab: PackageManagerTab }
   | { type: "selectTarget"; targetId: string }
   | { type: "selectFeed"; feedId: string }
+  | {
+      type: "setFeedFilter";
+      filter: import("#contracts/package-manager").PackageFeedFilter;
+    }
+  | { type: "upgradeCandidates"; keys: string[]; revision: string }
+  | { type: "openPackageLink"; url: string }
+  | { type: "openPackageFolder"; path: string }
   | { type: "setSearch"; search: string }
   | { type: "setIncludePrerelease"; includePrerelease: boolean }
   | { type: "selectPackage"; packageId: string }
-  | { type: "loadPackageDetails"; packageId: string; feedId: string }
+  | {
+      type: "loadPackageDetails";
+      packageId: string;
+      feedId: string;
+      version?: string | undefined;
+    }
   | { type: "selectSource"; sourceId: string }
   | { type: "toggleFolder"; folderId: string }
   | {
@@ -27,8 +52,12 @@ export type WebviewToExtensionMessage =
       projectPaths?: string[] | undefined;
     };
 
-export type ExtensionToWebviewMessage =
+/** Internal host events; the controller adds the wire envelope exactly once. */
+export type PackageManagerEvent =
+  | { type: "operationResult"; outcome: MutationOutcome }
+  | { type: "operationConfirmation"; plan: MutationPlan }
   | { type: "state"; state: PackageManagerState }
+  | { type: "stateDelta"; patch: Partial<PackageManagerState> }
   | ({ type: "operationStarted" } & PackageManagerOperationMessage)
   | ({ type: "operationFinished" } & PackageManagerOperationMessage)
   | ({
@@ -68,3 +97,7 @@ export type ExtensionToWebviewMessage =
   | { type: "foldersChanged"; folders: NuGetCacheFolder[] }
   | { type: "log"; entry: LogEntry }
   | { type: "logs"; entries: LogEntry[] };
+
+export type ExtensionToWebviewMessage =
+  | (Extract<PackageManagerEvent, { type: "state" }> & StateRevision)
+  | (Exclude<PackageManagerEvent, { type: "state" }> & DeltaRevision);

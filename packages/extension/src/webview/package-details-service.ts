@@ -1,168 +1,187 @@
-import { NuGetClient } from "#client";
-import type { PackageDetailsCache } from "#client/package-details";
+import { packageInstallations } from "#client/package-installations";
+import {
+  loadPackageDetailsFromFeed,
+  type PackageDetailsCache,
+} from "#client/package-details";
 import type {
-  ExtensionToWebviewMessage,
-  NuGetPackageItem,
-  PackageFeed,
+  LoadState,
+  PackageManagerEvent,
   PackageManagerState,
 } from "#contracts";
-import {
-  allFeeds,
-  isHttpFeed,
-  mergePackageDetailsFromFeed,
-  replacePackage,
-} from "#manager";
 import type { ExtensionLogger } from "#extension/logger";
 import type { ExtensionSettings } from "#extension/settings";
+import { ReadCoordinator } from "#extension/webview/read-coordinator";
+import { parseNuGetVersion } from "#manager";
 
 interface PackageDetailsServiceOptions {
-  getState: () => PackageManagerState;
-  setState: (state: PackageManagerState) => void;
-  getSettings: () => ExtensionSettings;
-  getCache: () => PackageDetailsCache;
+  getState(): PackageManagerState;
+  setState(state: PackageManagerState): void;
+  getSettings(): ExtensionSettings;
+  getCache(): PackageDetailsCache;
   logger: ExtensionLogger;
-  publish: (message: ExtensionToWebviewMessage) => void;
-  persistPackageCache: () => Promise<void>;
+  publish(message: PackageManagerEvent): void;
+  persistPackageCache(): Promise<void>;
 }
-
 export class PackageDetailsService {
-  private requestId = 0;
-
+  private lastRequest:
+    | { packageId: string; feedId: string; version?: string | undefined }
+    | undefined;
+  private readonly reads = new ReadCoordinator();
   constructor(private readonly options: PackageDetailsServiceOptions) {}
-
-  async loadPackageDetails(packageId: string, feedId: string): Promise<void> {
-    const requestId = ++this.requestId;
+  cancel(): void {
+    this.reads.cancel("details");
+    this.update(undefined, { status: "idle", stale: false, error: null });
+  }
+  dispose(): void {
+    this.reads.dispose();
+  }
+  async refresh(): Promise<void> {
+    const request = this.lastRequest;
+    if (
+      request &&
+      request.packageId === this.options.getState().selectedPackageId
+    )
+      await this.loadPackageDetails(
+        request.packageId,
+        request.feedId,
+        request.version,
+      );
+  }
+  async loadPackageDetails(
+    packageId: string,
+    feedId: string,
+    version?: string,
+  ): Promise<void> {
+    if (version && !parseNuGetVersion(version))
+      throw new Error("Invalid detail version.");
+    this.lastRequest = { packageId, feedId, version };
     const state = this.options.getState();
-    const packageItem = findPackage(state, packageId);
-    const feed = this.findDetailsFeed(packageItem, feedId);
-    if (!packageItem || !feed) {
-      this.options.publish({
-        type: "packageDetailsChanged",
-        requestId,
+    const settings = this.options.getSettings();
+    const item = [
+      ...state.installedPackages,
+      ...state.implicitPackages,
+      ...state.availablePackages,
+    ].find((item) => item.id === packageId);
+    const feed = state.feeds.find(
+      (feed) => feed.id === feedId && feed.enabled && feed.id !== "__all__",
+    );
+    const key = () =>
+      JSON.stringify([
+        this.options.getState().selectedTargetId,
+        this.options.getState().selectedPackageId,
+        this.options.getState().includePrerelease,
+        this.options
+          .getState()
+          .feeds.map((feed) => [feed.id, feed.url, feed.enabled]),
+        settings.network?.context(settings),
+        settings.network?.facts.generation,
+        version,
         packageId,
         feedId,
+      ]);
+    const contextKey = key();
+    const ticket = this.reads.begin("details", contextKey);
+    const current = () =>
+      this.reads.isCurrent(ticket) &&
+      this.options.getSettings() === settings &&
+      key() === contextKey;
+    if (!item || !feed) {
+      this.update(undefined, {
+        status: "failed",
+        stale: false,
+        error: "The selected package source is unavailable.",
       });
       return;
     }
-
-    const detailsResult = await this.loadPackageDetailsFromFeeds(
-      packageItem,
-      feed,
-    );
-
-    if (requestId !== this.requestId) {
-      return;
-    }
-
-    if (!detailsResult) {
-      this.options.logger.warning(
-        "nuget.packages",
-        `Could not load details for ${packageItem.name} from any enabled feed`,
+    const cache = this.options.getCache();
+    const cacheKey = JSON.stringify([
+      contextKey,
+      feed.url,
+      item.name.toLowerCase(),
+    ]);
+    const previous =
+      state.packageDetails?.packageId === packageId &&
+      state.packageDetails.feedId === feedId
+        ? state.packageDetails
+        : undefined;
+    this.update(previous, {
+      status: "loading",
+      stale: !!previous,
+      error: null,
+    });
+    let status: LoadState["status"] = "ready";
+    try {
+      const details =
+        cache.get(cacheKey) ??
+        (await loadPackageDetailsFromFeed(item.name, feed, {
+          includePrerelease: state.includePrerelease,
+          settings,
+          logger: this.options.logger,
+          signal: ticket.signal,
+          ...(version ? { version } : {}),
+        }));
+      if (!current()) return;
+      if (!details) throw new Error("Package details unavailable.");
+      const localInstallations = await packageInstallations(
+        item.name,
+        [
+          ...new Set([
+            ...(item.projectStates ?? [])
+              .map((project) => project.installedVersion)
+              .filter((value): value is string => !!value),
+            ...(item.installedVersion ? [item.installedVersion] : []),
+          ]),
+        ],
+        state.folders
+          .filter((folder) => folder.title === "global-packages")
+          .map((folder) => folder.path),
+        ticket.signal,
       );
+      if (!current()) return;
+      await cache.set(cacheKey, details);
+      if (!current()) return;
+      this.update(
+        {
+          packageId,
+          feedId,
+          version,
+          packageItem: { ...details, localInstallations },
+        },
+        { status: "ready", stale: false, error: null },
+      );
+      await this.options.persistPackageCache();
+    } catch (error) {
+      status =
+        ticket.signal.aborted ||
+        (error instanceof Error && error.name === "AbortError")
+          ? "idle"
+          : "failed";
+    } finally {
+      if (this.reads.isCurrent(ticket)) {
+        if (!current())
+          this.update(undefined, { status: "idle", stale: false, error: null });
+        else if (status !== "ready")
+          this.update(this.options.getState().packageDetails, {
+            status,
+            stale: !!this.options.getState().packageDetails,
+            error:
+              status === "failed"
+                ? "Could not load package details from the selected source."
+                : null,
+          });
+      }
     }
-
-    const merged = detailsResult
-      ? mergePackageDetailsFromFeed(
-          packageItem,
-          detailsResult.details,
-          detailsResult.feed,
-        )
-      : packageItem;
+  }
+  private update(
+    packageDetails: PackageManagerState["packageDetails"],
+    details: LoadState,
+  ): void {
     const current = this.options.getState();
-    this.options.setState({
-      ...current,
-      installedPackages: replacePackage(current.installedPackages, merged),
-      implicitPackages: replacePackage(current.implicitPackages, merged),
-      availablePackages: replacePackage(current.availablePackages, merged),
-    });
-    this.options.publish({
-      type: "packageDetailsChanged",
-      requestId,
-      packageId,
-      feedId: detailsResult?.feed.id ?? feed.id,
-      packageItem: merged,
-    });
-    await this.options.persistPackageCache();
+    const patch = {
+      packageDetails: packageDetails ?? null,
+      flows: { ...current.flows, details },
+    };
+    this.options.setState({ ...current, ...patch });
+    this.options.publish({ type: "stateDelta", patch });
   }
-
-  private async loadPackageDetailsFromFeeds(
-    packageItem: NuGetPackageItem,
-    selectedFeed: PackageFeed,
-  ): Promise<{ details: NuGetPackageItem; feed: PackageFeed } | undefined> {
-    for (const feed of this.detailsFeedFallbacks(packageItem, selectedFeed)) {
-      const details = await NuGetClient.loadPackageDetails({
-        packageId: packageItem.name,
-        feed,
-        includePrerelease: this.options.getState().includePrerelease,
-        cache: this.options.getCache(),
-        settings: this.options.getSettings(),
-        logger: this.options.logger,
-      });
-      if (details) {
-        return { details, feed };
-      }
-    }
-    return undefined;
-  }
-
-  private findDetailsFeed(
-    packageItem: NuGetPackageItem | undefined,
-    feedId: string,
-  ): PackageFeed | undefined {
-    const feeds = this.options
-      .getState()
-      .feeds.filter((feed) => feed.id !== allFeeds.id);
-    const selected = feeds.find((feed) => feed.id === feedId);
-    if (selected) {
-      return selected;
-    }
-
-    const firstAvailableFeed = packageItem?.availableFeeds
-      ?.map((availableFeed) =>
-        feeds.find((feed) => feed.id === availableFeed.id),
-      )
-      .find((feed): feed is PackageFeed => feed !== undefined);
-    return (
-      firstAvailableFeed ?? feeds.find((feed) => feed.url.startsWith("http"))
-    );
-  }
-
-  private detailsFeedFallbacks(
-    packageItem: NuGetPackageItem,
-    selectedFeed: PackageFeed,
-  ): PackageFeed[] {
-    const feeds = this.options
-      .getState()
-      .feeds.filter(
-        (feed) => feed.id !== allFeeds.id && feed.enabled && isHttpFeed(feed),
-      );
-    const ordered = [
-      selectedFeed,
-      ...(packageItem.availableFeeds
-        ?.map((availableFeed) =>
-          feeds.find((feed) => feed.id === availableFeed.id),
-        )
-        .filter((feed): feed is PackageFeed => feed !== undefined) ?? []),
-      ...feeds,
-    ];
-    const seen = new Set<string>();
-    return ordered.filter((feed) => {
-      if (seen.has(feed.id)) {
-        return false;
-      }
-      seen.add(feed.id);
-      return true;
-    });
-  }
-}
-
-function findPackage(
-  state: PackageManagerState,
-  packageId: string,
-): NuGetPackageItem | undefined {
-  return [
-    ...state.installedPackages,
-    ...state.implicitPackages,
-    ...state.availablePackages,
-  ].find((item) => item.id === packageId);
 }

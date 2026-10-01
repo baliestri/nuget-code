@@ -1,0 +1,171 @@
+name: CI
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      source_sha:
+        description: Full commit SHA to validate.
+        required: true
+        type: string
+    outputs:
+      source_sha:
+        description: Commit SHA that passed every CI job.
+        value: ${{ jobs.gate.outputs.source_sha }}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.source_sha || 'event' }}
+  cancel-in-progress: ${{ inputs.source_sha == '' && (github.event_name == 'pull_request' || github.event_name == 'push') }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  identity:
+    name: Resolve source commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      source_sha: ${{ steps.verify.outputs.source_sha }}
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
+    steps:
+      - name: Validate source SHA
+        run: |
+          if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            printf '%s\n' 'Expected a full lowercase commit SHA.' >&2
+            exit 1
+          fi
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - name: Verify checkout identity
+        id: verify
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          printf 'source_sha=%s\n' "$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+
+  quality:
+    name: Lint and typecheck
+    needs: identity
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SOURCE_SHA: ${{ needs.identity.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - name: Verify checkout identity
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          run_install: false
+          cache: true
+          cache_dependency_path: pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm run lint
+      - name: Typecheck
+        run: pnpm run typecheck
+      - name: Test release scripts
+        run: pnpm run test:scripts
+      - name: Validate workflows
+        run: |
+          archive="$RUNNER_TEMP/actionlint_1.7.12_linux_amd64.tar.gz"
+          curl --fail --location --retry 3 --output "$archive" \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          printf '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  %s\n' "$archive" | sha256sum --check --status
+          tar -xzf "$archive" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -color
+
+  tests:
+    name: Build and test (${{ matrix.os }})
+    needs: identity
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    env:
+      SOURCE_SHA: ${{ needs.identity.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - name: Verify checkout identity
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          run_install: false
+          cache: true
+          cache_dependency_path: pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        run: pnpm run build
+      - name: Test all workspace packages
+        run: pnpm run test
+
+  integration:
+    name: .NET integration
+    needs: identity
+    uses: ./.github/workflows/integration.yml
+    with:
+      source_sha: ${{ needs.identity.outputs.source_sha }}
+
+  gate:
+    name: CI result
+    if: ${{ always() }}
+    needs: [identity, quality, tests, integration]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      source_sha: ${{ steps.verify.outputs.source_sha }}
+    steps:
+      - name: Require successful checks
+        id: verify
+        env:
+          SOURCE_SHA: ${{ needs.identity.outputs.source_sha }}
+          IDENTITY_RESULT: ${{ needs.identity.result }}
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          TEST_RESULT: ${{ needs.tests.result }}
+          INTEGRATION_RESULT: ${{ needs.integration.result }}
+          INTEGRATION_SHA: ${{ needs.integration.outputs.source_sha }}
+        run: |
+          {
+            printf '## CI outcome\n\n'
+            printf 'Commit: %s\n\n' "$SOURCE_SHA"
+            printf -- '- Identity: %s\n' "$IDENTITY_RESULT"
+            printf -- '- Quality: %s\n' "$QUALITY_RESULT"
+            printf -- '- Windows/Linux build and tests: %s\n' "$TEST_RESULT"
+            printf -- '- .NET SDK integration: %s\n' "$INTEGRATION_RESULT"
+          } >> "$GITHUB_STEP_SUMMARY"
+          test "$IDENTITY_RESULT" = success
+          test "$QUALITY_RESULT" = success
+          test "$TEST_RESULT" = success
+          test "$INTEGRATION_RESULT" = success
+          test "$INTEGRATION_SHA" = "$SOURCE_SHA"
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          printf 'source_sha=%s\n' "$SOURCE_SHA" >> "$GITHUB_OUTPUT"

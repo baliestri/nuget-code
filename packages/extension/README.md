@@ -1,10 +1,12 @@
 # NuGet Package Manager for VS Code
 
+Release procedure: [docs/releasing.md](https://github.com/baliestri/nuget-code/blob/develop/docs/releasing.md). Review the installed interface manually before triggering a release; CI verifies the built VSIX and its source identity.
+
 NuGet Package Manager for VS Code brings a Rider-inspired NuGet package management experience to Visual Studio Code.
 
 It provides a dedicated NuGet panel for .NET workspaces, with package discovery, feed search, package details, project-level package actions, source inspection, cache folder management, and an integrated log view.
 
-> Status: active work in progress. The extension already includes the package manager surface described below, while some Rider-like capabilities, such as editable sources and a Package Manager Console, are still planned.
+> Status: active work in progress. The extension includes editable sources; the Package Manager Console is still planned.
 
 ## Screenshots
 

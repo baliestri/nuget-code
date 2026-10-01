@@ -1,4 +1,14 @@
 export interface PackageFeed {
+  protocolVersion?: number;
+  disableTLSCertificateValidation?: boolean;
+  isHttp?: boolean;
+  isLocal?: boolean;
+  isMachineWide?: boolean;
+  isOfficial?: boolean;
+  isPersistable?: boolean;
+  /** Non-secret packageSources attributes retained when editing inherited declarations. */
+  sourceAttributes?: Record<string, string> | undefined;
+  declaredUrl?: string;
   id: string;
   name: string;
   url: string;
@@ -39,6 +49,13 @@ export interface NuGetPackageDependencyGroup {
 }
 
 export interface NuGetPackageItem {
+  projectUrl?: string | undefined;
+  licenseUrl?: string | undefined;
+  licenseExpression?: string | undefined;
+  packageUrl?: string | undefined;
+  totalDownloads?: number | undefined;
+  frameworks?: string[] | undefined;
+  localInstallations?: { version: string; path: string }[] | undefined;
   id: string;
   name: string;
   installedVersion?: string | undefined;
@@ -61,6 +78,48 @@ export interface NuGetPackageItem {
 }
 
 export interface NuGetConfigFile {
+  restoreConsent?: {
+    isGranted: boolean | null;
+    isGrantedInSettings: boolean | null;
+    isAutomatic: boolean | null;
+  };
+  restoreDirectives?: readonly {
+    action: "add" | "remove" | "clear";
+    key?: string;
+    value?: string;
+  }[];
+  fallbackDirectives?: readonly {
+    action: "add" | "remove" | "clear";
+    key?: string;
+    value?: string;
+  }[];
+  fallbackFolders?: readonly string[];
+  properties?: Partial<
+    Record<"globalPackagesFolder" | "repositoryPath", string>
+  >;
+  propertyDirectives?: readonly {
+    action: "add" | "remove" | "clear";
+    key?: string;
+    value?: string;
+  }[];
+  packageFolders?: readonly {
+    projectPath?: string;
+    globalPackagesFolder: string;
+    repositoryPath?: string;
+  }[];
+  configPaths?: readonly string[];
+  mappingNames?: string[];
+  revision?: string;
+  sourceDirectives?: readonly {
+    action: "add" | "remove" | "clear";
+    key?: string;
+  }[];
+  disabledDirectives?: readonly {
+    action: "add" | "remove" | "clear";
+    key?: string;
+    disabled?: boolean;
+  }[];
+  credentialNames?: readonly string[];
   id: string;
   name: string;
   path: string;
@@ -68,6 +127,41 @@ export interface NuGetConfigFile {
   hasCredentials: boolean;
   scope: string;
   feeds: PackageFeed[];
+}
+
+export interface SourceEdit {
+  action: "upsert" | "remove";
+  originalName?: string | undefined;
+  name: string;
+  url: string;
+  enabled: boolean;
+  allowInsecure: boolean;
+}
+export interface SourceDestination {
+  id: string;
+  path: string;
+  label: string;
+  revision: string;
+  suggested?: boolean;
+}
+export interface SourceEditRequest {
+  requestId: string;
+  sourceId: string;
+  sourceRevision: string;
+  destinationId: string;
+  destinationRevision: string;
+  edit: SourceEdit | SourcePropertiesEdit;
+}
+export interface SourcePropertiesEdit {
+  action: "properties";
+  globalPackagesFolder: string;
+  repositoryPath: string;
+}
+export interface SourceEditorState {
+  requestId?: string;
+  destinations: SourceDestination[];
+  status: "idle" | "loading" | "saving" | "saved" | "failed";
+  message: string;
 }
 
 export interface NuGetCacheFolder {

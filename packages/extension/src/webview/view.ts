@@ -24,7 +24,9 @@ export class PackageManagerViewProvider
     };
     view.webview.html = this.getHtml(view);
     view.webview.onDidReceiveMessage((message: WebviewToExtensionMessage) => {
-      void this.controller.handleMessage(message);
+      void this.controller
+        .handleMessage(message)
+        .catch((error) => this.controller.reportMessageError(error));
     });
     this.controller.attach(view.webview);
   }

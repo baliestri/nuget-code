@@ -3,6 +3,7 @@ import type {
   PackageFeed,
   PackageManagerState,
 } from "#contracts";
+import { queryFeeds } from "#manager/feed-filter";
 import { allFeeds } from "#manager/constants";
 
 export function selectInitialFeed(
@@ -25,21 +26,34 @@ export function detailFeedId(
   packageItem: NuGetPackageItem | undefined,
   state: PackageManagerState,
 ): string {
-  const feeds = state.feeds.filter((feed) => feed.id !== allFeeds.id);
-  const selected =
-    state.selectedFeedId !== allFeeds.id
+  const feeds = state.feeds.filter(
+    (feed) => feed.enabled && feed.id !== allFeeds.id,
+  );
+  const selected = state.feedFilter
+    ? queryFeeds(state).length === 1
+      ? queryFeeds(state)[0]
+      : undefined
+    : state.selectedFeedId !== allFeeds.id
       ? feeds.find((feed) => feed.id === state.selectedFeedId)
       : undefined;
-  if (selected && isHttpFeed(selected)) {
+  if (selected) {
     return selected.id;
   }
 
-  const available = packageItem?.availableFeeds
-    ?.map((feed) => feeds.find((candidate) => candidate.id === feed.id))
-    .find(
-      (feed): feed is PackageFeed => feed !== undefined && isHttpFeed(feed),
-    );
-  return available?.id ?? feeds.find(isHttpFeed)?.id ?? feeds[0]?.id ?? "";
+  const origin = feeds.find((feed) => feed.url === packageItem?.sourceUrl);
+  if (origin && isHttpFeed(origin)) return origin.id;
+  const available =
+    packageItem?.availableFeeds
+      ?.map((feed) => feeds.find((candidate) => candidate.id === feed.id))
+      .filter((feed): feed is PackageFeed => feed !== undefined) ?? [];
+  return (
+    available.find(isHttpFeed)?.id ??
+    origin?.id ??
+    available[0]?.id ??
+    feeds.find(isHttpFeed)?.id ??
+    feeds[0]?.id ??
+    ""
+  );
 }
 
 export function feedName(feedId: string, state: PackageManagerState): string {

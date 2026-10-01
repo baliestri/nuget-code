@@ -10,6 +10,8 @@ import {
   createEmptyPackageManagerState,
   createFolderSizeCache,
   createInitialPackageManagerState,
+  createReadFlowStates,
+  createEmptyUpdateProjection,
   defaultPackageVersion,
   defaultSelectedProjectPaths,
   detailFeedId,
@@ -290,7 +292,7 @@ describe("feed and version helpers", () => {
         }),
         { ...state, selectedFeedId: "offline" },
       ),
-    ).toBe("private");
+    ).toBe("offline");
     expect(feedName("private", state)).toBe("private");
     expect(feedName("missing", state)).toBe("");
   });
@@ -477,8 +479,8 @@ describe("package merge and metadata helpers", () => {
     ).toEqual([installed]);
     expect(
       applyPackageDetails(state, { ...installed, description: "updated" })
-        .installedPackages[0]?.description,
-    ).toBe("updated");
+        .installedPackages,
+    ).toBe(state.installedPackages);
     expect(
       applyAvailablePackages(state, [available]).availablePackages,
     ).toEqual([available]);
@@ -494,7 +496,7 @@ describe("package merge and metadata helpers", () => {
     ).toMatchObject({
       installedPackagesStatus: "ready",
       implicitPackagesStatus: "ready",
-      hasUpgrades: true,
+      hasUpgrades: false,
     });
   });
 });
@@ -685,6 +687,11 @@ function stateWithPackages(
   state: Partial<PackageManagerState>,
 ): PackageManagerState {
   return {
+    flows: createReadFlowStates(),
+    updates: createEmptyUpdateProjection(),
+    operations: [],
+    installedReferences: [],
+    catalogs: [],
     activeTab: "packages",
     targets: [],
     selectedTargetId: "",

@@ -22,7 +22,8 @@
     "format": "prettier . --write",
     "test": "vitest run",
     "test:integration": "vscode-test",
-    "vscode:prepublish": "pnpm --filter ../.. run compile",
+    "test:dotnet": "vitest run --config vitest.dotnet.config.ts",
+    "vscode:prepublish": "pnpm exec turbo compile --force",
     "package": "pnpm vsce package --no-dependencies",
     "publish": "pnpm vsce publish --no-dependencies"
   },
@@ -219,110 +220,117 @@
           "group": "navigation@-50"
         }
       ]
-    }
-  },
-  "configuration": {
-    "title": "NuGet Package Manager",
-    "properties": {
-      "nuget-code.packageManager.tabButtonStyle": {
-        "type": "string",
-        "default": "labels",
-        "enum": [
-          "icons",
-          "labels"
-        ],
-        "description": "Style of the Package Manager tab buttons."
-      },
-      "nuget-code.logLevel": {
-        "type": "string",
-        "default": "information",
-        "enum": [
-          "debug",
-          "verbose",
-          "information",
-          "minimal",
-          "warning",
-          "error"
-        ],
-        "description": "Minimum level used by the NuGet Package Manager log buffer."
-      },
-      "nuget-code.maxLogEntries": {
-        "type": "number",
-        "default": 1000,
-        "description": "Maximum number of log entries kept in the webview."
-      },
-      "nuget-code.defaultFeed": {
-        "type": "string",
-        "default": "__all__",
-        "description": "Default NuGet feed id selected in the Package Manager."
-      },
-      "nuget-code.includePrerelease": {
-        "type": "boolean",
-        "default": false,
-        "description": "Include prerelease packages in feed search."
-      },
-      "nuget-code.maxSearchResults": {
-        "type": "number",
-        "default": 100,
-        "description": "Maximum number of available packages shown from feed search."
-      },
-      "nuget-code.dotnetPath": {
-        "type": "string",
-        "default": "dotnet",
-        "description": "Path to the dotnet executable."
-      },
-      "nuget-code.nugetPath": {
-        "type": "string",
-        "default": "nuget",
-        "description": "Path to the nuget executable."
-      },
-      "nuget-code.extraConfigPaths": {
-        "type": "array",
-        "default": [],
-        "items": {
-          "type": "string"
+    },
+    "configuration": {
+      "title": "NuGet Package Manager",
+      "properties": {
+        "nuget-code.packageManager.tabButtonStyle": {
+          "type": "string",
+          "default": "labels",
+          "enum": [
+            "icons",
+            "labels"
+          ],
+          "description": "Style of the Package Manager tab buttons."
         },
-        "description": "Additional NuGet.config paths to include in source discovery."
-      },
-      "nuget-code.credentialProviderPaths": {
-        "type": "array",
-        "default": [],
-        "items": {
-          "type": "string"
+        "nuget-code.logLevel": {
+          "type": "string",
+          "default": "information",
+          "enum": [
+            "debug",
+            "verbose",
+            "information",
+            "minimal",
+            "warning",
+            "error"
+          ],
+          "description": "Minimum level used by the NuGet Package Manager log buffer."
         },
-        "description": "Additional NuGet credential provider executable paths."
-      },
-      "nuget-code.proxy": {
-        "type": "string",
-        "default": "",
-        "description": "Proxy URL used for NuGet HTTP requests."
-      },
-      "nuget-code.useVsCodeProxy": {
-        "type": "boolean",
-        "default": true,
-        "description": "Use VS Code's http.proxy setting when no extension proxy is configured."
-      },
-      "nuget-code.calculateCacheSizesOnLoad": {
-        "type": "boolean",
-        "default": false,
-        "description": "Calculate NuGet cache folder sizes when the package manager loads."
+        "nuget-code.maxLogEntries": {
+          "type": "number",
+          "default": 1000,
+          "description": "Maximum number of log entries kept in the webview."
+        },
+        "nuget-code.defaultFeed": {
+          "type": "string",
+          "default": "__all__",
+          "description": "Default NuGet feed id selected in the Package Manager."
+        },
+        "nuget-code.includePrerelease": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include prerelease packages in feed search."
+        },
+        "nuget-code.maxSearchResults": {
+          "type": "number",
+          "default": 100,
+          "description": "Maximum number of available packages shown from feed search."
+        },
+        "nuget-code.dotnetPath": {
+          "type": "string",
+          "default": "dotnet",
+          "description": "Path to the dotnet executable."
+        },
+        "nuget-code.nugetPath": {
+          "type": "string",
+          "default": "nuget",
+          "description": "Path to the nuget executable."
+        },
+        "nuget-code.extraConfigPaths": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Additional NuGet.config paths to include in source discovery."
+        },
+        "nuget-code.sources.saveIn": {
+          "type": "string",
+          "default": "workspace",
+          "scope": "window",
+          "description": "Destination for edits to Effective NuGet configuration: workspace (beside the selected solution/project), user, or a NuGet.Config file path. Relative paths use the selected workspace folder. Selecting a concrete config in Sources always edits that file."
+        },
+        "nuget-code.credentialProviderPaths": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Additional NuGet credential provider executable paths."
+        },
+        "nuget-code.proxy": {
+          "type": "string",
+          "default": "",
+          "description": "Proxy URL used for NuGet HTTP requests."
+        },
+        "nuget-code.useVsCodeProxy": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use VS Code's http.proxy setting when no extension proxy is configured."
+        },
+        "nuget-code.calculateCacheSizesOnLoad": {
+          "type": "boolean",
+          "default": false,
+          "description": "Calculate NuGet cache folder sizes when the package manager loads."
+        }
       }
+    },
+    "configurationDefaults": {
+      "nuget-code.packageManager.tabButtonStyle": "labels",
+      "nuget-code.logLevel": "information",
+      "nuget-code.maxLogEntries": 1000,
+      "nuget-code.defaultFeed": "__all__",
+      "nuget-code.includePrerelease": false,
+      "nuget-code.maxSearchResults": 100,
+      "nuget-code.dotnetPath": "dotnet",
+      "nuget-code.nugetPath": "nuget",
+      "nuget-code.extraConfigPaths": [],
+      "nuget-code.sources.saveIn": "workspace",
+      "nuget-code.credentialProviderPaths": [],
+      "nuget-code.proxy": "",
+      "nuget-code.useVsCodeProxy": true,
+      "nuget-code.calculateCacheSizesOnLoad": false
     }
-  },
-  "configurationDefaults": {
-    "nuget-code.packageManager.tabButtonStyle": "labels",
-    "nuget-code.logLevel": "information",
-    "nuget-code.maxLogEntries": 1000,
-    "nuget-code.defaultFeed": "__all__",
-    "nuget-code.includePrerelease": false,
-    "nuget-code.maxSearchResults": 100,
-    "nuget-code.dotnetPath": "dotnet",
-    "nuget-code.nugetPath": "nuget",
-    "nuget-code.extraConfigPaths": [],
-    "nuget-code.credentialProviderPaths": [],
-    "nuget-code.proxy": "",
-    "nuget-code.useVsCodeProxy": true,
-    "nuget-code.calculateCacheSizesOnLoad": false
   },
   "devDependencies": {
     "@nuget-code/client": "workspace:*",

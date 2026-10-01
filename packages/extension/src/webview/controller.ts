@@ -1,5 +1,8 @@
+import { packageInstallations } from "#client/package-installations";
 import {
   commands,
+  env,
+  Uri,
   window,
   workspace,
   StatusBarAlignment,
@@ -9,19 +12,38 @@ import {
   type Webview,
 } from "vscode";
 import type {
-  ExtensionToWebviewMessage,
+  PackageManagerEvent,
+  PackageFeedFilter,
   NuGetPackageItem,
   PackageManagerCommand,
   PackageManagerOperationKind,
-  PackageManagerOperationMessage,
+  UpgradeContext,
+  LoadState,
+  ReadFlow,
+  MutationPlan,
+  WorkspaceTarget,
   PackageManagerState,
   PackageManagerTab,
   WebviewToExtensionMessage,
 } from "#contracts";
 import { ExtensionLogger } from "#extension/logger";
-import { NuGetCli, NuGetClient } from "#client";
+import {
+  NuGetCli,
+  NuGetClient,
+  ClientNetwork,
+  MemoryCache,
+  cachePolicy,
+} from "#client";
 import type { PackageDetailsCache } from "#client/package-details";
-import { PackageManagementCore, type FolderSizeCache } from "#manager";
+import {
+  PackageManagementCore,
+  normalizeFeedFilter,
+  queryFeedUrls,
+  packageMetadataUrl,
+  referenceInventory,
+  type FolderSizeCache,
+} from "#manager";
+import { createHash } from "node:crypto";
 import { getSettings, type ExtensionSettings } from "#extension/settings";
 import {
   discoverWorkspace,
@@ -41,16 +63,37 @@ import {
   hydrateCachedPackages,
   type PackageStateCacheEntry,
   persistFolderSizeCache as persistFolderSizeCacheEntry,
-  persistPackageCache as persistPackageCacheEntry,
-  readPackageCacheEntry,
+  PackageCache,
+  packageDetailCacheIdentity,
+  migrateLegacyPackageCache,
 } from "#extension/webview/package-cache";
 import { PackageDetailsService } from "#extension/webview/package-details-service";
 import { PackageCommandService } from "#extension/webview/package-commands";
 import { FolderService } from "#extension/webview/folder-service";
 import { PackageReferenceWatcher } from "#extension/webview/package-reference-watcher";
 import { SolutionSelector } from "#extension/solution-selector";
+import { StateMessageSequence } from "#extension/webview/state-message-sequence";
+import { PackageDataService } from "#extension/webview/package-data-service";
+import { randomUUID } from "node:crypto";
+import { MutationService } from "#extension/webview/mutation-service";
+import { PackageMutationPort } from "#extension/webview/package-mutation-port";
+import { packageStatus } from "#extension/webview/package-status";
+import {
+  SourceEditService,
+  sourceEditSummary,
+} from "#extension/webview/source-edit-service";
+import {
+  PackageDataAdapter,
+  type DataEnvironment,
+} from "#extension/webview/package-data-adapter";
 
 export class PackageManagerController implements Disposable {
+  private readonly sourceEditor = new SourceEditService();
+  private sourceEditorRevision = 0;
+  private sourceEditPending = false;
+  private disposed = false;
+  private readonly messages = new StateMessageSequence();
+  private readonly network = new ClientNetwork();
   private webview: Webview | undefined;
   private settings: ExtensionSettings;
   private cli: NuGetCli;
@@ -60,12 +103,20 @@ export class PackageManagerController implements Disposable {
     centralPackageFiles: [],
   };
   private state: PackageManagerState;
-  private availablePackagesRequestId = 0;
-  private packageInventoryRequestId = 0;
-  private packageAvailabilityRequestId = 0;
   private packageReferenceFingerprint = "";
-  private packageRefreshAbort: AbortController | undefined;
-  private packageDetailsCache = new Map<string, NuGetPackageItem>();
+  private readonly data: PackageDataService;
+  private readonly dataAdapter: PackageDataAdapter;
+  private readonly mutations: MutationService;
+  private inputPaths: readonly string[] = [];
+  private dataGeneration = 0;
+  private activeDataContextKey = "";
+  private feedFilterTargetId = "";
+  private authenticationRefreshPending = false;
+  private readonly packageDetailsCache = new MemoryCache(
+    500,
+    Date.now,
+    cachePolicy.workspaceBytes,
+  );
   private initialization: Promise<void> | undefined;
   private discoveryRefreshChain: Promise<void> = Promise.resolve();
   private readonly events = new PackageManagerEventBus();
@@ -76,21 +127,145 @@ export class PackageManagerController implements Disposable {
   private readonly folders: FolderService;
   private readonly packageReferenceWatcher: PackageReferenceWatcher;
   private readonly solutionStatusBar: StatusBarItem;
+  private readonly packageStatusBar: StatusBarItem;
   private readonly disposables: Disposable[] = [];
 
   constructor(
     private readonly logger: ExtensionLogger,
     private readonly storage: Memento,
     private readonly solutionSelector: SolutionSelector,
+    private readonly packageCache: PackageCache,
   ) {
-    this.settings = getSettings();
+    this.settings = { ...getSettings(), network: this.network };
+    this.packageCache.setConfigurationRevision(() =>
+      this.network.context(this.settings),
+    );
     this.cli = new NuGetCli(this.settings, this.logger);
     this.state = this.createInitialState();
+    this.mutations = new MutationService((operations) => {
+      this.state = { ...this.state, operations };
+      this.publishPackageEvent({ type: "stateDelta", patch: { operations } });
+    });
+    this.dataAdapter = new PackageDataAdapter(
+      (targetId) => this.dataEnvironment(targetId),
+      logger,
+    );
+    this.data = new PackageDataService(
+      this.dataAdapter,
+      (updates) => {
+        if (updates.context.targetId !== this.state.selectedTargetId) return;
+        this.state = PackageManagementCore.state.applyUpdateProjection(
+          this.state,
+          updates,
+        );
+        this.publishPackageEvent({
+          type: "stateDelta",
+          patch: { updates, hasUpgrades: this.state.hasUpgrades },
+        });
+        void this.updateHasUpgradesContext().catch(() => {});
+      },
+      {
+        catalogs: (catalogs, context) => {
+          if (context.targetId !== this.state.selectedTargetId) return;
+          const icons = new Map(
+            catalogs.map((catalog) => [
+              catalog.packageId.toLowerCase(),
+              catalog.iconUrl,
+            ]),
+          );
+          const enrich = (items: NuGetPackageItem[]) =>
+            items.map((item) => ({
+              ...item,
+              iconUrl: icons.get(item.name.toLowerCase()) ?? item.iconUrl,
+            }));
+          const patch = {
+            catalogs,
+            installedPackages: enrich(this.state.installedPackages),
+            implicitPackages: enrich(this.state.implicitPackages),
+          };
+          this.state = { ...this.state, ...patch };
+          this.publishPackageEvent({ type: "stateDelta", patch });
+        },
+        inventory: (snapshot) => {
+          if (snapshot.targetId !== this.state.selectedTargetId) return;
+          this.packageDetails.cancel();
+          this.inputPaths = snapshot.inputPaths;
+          this.packageReferenceFingerprint =
+            this.dataAdapter.fingerprint(snapshot.revision) ?? "";
+          this.packageReferenceWatcher.setInputs(snapshot.inputPaths);
+          const inventory = referenceInventory(snapshot);
+          const installedReferences = snapshot.references.filter((reference) =>
+            snapshot.projectPaths.includes(reference.projectPath),
+          );
+          this.state = PackageManagementCore.state.applyPackageInventory(
+            this.state,
+            inventory,
+            this.state.availablePackages,
+          );
+          this.state = {
+            ...this.state,
+            installedReferences,
+            targets: this.state.targets.map((target) =>
+              target.id === snapshot.targetId
+                ? { ...target, projectPaths: [...snapshot.projectPaths] }
+                : target,
+            ),
+          };
+          this.publishPackageEvent({
+            type: "stateDelta",
+            patch: {
+              installedPackages: this.state.installedPackages,
+              installedReferences,
+              targets: this.state.targets,
+              implicitPackages: this.state.implicitPackages,
+              installedPackagesStatus: "ready",
+              implicitPackagesStatus: "ready",
+            },
+          });
+          void this.persistPackageCache().catch(() => {});
+        },
+        search: (availablePackages, query, context) => {
+          if (
+            context.targetId !== this.state.selectedTargetId ||
+            query !== this.state.search
+          )
+            return;
+          const icons = new Map(
+            availablePackages
+              .filter((item) => item.iconUrl)
+              .map((item) => [item.name.toLowerCase(), item.iconUrl]),
+          );
+          const enrich = (items: NuGetPackageItem[]) =>
+            items.map((item) => ({
+              ...item,
+              iconUrl: item.iconUrl ?? icons.get(item.name.toLowerCase()),
+            }));
+          const patch = {
+            availablePackages,
+            installedPackages: enrich(this.state.installedPackages),
+            implicitPackages: enrich(this.state.implicitPackages),
+          };
+          this.state = { ...this.state, ...patch };
+          this.publishPackageEvent({
+            type: "stateDelta",
+            patch,
+          });
+          void this.persistPackageCache().catch(() => {});
+        },
+        flow: (flow, value) => this.publishReadFlow(flow, value),
+      },
+    );
     this.solutionStatusBar = window.createStatusBarItem(
       StatusBarAlignment.Left,
       100,
     );
     this.solutionStatusBar.command = "nuget-code.selectSolution";
+    this.packageStatusBar = window.createStatusBarItem(
+      StatusBarAlignment.Left,
+      99,
+    );
+    this.packageStatusBar.name = "NuGet package status";
+    this.packageStatusBar.command = "nuget-code.refreshPackages";
     this.operations = new PackageManagerOperationRunner(
       this.logger,
       (message) => {
@@ -117,11 +292,8 @@ export class PackageManagerController implements Disposable {
     });
     this.packageCommands = new PackageCommandService({
       getState: () => this.state,
-      getDiscovery: () => this.discovery,
-      getCli: () => this.cli,
-      runOperation: (kind, label, action) =>
-        this.runOperation(kind, label, action),
-      refreshPackages: (options) => this.refreshPackages(options),
+      submit: (plan, target, context, automatic) =>
+        this.submitMutation(plan, target, context, automatic),
     });
     this.folders = new FolderService({
       getState: () => this.state,
@@ -131,6 +303,32 @@ export class PackageManagerController implements Disposable {
       logger: this.logger,
       publish: (message) => this.publishPackageEvent(message),
       persistFolderSizeCache: (folders) => this.persistFolderSizeCache(folders),
+      mutateCaches: async (folders, action) => {
+        const plan: MutationPlan = {
+          id: randomUUID(),
+          targetId: this.state.selectedTargetId,
+          contextRevision: this.state.updates.context.revision,
+          steps: [
+            {
+              id: "cache",
+              kind: "clear-cache",
+              action: "clear",
+              projectPaths: [],
+              packageId: null,
+              version: null,
+              feedUrls: [],
+              cachePaths: folders.map((folder) => folder.path),
+            },
+          ],
+        };
+        await this.mutations.submit(plan, {
+          prepare: async () => ({ plan, execute: async () => action() }),
+          reconcile: async () => {
+            this.data.invalidate(this.state.selectedTargetId);
+            await this.refreshPackages({ forceInventory: true });
+          },
+        });
+      },
       runOperation: (kind, label, action) =>
         this.runOperation(kind, label, action),
     });
@@ -143,10 +341,36 @@ export class PackageManagerController implements Disposable {
       },
       (options) => this.refreshPackages(options),
       () => this.refreshDiscovery(),
+      () => {
+        this.dataGeneration++;
+        this.data.invalidate(this.state.selectedTargetId);
+        this.packageDetails.cancel();
+      },
     );
 
     this.disposables.push(
+      this.network.onAuthenticationChanged((settings) => {
+        if (settings !== this.settings || this.authenticationRefreshPending)
+          return;
+        this.authenticationRefreshPending = true;
+        queueMicrotask(() => {
+          void (async () => {
+            try {
+              await this.network.authentication.run(
+                "host-context-refresh",
+                async () => undefined,
+              );
+              if (settings === this.settings) await this.refreshPackages();
+            } catch {
+              /* Disposed or still-changing authentication remains unverified until retry. */
+            } finally {
+              this.authenticationRefreshPending = false;
+            }
+          })();
+        });
+      }),
       this.solutionStatusBar,
+      this.packageStatusBar,
       this.events.subscribe((message) => {
         this.webview?.postMessage(message);
       }),
@@ -158,7 +382,12 @@ export class PackageManagerController implements Disposable {
         if (!event.affectsConfiguration("nuget-code")) {
           return;
         }
-        this.settings = getSettings();
+        this.cancelPackageReads();
+        this.settings = { ...getSettings(), network: this.network };
+        this.packageCache.setConfigurationRevision(() =>
+          this.network.context(this.settings),
+        );
+        this.packageDetailsCache.clear();
         this.cli = new NuGetCli(this.settings, this.logger);
         this.logger.updateSettings(this.settings);
         this.logger.information(
@@ -180,35 +409,120 @@ export class PackageManagerController implements Disposable {
   }
 
   async handleMessage(message: WebviewToExtensionMessage): Promise<void> {
+    if (!message || typeof message.type !== "string")
+      throw new Error("Invalid package-manager message.");
+    if (
+      message.type === "runCommand" &&
+      (typeof message.command !== "string" ||
+        (message.projectPaths !== undefined &&
+          (!Array.isArray(message.projectPaths) ||
+            message.projectPaths.some((file) => typeof file !== "string"))) ||
+        (message.version !== undefined && typeof message.version !== "string"))
+    )
+      throw new Error("Invalid operation arguments.");
     switch (message.type) {
       case "ready":
         this.postState();
+        return;
+      case "cancelOperation":
+        if (typeof message.operationId === "string")
+          this.mutations.cancel(message.operationId);
+        return;
+      case "retryOperation":
+        if (typeof message.operationId === "string")
+          await this.mutations.retry(message.operationId);
+        return;
+      case "confirmOperation":
+        if (
+          typeof message.operationId === "string" &&
+          typeof message.contextRevision === "string" &&
+          typeof message.accepted === "boolean"
+        )
+          this.mutations.confirm(
+            message.operationId,
+            message.contextRevision,
+            message.accepted,
+          );
         return;
       case "setActiveTab":
         await this.setActiveTab(message.tab);
         return;
       case "selectTarget":
+        if (
+          !this.state.targets.some((target) => target.id === message.targetId)
+        )
+          throw new Error("The selected target is no longer available.");
         await this.setSelectedTarget(message.targetId);
         return;
+      case "openPackageLink": {
+        const item = this.state.packageDetails?.packageItem;
+        const url = packageMetadataUrl(message.url);
+        if (
+          !url ||
+          !item ||
+          ![item.projectUrl, item.licenseUrl, item.packageUrl].includes(url)
+        )
+          throw new Error("The package link is no longer available.");
+        await env.openExternal(Uri.parse(url));
+        return;
+      }
+      case "openPackageFolder": {
+        const item = this.state.packageDetails?.packageItem;
+        const installation = item?.localInstallations?.find(
+          (entry) => entry.path === message.path,
+        );
+        if (!item || !installation)
+          throw new Error("The package installation is no longer available.");
+        const installations = await packageInstallations(
+          item.name,
+          [installation.version],
+          this.state.folders
+            .filter((folder) => folder.title === "global-packages")
+            .map((folder) => folder.path),
+        );
+        if (!installations.some((entry) => entry.path === installation.path))
+          throw new Error("The package installation is no longer available.");
+        await commands.executeCommand(
+          "revealFileInOS",
+          Uri.file(installation.path),
+        );
+        return;
+      }
+      case "setFeedFilter":
+        await this.setFeedFilter(message.filter);
+        return;
+      case "upgradeCandidates":
+        await this.packageCommands.upgradeCandidates(
+          message.keys,
+          message.revision,
+        );
+        return;
       case "selectFeed":
+        if (!this.state.feeds.some((feed) => feed.id === message.feedId))
+          throw new Error("The selected feed is no longer available.");
         await this.setSelectedFeed(message.feedId);
         return;
       case "setSearch":
+        if (typeof message.search !== "string")
+          throw new Error("Invalid search text.");
         this.state = { ...this.state, search: message.search };
-        this.hydrateCachedPackages({ preserveSelection: true });
         this.postState();
         await this.refreshAvailablePackages();
         return;
       case "setIncludePrerelease":
+        if (typeof message.includePrerelease !== "boolean")
+          throw new Error("Invalid preview filter.");
+        this.cancelSearchReads();
         this.state = {
           ...this.state,
           includePrerelease: message.includePrerelease,
         };
-        this.hydrateCachedPackages({ preserveSelection: true });
+        this.syncDataContext();
         this.postState();
         await this.refreshAvailablePackages();
         return;
       case "selectPackage":
+        this.packageDetails.cancel();
         this.state = { ...this.state, selectedPackageId: message.packageId };
         this.postState();
         return;
@@ -216,7 +530,14 @@ export class PackageManagerController implements Disposable {
         await this.packageDetails.loadPackageDetails(
           message.packageId,
           message.feedId,
+          message.version,
         );
+        return;
+      case "sourceEditor":
+        await this.describeSourceEditor(message.reload);
+        return;
+      case "editSource":
+        await this.editSource(message.request);
         return;
       case "selectSource":
         this.state = { ...this.state, selectedSourceId: message.sourceId };
@@ -235,6 +556,13 @@ export class PackageManagerController implements Disposable {
     }
   }
 
+  reportMessageError(error: unknown): void {
+    const message =
+      error instanceof Error ? error.message : "Package operation failed.";
+    this.logger.warning("vscode", message);
+    void window.showErrorMessage(message);
+  }
+
   async runCommand(
     command: PackageManagerCommand,
     options: {
@@ -249,7 +577,7 @@ export class PackageManagerController implements Disposable {
         return;
       case "refreshPackages":
         if (options.feedId) {
-          this.setSelectedFeedForRefresh(options.feedId);
+          await this.setSelectedFeedForRefresh(options.feedId);
         }
         await this.refreshPackages({ forceInventory: true });
         return;
@@ -257,7 +585,7 @@ export class PackageManagerController implements Disposable {
         await this.packageCommands.upgradePackages();
         return;
       case "reloadSources":
-        await this.reloadSources();
+        await this.describeSourceEditor(true);
         return;
       case "recalculateCacheSizes":
         await this.folders.recalculateCacheSizes();
@@ -277,7 +605,7 @@ export class PackageManagerController implements Disposable {
       case "openSettings":
         await commands.executeCommand(
           "workbench.action.openSettings",
-          "@ext:nuget-code",
+          "@ext:baliestri.nuget-code",
         );
         return;
       case "addPackage":
@@ -362,16 +690,31 @@ export class PackageManagerController implements Disposable {
   }
 
   dispose(): void {
-    this.packageRefreshAbort?.abort();
+    this.disposed = true;
+    this.sourceEditorRevision++;
+    this.sourceEditor.invalidate();
+    this.mutations.dispose();
+    this.network.dispose();
+    this.data.dispose();
+    this.dataAdapter.dispose();
+    this.packageDetails.dispose();
     this.packageReferenceWatcher.dispose();
     for (const disposable of this.disposables) {
       disposable.dispose();
     }
 
     this.events.dispose();
+    this.packageDetailsCache.clear();
+    void this.packageCache.flush();
   }
 
   private async initializeCore(): Promise<void> {
+    await migrateLegacyPackageCache(this.storage).catch(() =>
+      this.logger.warning(
+        "cache",
+        "Could not remove a legacy package cache; it will not be read.",
+      ),
+    );
     await commands.executeCommand(
       "setContext",
       "nuget-code.packageManager.activeTab",
@@ -386,19 +729,25 @@ export class PackageManagerController implements Disposable {
       "Loading NuGet workspace",
       async () => {
         this.discovery = await discoverWorkspace(this.logger);
-        const sources = await loadPackageSources(this.settings, this.logger);
+        const selectedTargetId = await this.resolveSelectedTarget();
+        const sources = await loadPackageSources(
+          this.settings,
+          this.logger,
+          this.discovery.targets.find(
+            (target) => target.id === selectedTargetId,
+          ),
+        );
         const effectiveFeeds = sources[0]?.feeds ?? [];
         const folders = PackageManagementCore.folders.applyCachedFolderSizes(
           await NuGetClient.loadCacheFolders(this.cli, this.logger),
           this.storage.get<FolderSizeCache>(folderSizeCacheKey, {}),
         );
 
-        const selectedTargetId = await this.resolveSelectedTarget();
-
         this.state = {
           ...this.state,
           targets: this.discovery.targets,
           selectedTargetId,
+          searchResultLimit: this.settings.maxSearchResults,
           feeds: [PackageManagementCore.feeds.allFeeds, ...effectiveFeeds],
           selectedFeedId: PackageManagementCore.feeds.selectInitialFeed(
             [PackageManagementCore.feeds.allFeeds, ...effectiveFeeds],
@@ -410,9 +759,10 @@ export class PackageManagerController implements Disposable {
           folders,
         };
 
+        this.restoreFeedFilter();
         this.packageReferenceWatcher.register();
         const fingerprint = await this.createPackageReferenceFingerprint();
-        const cached = this.hydrateCachedPackages();
+        const cached = await this.hydrateCachedPackages();
         this.hydratePackageDetailsCache(cached);
         this.packageReferenceFingerprint = fingerprint;
         await this.folders.updateSelectedCacheFolderContext();
@@ -436,13 +786,24 @@ export class PackageManagerController implements Disposable {
 
   private async reloadSources(): Promise<void> {
     await this.runOperation("sources", "Reloading NuGet sources", async () => {
-      const sources = await loadPackageSources(this.settings, this.logger);
+      const targetId = this.state.selectedTargetId;
+      const sources = await loadPackageSources(
+        this.settings,
+        this.logger,
+        this.discovery.targets.find((target) => target.id === targetId),
+      );
+      if (this.state.selectedTargetId !== targetId) return;
       const effectiveFeeds = sources[0]?.feeds ?? [];
+      this.packageDetailsCache.clear();
 
       this.state = {
         ...this.state,
         sources,
-        selectedSourceId: sources[0]?.id,
+        selectedSourceId: sources.some(
+          (source) => source.id === this.state.selectedSourceId,
+        )
+          ? this.state.selectedSourceId
+          : sources[0]?.id,
         feeds: [PackageManagementCore.feeds.allFeeds, ...effectiveFeeds],
         selectedFeedId: PackageManagementCore.feeds.selectInitialFeed(
           [PackageManagementCore.feeds.allFeeds, ...effectiveFeeds],
@@ -451,338 +812,382 @@ export class PackageManagerController implements Disposable {
         ),
       };
 
+      this.restoreFeedFilter();
       this.postState();
       void this.feedHealth.check(effectiveFeeds);
-      await this.refreshAvailablePackages();
+      this.data.invalidate(targetId);
+      await this.refreshPackages({ forceInventory: true });
     });
+  }
+
+  private async describeSourceEditor(reload = false): Promise<void> {
+    if (this.sourceEditPending || this.disposed) return;
+    const revision = ++this.sourceEditorRevision;
+    const targetId = this.state.selectedTargetId;
+    const isCurrent = () =>
+      revision === this.sourceEditorRevision &&
+      this.state.selectedTargetId === targetId &&
+      !this.sourceEditPending;
+    this.state = {
+      ...this.state,
+      sourceEditor: {
+        destinations: [],
+        status: "loading",
+        message: "Loading source configuration…",
+      },
+    };
+    this.postState();
+    try {
+      if (reload) await this.reloadSources();
+      if (!isCurrent()) return;
+      const destinations = await this.sourceEditor.describe(
+        this.state.sources,
+        workspace.workspaceFolders?.map((folder) => folder.uri.fsPath) ?? [],
+        this.state.targets.find((target) => target.id === targetId),
+        this.settings.sourceSaveIn,
+      );
+      if (!isCurrent()) return;
+      this.state = {
+        ...this.state,
+        sourceEditor: { destinations, status: "idle", message: "" },
+      };
+    } catch (error) {
+      if (!isCurrent()) return;
+      this.state = {
+        ...this.state,
+        sourceEditor: {
+          destinations: [],
+          status: "failed",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Could not load source destinations. Reload to retry.",
+        },
+      };
+    }
+    this.postState();
+  }
+
+  private async editSource(
+    request: import("#contracts").SourceEditRequest,
+  ): Promise<void> {
+    if (
+      this.disposed ||
+      this.sourceEditPending ||
+      this.state.sourceEditor?.status === "loading"
+    )
+      return;
+    this.sourceEditPending = true;
+    const revision = ++this.sourceEditorRevision;
+    const targetId = this.state.selectedTargetId;
+    const target = this.state.targets.find((target) => target.id === targetId);
+    const settings = this.settings;
+    const isCurrent = () =>
+      revision === this.sourceEditorRevision &&
+      this.state.selectedTargetId === targetId &&
+      settings === this.settings;
+    const requestId = request?.requestId;
+    this.state = {
+      ...this.state,
+      sourceEditor: {
+        destinations: this.state.sourceEditor?.destinations ?? [],
+        status: "saving",
+        message: "Saving source configuration…",
+        requestId,
+      },
+    };
+    this.postState();
+    let status: "saved" | "failed" = "saved";
+    let message = "";
+    let savedFile: string | undefined;
+    try {
+      await this.mutations.exclusive(() =>
+        this.packageReferenceWatcher.suspendDuring(async () => {
+          try {
+            if (!isCurrent())
+              throw new Error("The selected context changed. Reload Sources.");
+            const sources = await loadPackageSources(
+              settings,
+              this.logger,
+              target,
+            );
+            if (!isCurrent())
+              throw new Error("The selected context changed. Reload Sources.");
+            const file = await this.sourceEditor.apply(
+              request,
+              sources,
+              isCurrent,
+            );
+            savedFile = file;
+            message = `Saved ${file}. This destination may affect other projects; descendant configs can override it.`;
+          } catch (error) {
+            status = "failed";
+            message =
+              error instanceof Error
+                ? error.message
+                : "Could not save source configuration.";
+          } finally {
+            // Reconciliation remains inside the mutation slot, including partial editor saves.
+            if (isCurrent()) {
+              try {
+                await this.reloadSources();
+                if (savedFile)
+                  message = sourceEditSummary(
+                    savedFile,
+                    request.edit,
+                    this.state.sources,
+                  );
+              } catch {
+                status = "failed";
+                message += " Could not reload sources; retry refresh.";
+              }
+            }
+          }
+        }),
+      );
+    } catch (error) {
+      status = "failed";
+      message =
+        error instanceof Error
+          ? error.message
+          : "Could not save source configuration.";
+    } finally {
+      this.sourceEditPending = false;
+    }
+    if (!isCurrent()) {
+      if (
+        !this.state.sourceEditor?.destinations.length &&
+        !this.state.sourceEditor?.message
+      )
+        await this.describeSourceEditor();
+      return;
+    }
+    let destinations: import("#contracts").SourceDestination[] = [];
+    try {
+      destinations = await this.sourceEditor.describe(
+        this.state.sources,
+        workspace.workspaceFolders?.map((folder) => folder.uri.fsPath) ?? [],
+        target,
+        this.settings.sourceSaveIn,
+      );
+    } catch {
+      status = "failed";
+      message += " Could not reload destinations; reload the editor.";
+    }
+    if (!isCurrent()) return;
+    this.state = {
+      ...this.state,
+      sourceEditor: { destinations, status, message, requestId },
+    };
+    this.postState();
   }
 
   private async refreshPackages(
     options: { forceInventory?: boolean | undefined } = {},
   ): Promise<void> {
-    const signal = this.beginPackageRefresh();
-    const fingerprint = await this.createPackageReferenceFingerprint();
-    const cached = readPackageCacheEntry(this.storage, this.state);
-    this.packageReferenceFingerprint = fingerprint;
-    if (!options.forceInventory && cached?.fingerprint === fingerprint) {
-      const requestId = ++this.availablePackagesRequestId;
-      await this.refreshAvailablePackagesForRequest(requestId, { signal });
-      return;
+    if (options.forceInventory) {
+      this.packageDetails.cancel();
+      this.packageDetailsCache.clear();
     }
-
-    const availableRequestId = ++this.availablePackagesRequestId;
-    const inventoryRequestId = ++this.packageInventoryRequestId;
-
+    this.syncDataContext();
     await Promise.all([
-      this.refreshAvailablePackagesForRequest(availableRequestId, {
-        signal,
-        refreshPackageAvailability: false,
-      }),
-      this.refreshPackageInventoryForRequest(inventoryRequestId, signal),
+      this.data.refresh({ force: options.forceInventory ?? false }),
+      this.data.search(this.state.search),
     ]);
+    if (options.forceInventory) await this.packageDetails.refresh();
+  }
+
+  private async submitMutation(
+    plan: MutationPlan,
+    target: WorkspaceTarget,
+    context: UpgradeContext,
+    automatic: boolean,
+  ): Promise<unknown> {
+    const captured = {
+      ...this.dataEnvironment(target.id),
+      target: structuredClone(target),
+    };
+    const port = new PackageMutationPort(
+      { context: structuredClone(context), environment: captured, automatic },
+      () => this.dataEnvironment(target.id),
+      this.logger,
+      async (environment) => {
+        const adapter = new PackageDataAdapter(() => environment, this.logger);
+        try {
+          const snapshot = await adapter.loadInventory(
+            { ...context, revision: environment.sourceRevision },
+            new AbortController().signal,
+          );
+          const inventory = referenceInventory(snapshot);
+          const cacheState = {
+            ...this.state,
+            selectedTargetId: target.id,
+            installedPackages: inventory.installed,
+            implicitPackages: inventory.implicit,
+            installedPackagesStatus: "ready" as const,
+            implicitPackagesStatus: "ready" as const,
+            availablePackages: [],
+          };
+          await this.packageCache.persist(cacheState, {
+            fingerprint: adapter.fingerprint(snapshot.revision),
+          });
+          if (this.state.selectedTargetId === target.id) {
+            this.data.invalidate(target.id);
+            await this.refreshPackages({ forceInventory: true });
+            if (this.state.flows.inventory.status === "failed")
+              throw new Error("Package inventory could not be reconciled.");
+          }
+        } finally {
+          adapter.dispose();
+        }
+      },
+    );
+    // Keep the queue slot through reconciliation; suspend watchers only while this queued job runs.
+    const wrapped = {
+      run: <T>(work: () => Promise<T>) =>
+        this.packageReferenceWatcher.suspendDuring(work),
+      prepare: (next: MutationPlan, signal: AbortSignal) =>
+        port.prepare(next, signal),
+      reconcile: (next: MutationPlan) => port.reconcile(next),
+    };
+    return this.mutations.submit(plan, wrapped);
   }
 
   private async refreshAvailablePackages(): Promise<void> {
-    const signal = this.beginPackageRefresh();
-    const requestId = ++this.availablePackagesRequestId;
-    await this.refreshAvailablePackagesForRequest(requestId, { signal });
-  }
-
-  private async refreshAvailablePackagesForRequest(
-    requestId: number,
-    options: {
-      refreshPackageAvailability?: boolean | undefined;
-      signal?: AbortSignal | undefined;
-    } = {},
-  ): Promise<void> {
-    const operation = this.startOperation(
-      "availablePackages",
-      "Refreshing NuGet feeds",
-      requestId,
-    );
-
-    try {
-      const availablePackages = await this.searchAvailablePackages(
-        options.signal,
+    this.syncDataContext();
+    void this.data
+      .refresh({ force: false })
+      .catch(() =>
+        this.logger.warning(
+          "nuget.packages",
+          "Could not refresh package facts.",
+        ),
       );
-      if (requestId === this.availablePackagesRequestId) {
-        this.state = PackageManagementCore.state.applyAvailablePackages(
-          this.state,
-          availablePackages,
-        );
-        this.publishPackageEvent({
-          type: "availablePackagesChanged",
-          requestId,
-          availablePackages: this.state.availablePackages,
-          selectedPackageId: this.state.selectedPackageId,
-        });
-        await this.persistPackageCache();
-        if (options.refreshPackageAvailability !== false) {
-          await this.refreshPackageAvailability(options.signal);
-        }
-      }
-      this.finishOperation(operation);
-    } catch (error) {
-      if (isAbortError(error) || options.signal?.aborted) {
-        this.finishOperation(operation);
-        return;
-      }
-      this.failOperation(operation, error);
-    }
-  }
-
-  private async refreshPackageInventoryForRequest(
-    requestId: number,
-    signal?: AbortSignal | undefined,
-  ): Promise<void> {
-    const operation = this.startOperation(
-      "packageInventory",
-      "Refreshing installed packages",
-      requestId,
-    );
-    this.publishInventoryLoading(requestId);
-
-    try {
-      const listedInventory = await NuGetClient.loadListedPackageInventory({
-        target: PackageManagementCore.selection.getSelectedTarget(this.state),
-        cli: this.cli,
-        logger: this.logger,
-        signal,
-      });
-
-      if (requestId === this.packageInventoryRequestId) {
-        this.state = PackageManagementCore.state.applyPackageInventory(
-          this.state,
-          { installed: listedInventory.installed, implicit: [] },
-          this.state.availablePackages,
-        );
-        this.state = {
-          ...this.state,
-          installedPackagesStatus: "ready",
-          implicitPackagesStatus: "loading",
-        };
-        await this.updateHasUpgradesContext();
-        this.publishInventoryChanged(requestId, {
-          implicitPackages: [],
-        });
-
-        this.state = PackageManagementCore.state.applyPackageInventory(
-          this.state,
-          listedInventory,
-          this.state.availablePackages,
-        );
-        this.state = {
-          ...this.state,
-          installedPackagesStatus: "ready",
-          implicitPackagesStatus: "ready",
-        };
-        this.publishInventoryChanged(requestId);
-        await this.persistPackageCache();
-
-        await this.refreshPackageAvailability(signal);
-      }
-
-      const outdated = await NuGetClient.loadOutdatedPackageVersions({
-        target: PackageManagementCore.selection.getSelectedTarget(this.state),
-        cli: this.cli,
-        logger: this.logger,
-        signal,
-      });
-
-      if (requestId === this.packageInventoryRequestId) {
-        const inventory = NuGetClient.applyOutdatedPackageVersions(
-          {
-            installed: this.state.installedPackages,
-            implicit: this.state.implicitPackages,
-          },
-          outdated,
-        );
-        this.state = PackageManagementCore.state.applyPackageInventory(
-          this.state,
-          inventory,
-          this.state.availablePackages,
-        );
-        this.state = {
-          ...this.state,
-          installedPackagesStatus: "ready",
-          implicitPackagesStatus: "ready",
-        };
-
-        await this.updateHasUpgradesContext();
-        this.publishInventoryChanged(requestId);
-        await this.persistPackageCache();
-        await this.refreshPackageAvailability(signal);
-      }
-      this.finishOperation(operation);
-    } catch (error) {
-      if (isAbortError(error) || signal?.aborted) {
-        this.finishOperation(operation);
-        return;
-      }
-      if (requestId === this.packageInventoryRequestId) {
-        this.state = {
-          ...this.state,
-          installedPackagesStatus: "failed",
-          implicitPackagesStatus: "failed",
-        };
-        this.publishInventoryChanged(requestId);
-      }
-      this.failOperation(operation, error);
-    }
-  }
-
-  private publishInventoryLoading(requestId: number): void {
-    this.state = {
-      ...this.state,
-      installedPackagesStatus: "loading",
-      implicitPackagesStatus: "loading",
-    };
-    this.publishInventoryChanged(requestId);
-  }
-
-  private publishInventoryChanged(
-    requestId: number,
-    overrides: {
-      implicitPackages?: NuGetPackageItem[] | undefined;
-    } = {},
-  ): void {
-    this.publishPackageEvent({
-      type: "packageInventoryChanged",
-      requestId,
-      installedPackages: this.state.installedPackages,
-      implicitPackages:
-        overrides.implicitPackages ?? this.state.implicitPackages,
-      installedPackagesStatus: this.state.installedPackagesStatus,
-      implicitPackagesStatus: this.state.implicitPackagesStatus,
-      selectedPackageId: this.state.selectedPackageId,
-      hasUpgrades: this.state.hasUpgrades,
-    });
-  }
-
-  private searchAvailablePackages(
-    signal?: AbortSignal | undefined,
-  ): Promise<NuGetPackageItem[]> {
-    return NuGetClient.searchPackages({
-      feeds: this.state.feeds.filter(
-        (feed) => feed.id !== PackageManagementCore.feeds.allFeeds.id,
-      ),
-      selectedFeedId: this.state.selectedFeedId,
-      query: this.state.search,
-      includePrerelease: this.state.includePrerelease,
-      settings: this.settings,
-      logger: this.logger,
-      signal,
-    });
-  }
-
-  private async refreshPackageAvailability(
-    signal?: AbortSignal | undefined,
-  ): Promise<void> {
-    const requestId = ++this.packageAvailabilityRequestId;
-    const feeds = this.state.feeds.filter(
-      (feed) => feed.id !== PackageManagementCore.feeds.allFeeds.id,
-    );
-    try {
-      const [installedPackages, implicitPackages] = await Promise.all([
-        NuGetClient.enrichPackageAvailability({
-          packages: this.state.installedPackages,
-          feeds,
-          includePrerelease: this.state.includePrerelease,
-          cache: this.packageDetailsCacheAdapter(),
-          settings: this.settings,
-          logger: this.logger,
-          signal,
-        }),
-        NuGetClient.enrichPackageAvailability({
-          packages: this.state.implicitPackages,
-          feeds,
-          includePrerelease: this.state.includePrerelease,
-          cache: this.packageDetailsCacheAdapter(),
-          settings: this.settings,
-          logger: this.logger,
-          signal,
-        }),
-      ]);
-
-      if (requestId !== this.packageAvailabilityRequestId) {
-        return;
-      }
-
-      this.state = {
-        ...this.state,
-        installedPackages,
-        implicitPackages,
-        hasUpgrades: installedPackages.some((item) => item.availableVersion),
-      };
-      await this.updateHasUpgradesContext();
-      this.publishPackageEvent({
-        type: "packageAvailabilityChanged",
-        requestId,
-        installedPackages,
-        implicitPackages,
-        hasUpgrades: this.state.hasUpgrades,
-      });
-      await this.persistPackageCache();
-    } catch (error) {
-      if (isAbortError(error) || signal?.aborted) {
-        return;
-      }
-      this.logger.warning(
-        "nuget.packages",
-        `Failed to enrich package availability: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
+    await this.data.search(this.state.search);
   }
 
   private async setSelectedTarget(targetId: string): Promise<void> {
+    this.sourceEditorRevision++;
+    this.sourceEditor.invalidate();
+    this.state = {
+      ...this.state,
+      sourceEditor: { destinations: [], status: "idle", message: "" },
+    };
+    this.cancelPackageReads();
     this.state = {
       ...this.state,
       selectedTargetId: targetId,
+      feedFilter: undefined,
+      selectedFeedId: this.settings.defaultFeed,
       selectedPackageId: undefined,
       installedPackages: [],
+      installedReferences: [],
+      catalogs: [],
       implicitPackages: [],
       availablePackages: [],
       installedPackagesStatus: "idle",
       implicitPackagesStatus: "idle",
       hasUpgrades: false,
     };
-
-    this.hydratePackageDetailsCache(this.hydrateCachedPackages());
+    const sources = await loadPackageSources(
+      this.settings,
+      this.logger,
+      this.discovery.targets.find((target) => target.id === targetId),
+    );
+    if (this.state.selectedTargetId !== targetId) return;
+    const feeds = [
+      PackageManagementCore.feeds.allFeeds,
+      ...(sources[0]?.feeds ?? []),
+    ];
+    this.state = {
+      ...this.state,
+      sources,
+      feeds,
+      selectedSourceId: sources[0]?.id,
+      selectedFeedId: PackageManagementCore.feeds.selectInitialFeed(
+        feeds,
+        this.state.selectedFeedId,
+        this.settings.defaultFeed,
+      ),
+    };
+    this.restoreFeedFilter();
+    this.hydratePackageDetailsCache(await this.hydrateCachedPackages());
     this.updateSolutionStatusBar();
     this.postState();
+    if (this.state.activeTab === "sources") await this.describeSourceEditor();
     await this.refreshPackages();
   }
 
-  private async setSelectedFeed(feedId: string): Promise<void> {
+  private restoreFeedFilter(): void {
+    const stored = this.storage.get<PackageFeedFilter>(
+      `nuget-code.packageManager.feedFilter:${this.state.selectedTargetId}`,
+    );
     this.state = {
       ...this.state,
-      selectedFeedId: feedId,
+      feedFilter: normalizeFeedFilter(
+        stored ??
+          (this.feedFilterTargetId === this.state.selectedTargetId
+            ? this.state.feedFilter
+            : undefined),
+        this.state.feeds,
+        this.feedFilterTargetId &&
+          this.feedFilterTargetId !== this.state.selectedTargetId
+          ? this.settings.defaultFeed
+          : this.state.selectedFeedId,
+      ),
+    };
+    this.feedFilterTargetId = this.state.selectedTargetId;
+    if (JSON.stringify(stored) !== JSON.stringify(this.state.feedFilter))
+      void this.storage
+        .update(
+          `nuget-code.packageManager.feedFilter:${this.state.selectedTargetId}`,
+          this.state.feedFilter,
+        )
+        .then(undefined, () =>
+          this.logger.warning(
+            "nuget.feeds",
+            "Could not persist the package feed preference.",
+          ),
+        );
+  }
+
+  private async setFeedFilter(filter: PackageFeedFilter): Promise<void> {
+    if (
+      !filter ||
+      (filter.mode !== "all" &&
+        (filter.mode !== "selected" ||
+          !Array.isArray(filter.ids) ||
+          filter.ids.some((id) => typeof id !== "string")))
+    )
+      throw new Error("Invalid package feed filter.");
+    this.cancelSearchReads();
+    const feedFilter = normalizeFeedFilter(filter, this.state.feeds);
+    this.feedFilterTargetId = this.state.selectedTargetId;
+    this.state = {
+      ...this.state,
+      feedFilter,
       selectedPackageId: undefined,
       availablePackages: [],
     };
-
-    this.hydratePackageDetailsCache(this.hydrateCachedPackages());
+    this.syncDataContext();
     this.postState();
+    await this.storage.update(
+      `nuget-code.packageManager.feedFilter:${this.state.selectedTargetId}`,
+      feedFilter,
+    );
     await this.refreshAvailablePackages();
   }
 
-  private setSelectedFeedForRefresh(feedId: string): void {
-    if (
-      feedId === this.state.selectedFeedId ||
-      !this.state.feeds.some((feed) => feed.id === feedId)
-    ) {
-      return;
-    }
+  private async setSelectedFeed(feedId: string): Promise<void> {
+    await this.setFeedFilter(
+      feedId === "__all__"
+        ? { mode: "all" }
+        : { mode: "selected", ids: [feedId] },
+    );
+  }
 
-    this.state = {
-      ...this.state,
-      selectedFeedId: feedId,
-      selectedPackageId: undefined,
-      availablePackages: [],
-    };
-
-    this.hydratePackageDetailsCache(this.hydrateCachedPackages());
-    this.postState();
+  private async setSelectedFeedForRefresh(feedId: string): Promise<void> {
+    await this.setSelectedFeed(feedId);
   }
 
   private async runOperation(
@@ -795,25 +1200,6 @@ export class PackageManagerController implements Disposable {
 
       this.state = { ...this.state, logs: this.logger.getEntries() };
     });
-  }
-
-  private startOperation(
-    kind: PackageManagerOperationKind,
-    label: string,
-    requestId?: number,
-  ): PackageManagerOperationMessage {
-    return this.operations.start(kind, label, requestId);
-  }
-
-  private finishOperation(operation: PackageManagerOperationMessage): void {
-    this.operations.finish(operation);
-  }
-
-  private failOperation(
-    operation: PackageManagerOperationMessage,
-    error: unknown,
-  ): void {
-    this.operations.fail(operation, error);
   }
 
   private createInitialState(): PackageManagerState {
@@ -830,22 +1216,52 @@ export class PackageManagerController implements Disposable {
     this.publishPackageEvent({ type: "state", state: this.state });
   }
 
-  private publishPackageEvent(message: ExtensionToWebviewMessage): void {
-    this.events.publish(message);
+  private publishPackageEvent(message: PackageManagerEvent): void {
+    if (this.packageStatusBar) {
+      const status = packageStatus(this.state);
+      this.packageStatusBar.text = status.text;
+      this.packageStatusBar.tooltip = status.tooltip;
+      this.packageStatusBar.show();
+    }
+    this.events.publish(this.messages.next(message));
   }
 
-  private hydrateCachedPackages(
+  private async hydrateCachedPackages(
     options: { preserveSelection?: boolean | undefined } = {},
-  ): PackageStateCacheEntry | undefined {
-    const entry = readPackageCacheEntry(this.storage, this.state);
-    this.state = hydrateCachedPackages(this.state, entry, options);
+  ): Promise<PackageStateCacheEntry | undefined> {
+    const snapshot = this.state;
+    const settings = this.settings;
+    const entry = await this.packageCache.read(snapshot);
+    if (this.settings !== settings || !sameCacheContext(this.state, snapshot))
+      return undefined;
+    this.state = hydrateCachedPackages(this.state, entry, {
+      ...options,
+      preserveSelection:
+        options.preserveSelection ||
+        this.state.selectedPackageId !== snapshot.selectedPackageId,
+    });
     return entry;
   }
 
   private async persistPackageCache(): Promise<void> {
-    await persistPackageCacheEntry(this.storage, this.state, {
+    const details = this.packageDetailsCache
+      .snapshot()
+      .filter(
+        (entry) =>
+          entry.revision === this.network.context(this.settings) &&
+          (entry.expiresAt === null || entry.expiresAt > Date.now()),
+      );
+    await this.packageCache.persist(this.state, {
       fingerprint: this.packageReferenceFingerprint,
-      packageDetails: Object.fromEntries(this.packageDetailsCache),
+      packageDetails: Object.fromEntries(
+        details.map((entry) => [entry.key, entry.value as NuGetPackageItem]),
+      ),
+      detailExpirations: Object.fromEntries(
+        details.map((entry) => [
+          entry.key,
+          entry.expiresAt ?? Date.now() + cachePolicy.metadataTtlMs,
+        ]),
+      ),
     });
   }
 
@@ -863,32 +1279,154 @@ export class PackageManagerController implements Disposable {
     );
   }
 
-  private beginPackageRefresh(): AbortSignal {
-    this.packageRefreshAbort?.abort();
-    this.packageRefreshAbort = new AbortController();
-    return this.packageRefreshAbort.signal;
+  private cancelSearchReads(): void {
+    this.data.cancelSearch();
+    this.packageDetails.cancel();
+  }
+
+  private cancelPackageReads(): void {
+    this.data.invalidate(this.state.selectedTargetId);
+    this.packageDetails.cancel();
+    this.inputPaths = [];
+  }
+
+  private dataEnvironment(targetId: string): DataEnvironment {
+    const feeds = this.state.feeds.filter((feed) => feed.id !== "__all__");
+    const configPaths = [
+      ...new Set(
+        this.state.sources.map((source) => source.path).filter(Boolean),
+      ),
+    ];
+    const sourceRevision = createHash("sha256")
+      .update(
+        JSON.stringify([
+          this.dataGeneration,
+          this.network.context(this.settings),
+          this.settings.dotnetPath,
+          feeds,
+          configPaths,
+        ]),
+      )
+      .digest("hex");
+    return {
+      target: this.discovery.targets.find((target) => target.id === targetId),
+      feeds: structuredClone(feeds),
+      configPaths,
+      allowedRoots:
+        workspace.workspaceFolders?.map((folder) => folder.uri.fsPath) ?? [],
+      settings: this.settings,
+      cli: this.cli,
+      sourceRevision,
+    };
+  }
+
+  private syncDataContext(): void {
+    const environment = this.dataEnvironment(this.state.selectedTargetId);
+    const target = environment.target;
+    const context: UpgradeContext = {
+      targetId: this.state.selectedTargetId,
+      projectPaths: target
+        ? target.kind === "project"
+          ? [target.path]
+          : target.projectPaths
+        : [],
+      feedUrls: queryFeedUrls(this.state),
+      includePrerelease: this.state.includePrerelease,
+      revision: environment.sourceRevision,
+    };
+    const key = JSON.stringify(context);
+    if (key !== this.activeDataContextKey) {
+      this.activeDataContextKey = key;
+      this.packageDetails.cancel();
+    }
+    this.data.setContext(context);
+  }
+
+  private publishReadFlow(flow: ReadFlow, value: LoadState): void {
+    const hasDisplayData =
+      flow === "inventory"
+        ? this.state.installedPackages.length +
+            this.state.implicitPackages.length >
+          0
+        : flow === "search"
+          ? this.state.availablePackages.length > 0
+          : flow === "catalog"
+            ? this.state.updates.evaluation.candidates.length > 0
+            : !!this.state.packageDetails;
+    const patch = {
+      flows: {
+        ...this.state.flows,
+        [flow]: {
+          ...value,
+          stale: value.stale || (value.status !== "ready" && hasDisplayData),
+        },
+      },
+      ...(flow === "inventory"
+        ? {
+            installedPackagesStatus: value.status,
+            implicitPackagesStatus: value.status,
+          }
+        : {}),
+    };
+    this.state = { ...this.state, ...patch };
+    this.publishPackageEvent({ type: "stateDelta", patch });
   }
 
   private createPackageReferenceFingerprint(): Promise<string> {
     return createPackageReferenceFingerprint({
       target: PackageManagementCore.selection.getSelectedTarget(this.state),
       centralPackageFiles: this.discovery.centralPackageFiles,
+      inputPaths: this.inputPaths,
     });
   }
 
   private hydratePackageDetailsCache(
     entry: PackageStateCacheEntry | undefined,
   ): void {
-    this.packageDetailsCache = new Map(
-      Object.entries(entry?.packageDetails ?? {}),
-    );
+    this.packageDetailsCache.clear();
+    const now = Date.now();
+    for (const [key, value] of Object.entries(entry?.packageDetails ?? {}))
+      this.packageDetailsCache.put({
+        schema: 2,
+        key,
+        value,
+        revision: entry?.metadataRevision ?? "",
+        savedAt: now,
+        accessedAt: now,
+        expiresAt:
+          entry?.detailExpirations?.[key] ?? now + cachePolicy.metadataTtlMs,
+      });
   }
 
   private packageDetailsCacheAdapter(): PackageDetailsCache {
+    const settings = this.settings;
+    const feeds = this.state.feeds;
+    const revision = this.network.context(settings);
+    const current = () =>
+      this.settings === settings &&
+      this.state.feeds === feeds &&
+      this.network.context(settings) === revision;
     return {
-      get: (key) => this.packageDetailsCache.get(key),
+      get: (key) => {
+        if (!current()) return undefined;
+        const hit = this.packageDetailsCache.get<NuGetPackageItem>(
+          packageDetailCacheIdentity(key),
+          false,
+        );
+        return hit?.revision === revision ? hit.value : undefined;
+      },
       set: (key, value) => {
-        this.packageDetailsCache.set(key, value);
+        if (!current()) return;
+        const now = Date.now();
+        this.packageDetailsCache.put({
+          schema: 2,
+          key: packageDetailCacheIdentity(key),
+          value,
+          revision,
+          savedAt: now,
+          accessedAt: now,
+          expiresAt: now + cachePolicy.metadataTtlMs,
+        });
       },
     };
   }
@@ -922,19 +1460,39 @@ export class PackageManagerController implements Disposable {
   }
 
   private async performDiscoveryRefresh(): Promise<void> {
+    this.cancelPackageReads();
     if (this.initialization) {
       await this.initialization;
     }
 
     this.discovery = await discoverWorkspace(this.logger);
     const selectedTargetId = await this.resolveSelectedTarget();
+    const sources = await loadPackageSources(
+      this.settings,
+      this.logger,
+      this.discovery.targets.find((target) => target.id === selectedTargetId),
+    );
+    const feeds = [
+      PackageManagementCore.feeds.allFeeds,
+      ...(sources[0]?.feeds ?? []),
+    ];
+    this.packageDetailsCache.clear();
 
     this.state = {
       ...this.state,
       targets: this.discovery.targets,
       selectedTargetId,
+      sources,
+      feeds,
+      selectedSourceId: sources[0]?.id,
+      selectedFeedId: PackageManagementCore.feeds.selectInitialFeed(
+        feeds,
+        this.state.selectedFeedId,
+        this.settings.defaultFeed,
+      ),
     };
 
+    this.restoreFeedFilter();
     this.updateSolutionStatusBar();
     this.postState();
     await this.refreshPackages({ forceInventory: true });
@@ -954,11 +1512,17 @@ export class PackageManagerController implements Disposable {
   }
 }
 
-function isAbortError(error: unknown): boolean {
+function sameCacheContext(
+  left: PackageManagerState,
+  right: PackageManagerState,
+): boolean {
   return (
-    typeof error === "object" &&
-    error !== null &&
-    "name" in error &&
-    error.name === "AbortError"
+    left.selectedTargetId === right.selectedTargetId &&
+    JSON.stringify(queryFeedUrls(left)) ===
+      JSON.stringify(queryFeedUrls(right)) &&
+    left.search === right.search &&
+    left.includePrerelease === right.includePrerelease &&
+    left.feeds === right.feeds &&
+    left.targets === right.targets
   );
 }

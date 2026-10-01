@@ -39,6 +39,9 @@ function setup() {
     projectWatcher,
     solutionWatcher,
     centralPackageWatcher,
+    reconciled: () => {
+      fingerprint = "fp-2";
+    },
   };
 }
 
@@ -93,6 +96,38 @@ describe("PackageReferenceWatcher", () => {
     await vi.advanceTimersByTimeAsync(750);
 
     expect(refreshDiscovery).toHaveBeenCalledTimes(1);
+  });
+
+  it("observes solution content and concrete closure paths, and coalesces own reconciliation writes", async () => {
+    const { watcher, solutionWatcher, refreshDiscovery, refreshPackages } =
+      setup();
+    solutionWatcher.onDidChange.mock.calls[0][0]();
+    await vi.advanceTimersByTimeAsync(750);
+    expect(refreshDiscovery).toHaveBeenCalledOnce();
+    watcher.setInputs(["/workspace/Shared.props", "/workspace/global.json"]);
+    const custom = vi
+      .mocked(vscode.workspace.createFileSystemWatcher)
+      .mock.results.at(-1)!.value;
+    await watcher.suspendDuring(async () => {
+      custom.onDidChange.mock.calls[0][0]();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(refreshPackages).not.toHaveBeenCalled();
+    });
+    await vi.advanceTimersByTimeAsync(750);
+    expect(refreshPackages).toHaveBeenCalledOnce();
+    watcher.dispose();
+  });
+
+  it("does not repeat a refresh after own reconciliation already captured the new fingerprint", async () => {
+    const { watcher, projectWatcher, refreshPackages, reconciled } = setup();
+    await watcher.suspendDuring(async () => {
+      projectWatcher.onDidChange.mock.calls[0][0]();
+      await vi.advanceTimersByTimeAsync(750);
+      reconciled();
+    });
+    await vi.advanceTimersByTimeAsync(750);
+    expect(refreshPackages).not.toHaveBeenCalled();
+    watcher.dispose();
   });
 
   it("still runs the fingerprint-only path for a content-only project change", async () => {

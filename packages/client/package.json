@@ -5,6 +5,8 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
+    "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint .",
@@ -14,6 +16,10 @@
     "@nuget-code/contracts": "workspace:*",
     "@nuget-code/manager": "workspace:*",
     "@rgrove/parse-xml": "^4.2.0",
-    "proxy-agent": "^8.0.1"
+    "proxy-agent": "^8.0.1",
+    "yauzl": "3.4.0"
+  },
+  "devDependencies": {
+    "@types/yauzl": "3.4.0"
   }
 }

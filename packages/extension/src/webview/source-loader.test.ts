@@ -39,9 +39,10 @@ describe("loadPackageSources", () => {
 
     expect(vscode.workspace.findFiles).toHaveBeenCalledWith(
       "**/{NuGet.config,nuget.config,NuGet.Config}",
-      "**/{node_modules,bin,obj}/**",
+      "**/{node_modules,bin,obj,artifacts,.git}/**",
     );
     expect(NuGetClient.loadSources).toHaveBeenCalledWith(settings, logger, {
+      projectPaths: [],
       workspaceConfigPaths: [
         "c:/repo/NuGet.config",
         "c:/repo/src/NuGet.config",

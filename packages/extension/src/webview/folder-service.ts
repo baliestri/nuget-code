@@ -1,7 +1,7 @@
 import { Uri, commands, env, window } from "vscode";
 import { NuGetClient } from "#client";
 import type {
-  ExtensionToWebviewMessage,
+  PackageManagerEvent,
   PackageManagerOperationKind,
   PackageManagerState,
 } from "#contracts";
@@ -12,9 +12,13 @@ interface FolderServiceOptions {
   getState: () => PackageManagerState;
   setState: (state: PackageManagerState) => void;
   logger: ExtensionLogger;
-  publish: (message: ExtensionToWebviewMessage) => void;
+  publish: (message: PackageManagerEvent) => void;
   persistFolderSizeCache: (
     folders: PackageManagerState["folders"],
+  ) => Promise<void>;
+  mutateCaches: (
+    folders: PackageManagerState["folders"],
+    action: () => Promise<void>,
   ) => Promise<void>;
   runOperation: (
     kind: PackageManagerOperationKind,
@@ -126,36 +130,32 @@ export class FolderService {
       return;
     }
 
-    await this.options.runOperation(
-      "clearCaches",
-      "Clearing NuGet caches",
-      async () => {
-        await NuGetClient.clearCacheFolders(selected, this.options.logger);
-        const state = this.options.getState();
-        this.options.setState({
-          ...state,
-          folders: state.folders.map((folder) =>
-            selected.some((item) => item.id === folder.id)
-              ? {
-                  ...folder,
-                  sizeBytes: 0,
-                  sizeCalculatedAt: new Date().toISOString(),
-                  selected: false,
-                }
-              : folder,
-          ),
-        });
+    await this.options.mutateCaches(selected, async () => {
+      await NuGetClient.clearCacheFolders(selected, this.options.logger);
+      const state = this.options.getState();
+      this.options.setState({
+        ...state,
+        folders: state.folders.map((folder) =>
+          selected.some((item) => item.id === folder.id)
+            ? {
+                ...folder,
+                sizeBytes: 0,
+                sizeCalculatedAt: new Date().toISOString(),
+                selected: false,
+              }
+            : folder,
+        ),
+      });
 
-        await this.options.persistFolderSizeCache(
-          this.options.getState().folders,
-        );
-        await this.updateSelectedCacheFolderContext();
-        this.options.publish({
-          type: "foldersChanged",
-          folders: this.options.getState().folders,
-        });
-      },
-    );
+      await this.options.persistFolderSizeCache(
+        this.options.getState().folders,
+      );
+      await this.updateSelectedCacheFolderContext();
+      this.options.publish({
+        type: "foldersChanged",
+        folders: this.options.getState().folders,
+      });
+    });
   }
 
   async updateSelectedCacheFolderContext(): Promise<void> {

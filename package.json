@@ -6,23 +6,29 @@
     "compile": "turbo compile",
     "build": "turbo build",
     "dev": "turbo watch dev",
-    "lint": "turbo lint",
-    "typecheck": "turbo typecheck",
+    "lint": "eslint vitest.shared.ts scripts && turbo lint",
+    "typecheck": "tsc --noEmit -p scripts/tsconfig.json && turbo typecheck",
     "format": "turbo format",
-    "test": "turbo test"
+    "test": "turbo test",
+    "test:scripts": "vitest run --config scripts/vitest.config.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^25.8.0",
+    "@types/yauzl": "3.4.0",
+    "@types/yazl": "3.3.0",
     "eslint": "^10.4.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-import-resolver-typescript": "^4.4.4",
     "eslint-plugin-import-x": "^4.16.2",
     "eslint-plugin-prettier": "^5.5.5",
+    "happy-dom": "20.14.5",
     "prettier": "^3.8.3",
     "turbo": "^2.9.14",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.59.3",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.8",
+    "yauzl": "3.4.0",
+    "yazl": "3.3.1"
   }
 }

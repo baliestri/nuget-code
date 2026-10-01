@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import os from "node:os";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { searchPackages } from "./package-search.js";
 import { getFeedJson, getServiceResource } from "#client/feed-http";
 import type { NuGetClientLogger, NuGetClientSettings } from "./types.js";
@@ -70,14 +73,15 @@ describe("package search", () => {
     ]);
   });
 
-  it("logs skipped and unhealthy feeds", async () => {
+  it("reports an unavailable local source and unhealthy HTTP feeds", async () => {
     const log = logger();
+    const missing = path.join(os.tmpdir(), `missing-nuget-${randomUUID()}`);
     vi.mocked(getServiceResource).mockResolvedValue(undefined);
 
     await expect(
       searchPackages({
         feeds: [
-          { id: "local", name: "Local", url: "c:/packages", enabled: true },
+          { id: "local", name: "Local", url: missing, enabled: true },
           feed("nuget"),
         ],
         selectedFeedId: "__all__",
@@ -88,9 +92,9 @@ describe("package search", () => {
       }),
     ).resolves.toEqual([]);
 
-    expect(log.verbose).toHaveBeenCalledWith(
-      "nuget.http",
-      "Skipping non-HTTP source Local: c:/packages",
+    expect(log.warning).toHaveBeenCalledWith(
+      "nuget.feed",
+      expect.stringContaining("Local source Local: Directory unavailable"),
     );
     expect(log.warning).toHaveBeenCalledWith(
       "nuget.http",

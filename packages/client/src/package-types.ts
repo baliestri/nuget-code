@@ -53,6 +53,11 @@ export interface SearchPackage {
   version?: string;
   description?: string;
   iconUrl?: string;
+  projectUrl?: string;
+  licenseUrl?: string;
+  licenseExpression?: string;
+  packageDetailsUrl?: string;
+  totalDownloads?: number;
   authors?: string[] | string;
   tags?: string[];
   published?: string;
@@ -62,10 +67,14 @@ export interface SearchPackage {
 }
 
 export interface RegistrationIndex {
+  count?: number;
   items?: RegistrationPage[];
 }
 
 export interface RegistrationPage {
+  lower?: string;
+  upper?: string;
+  count?: number;
   "@id"?: string;
   items?: RegistrationLeaf[];
 }
@@ -75,10 +84,16 @@ export interface RegistrationLeaf {
 }
 
 export interface RegistrationCatalogEntry {
+  listed?: boolean;
   id?: string;
   version: string;
   description?: string;
   iconUrl?: string;
+  projectUrl?: string;
+  licenseUrl?: string;
+  licenseExpression?: string;
+  packageDetailsUrl?: string;
+  totalDownloads?: number;
   authors?: string[] | string;
   tags?: string[] | string;
   published?: string;

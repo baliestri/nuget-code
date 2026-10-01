@@ -9,8 +9,10 @@ import {
   enrichPackageAvailability,
   applyOutdatedPackageVersions,
   loadListedPackageInventory,
+  loadInstalledReferences,
   loadOutdatedPackageVersions,
   loadPackageDetails,
+  loadPackageCatalog,
   loadPackageInventory,
   searchPackages,
 } from "#client/packages";
@@ -22,8 +24,18 @@ import {
 export * from "#client/cli";
 export * from "#client/config";
 export * from "#client/credentials";
+export * from "#client/dotnet-sdk";
 export * from "#client/folders";
 export * from "#client/packages";
+export * from "#client/package-version-edits";
+export * from "#client/project-evaluation";
+export * from "#client/compatibility-sandbox";
+export * from "#client/package-compatibility";
+export * from "#client/compatibility-queue";
+export * from "#client/request-broker";
+export * from "#client/client-network";
+export * from "#client/cache";
+export { ProjectContextError } from "#client/project-context";
 export * from "#client/types";
 
 export const NuGetClient = {
@@ -36,9 +48,11 @@ export const NuGetClient = {
   findCredentialProvider,
   getFeedAuthorizationHeader,
   loadListedPackageInventory,
+  loadInstalledReferences,
   loadCacheFolders,
   loadOutdatedPackageVersions,
   loadPackageDetails,
+  loadPackageCatalog,
   loadPackageInventory,
   searchPackages,
 };

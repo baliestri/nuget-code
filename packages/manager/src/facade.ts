@@ -7,12 +7,19 @@ import {
 } from "#manager/folders";
 import {
   applyAvailablePackages,
+  applyUpdateProjection,
   applyPackageInventory,
 } from "#manager/state-updates";
 import { getSelectedPackage, getSelectedTarget } from "#manager/selection";
 import { createInitialPackageManagerState } from "#manager/state";
+import {
+  candidateKey,
+  evaluateUpgrades,
+  executableCandidates,
+} from "#manager/upgrade-policy";
 
 export const PackageManagementCore = {
+  updates: { candidateKey, evaluateUpgrades, executableCandidates },
   feeds: {
     allFeeds,
     selectInitialFeed,
@@ -27,6 +34,7 @@ export const PackageManagementCore = {
     getSelectedTarget,
   },
   state: {
+    applyUpdateProjection,
     applyAvailablePackages,
     applyPackageInventory,
     createInitialPackageManagerState,

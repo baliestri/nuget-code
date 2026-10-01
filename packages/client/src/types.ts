@@ -1,4 +1,7 @@
+import type { ClientNetwork } from "#client/client-network";
+
 export interface NuGetClientSettings {
+  network?: ClientNetwork | undefined;
   credentialProviderPaths: string[];
   dotnetPath: string;
   extraConfigPaths: string[];
@@ -16,6 +19,8 @@ export interface NuGetClientLogger {
 }
 
 export interface NuGetWorkspaceConfigOptions {
+  solutionDirectory?: string;
+  projectPaths?: readonly string[];
   workspaceConfigPaths?: string[];
   workspaceFolderPaths?: string[];
 }

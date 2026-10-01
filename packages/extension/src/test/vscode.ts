@@ -1,5 +1,12 @@
 import { vi, type Mock } from "vitest";
 
+export class RelativePattern {
+  constructor(
+    readonly base: string,
+    readonly pattern: string,
+  ) {}
+}
+
 type ConfigSection = "nuget-code" | "http" | string;
 
 const configurations = new Map<ConfigSection, Record<string, unknown>>();

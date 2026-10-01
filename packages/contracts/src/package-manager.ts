@@ -6,11 +6,38 @@ import {
   PackageFeed,
 } from "#contracts/nuget";
 import { WorkspaceTarget } from "#contracts/workspace";
+import type { LoadState, ReadFlow } from "#contracts/package-loads";
+import type {
+  UpdateProjection,
+  InstalledReference,
+  PackageCatalog,
+} from "#contracts/package-updates";
+import type { MutationOperation } from "#contracts/operations";
 
 export type PackageManagerTab = "packages" | "sources" | "folders" | "logs";
 export type PackageListStatus = "idle" | "loading" | "ready" | "failed";
 
+export type PackageFeedFilter =
+  | { mode: "all" }
+  | { mode: "selected"; ids: string[] };
+
 export interface PackageManagerState {
+  feedFilter?: PackageFeedFilter | undefined;
+  sourceEditor?: import("#contracts/nuget").SourceEditorState;
+  flows: Record<ReadFlow, LoadState>;
+  updates: UpdateProjection;
+  operations: readonly MutationOperation[];
+  installedReferences: readonly InstalledReference[];
+  catalogs: readonly PackageCatalog[];
+  packageDetails?:
+    | {
+        packageId: string;
+        feedId: string;
+        version?: string | undefined;
+        packageItem: NuGetPackageItem;
+      }
+    | null
+    | undefined;
   activeTab: PackageManagerTab;
   targets: WorkspaceTarget[];
   selectedTargetId: string;
@@ -18,6 +45,7 @@ export interface PackageManagerState {
   selectedFeedId: string;
   includePrerelease: boolean;
   search: string;
+  searchResultLimit?: number | undefined;
   installedPackages: NuGetPackageItem[];
   installedPackagesStatus: PackageListStatus;
   implicitPackages: NuGetPackageItem[];
