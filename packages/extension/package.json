@@ -23,7 +23,7 @@
     "test": "vitest run",
     "test:integration": "vscode-test",
     "test:dotnet": "vitest run --config vitest.dotnet.config.ts",
-    "vscode:prepublish": "pnpm --filter ../.. run compile",
+    "vscode:prepublish": "pnpm exec turbo compile --force",
     "package": "pnpm vsce package --no-dependencies",
     "publish": "pnpm vsce publish --no-dependencies"
   },

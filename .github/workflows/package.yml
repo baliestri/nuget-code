@@ -1,0 +1,104 @@
+name: Package VSIX
+
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+    outputs:
+      source_sha:
+        value: ${{ jobs.gate.outputs.source_sha }}
+      artifact_name:
+        value: ${{ jobs.gate.outputs.artifact_name }}
+      sha256:
+        value: ${{ jobs.gate.outputs.sha256 }}
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      source_sha: ${{ steps.identity.outputs.source_sha }}
+      artifact_name: ${{ steps.identity.outputs.artifact_name }}
+      sha256: ${{ steps.identity.outputs.sha256 }}
+    steps:
+      - name: Validate source SHA
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          run_install: false
+          cache: true
+          cache_dependency_path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Build and verify VSIX
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          node scripts/build-vsix.mjs --version "$VERSION" --source-sha "$SOURCE_SHA"
+          node scripts/verify-vsix.mjs --manifest release-artifacts/artifact.json
+      - name: Expose package identity
+        id: identity
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          artifact_name="vsix-${SOURCE_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          printf 'source_sha=%s\n' "$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          printf 'artifact_name=%s\n' "$artifact_name" >> "$GITHUB_OUTPUT"
+          node -e 'const fs=require("fs");process.stdout.write("sha256="+JSON.parse(fs.readFileSync("release-artifacts/artifact.json")).sha256+"\n")' >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ steps.identity.outputs.artifact_name }}
+          path: release-artifacts/
+          if-no-files-found: error
+          retention-days: 90
+
+  gate:
+    name: Package result
+    if: ${{ always() }}
+    needs: package
+    runs-on: ubuntu-latest
+    outputs:
+      source_sha: ${{ steps.check.outputs.source_sha }}
+      artifact_name: ${{ steps.check.outputs.artifact_name }}
+      sha256: ${{ steps.check.outputs.sha256 }}
+    steps:
+      - id: check
+        shell: bash
+        env:
+          PACKAGE_RESULT: ${{ needs.package.result }}
+          SOURCE_SHA: ${{ needs.package.outputs.source_sha }}
+          EXPECTED_SHA: ${{ inputs.source_sha }}
+          ARTIFACT_NAME: ${{ needs.package.outputs.artifact_name }}
+          SHA256: ${{ needs.package.outputs.sha256 }}
+        run: |
+          test "$PACKAGE_RESULT" = success
+          test "$SOURCE_SHA" = "$EXPECTED_SHA"
+          [[ "$SHA256" =~ ^[0-9a-f]{64}$ ]]
+          printf 'source_sha=%s\n' "$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          printf 'artifact_name=%s\n' "$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
+          printf 'sha256=%s\n' "$SHA256" >> "$GITHUB_OUTPUT"

@@ -83,6 +83,8 @@ jobs:
         run: pnpm run lint
       - name: Typecheck
         run: pnpm run typecheck
+      - name: Test release scripts
+        run: pnpm run test:scripts
       - name: Validate workflows
         run: |
           archive="$RUNNER_TEMP/actionlint_1.7.12_linux_amd64.tar.gz"
