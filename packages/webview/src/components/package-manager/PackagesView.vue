@@ -99,6 +99,11 @@ const updatePackages = computed(() =>
     updateIds.value.has(item.name.toLowerCase()),
   ),
 );
+const installedWithoutUpdates = computed(() =>
+  installedPackages.value.filter(
+    (item) => !updateIds.value.has(item.name.toLowerCase()),
+  ),
+);
 const visibleCandidates = computed(() =>
   store.executableUpdates.filter((candidate) =>
     updatePackages.value.some(
@@ -291,12 +296,11 @@ function onPrereleaseChange(event: Event): void {
                 ? 'bg-surface-1 font-semibold'
                 : 'text-fg-muted'
             "
-            :aria-label="`Installed, ${updateIds.size} packages with updates`"
             @click="changeView('installed')"
             @keydown.right="changeView('discover', $event)"
             @keydown.left="changeView('discover', $event)"
           >
-            Installed <span class="text-xs">{{ updateIds.size }}</span>
+            Installed
           </button>
           <button
             id="discover-tab"
@@ -336,6 +340,7 @@ function onPrereleaseChange(event: Event): void {
             tabindex="0"
           >
             <PackageSection
+              v-if="updatePackages.length"
               title="Packages to Update"
               :packages="updatePackages"
               batch
@@ -375,13 +380,15 @@ function onPrereleaseChange(event: Event): void {
             </PackageSection>
             <PackageSection
               title="Installed Packages"
-              :packages="installedPackages"
+              :packages="installedWithoutUpdates"
               :loading="inventoryLoading"
               :error="inventoryFailed"
               :empty-message="
                 hasSearch
                   ? 'No installed packages match this filter.'
-                  : 'No packages installed in this target.'
+                  : installedPackages.length
+                    ? 'All installed packages are listed under updates.'
+                    : 'No packages installed in this target.'
               "
             />
             <PackageSection
@@ -405,11 +412,7 @@ function onPrereleaseChange(event: Event): void {
             tabindex="0"
           >
             <PackageSection
-              :title="
-                model.searchResultLimit
-                  ? `Available Packages · up to ${model.searchResultLimit}`
-                  : 'Available Packages'
-              "
+              title="Available Packages"
               :packages="queryingFeeds.length ? displayedAvailablePackages : []"
               :loading="
                 queryingFeeds.length > 0 &&

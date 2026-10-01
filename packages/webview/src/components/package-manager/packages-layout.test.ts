@@ -7,6 +7,7 @@ import { usePackageManagerStore } from "#webview/stores/packageManager";
 import FeedFilter from "./FeedFilter.vue";
 import PackagesView from "./PackagesView.vue";
 import PackageDetails from "./PackageDetails.vue";
+import PackageSection from "./PackageSection.vue";
 const vscode = vi.hoisted(() => ({ postMessage: vi.fn() }));
 vi.mock("#webview/composables/useVsCodeApi", () => ({
   useVsCodeApi: () => vscode,
@@ -75,6 +76,34 @@ function setup() {
   });
   return { store, wrapper };
 }
+it("hides empty updates and shows each direct package in only one section", async () => {
+  const { wrapper, store } = setup();
+  expect(wrapper.get("#installed-tab").text()).toBe("Installed");
+  store.model.installedPackages.push(item("Current"));
+  await wrapper.vm.$nextTick();
+  const section = (title: string) =>
+    wrapper
+      .findAllComponents(PackageSection)
+      .find((section) => section.props("title") === title);
+  expect(
+    section("Packages to Update")!
+      .props("packages")
+      .map((item: NuGetPackageItem) => item.name),
+  ).toEqual(["Alpha", "Beta", "Pending"]);
+  expect(
+    section("Installed Packages")!
+      .props("packages")
+      .map((item: NuGetPackageItem) => item.name),
+  ).toEqual(["Current"]);
+  store.model.updates.evaluation.candidates = [];
+  await wrapper.vm.$nextTick();
+  expect(section("Packages to Update")).toBeUndefined();
+  expect(section("Installed Packages")!.props("packages")).toHaveLength(4);
+  store.model.searchResultLimit = 100;
+  await wrapper.get("#discover-tab").trigger("click");
+  expect(wrapper.get("#discover-panel").text()).not.toMatch(/up to/i);
+  wrapper.unmount();
+});
 it("changes explicit feed selection without mutating feed definitions or querying on open", async () => {
   const wrapper = mount(FeedFilter, {
     props: { feeds, filter: { mode: "all" } },
