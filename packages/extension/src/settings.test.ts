@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import * as vscode from "vscode";
 import { getSettings } from "./settings.js";
+import fs from "node:fs";
 
 const vscodeMock = vscode as unknown as {
   __resetVscodeMock(): void;
@@ -17,6 +18,19 @@ const vscodeMock = vscode as unknown as {
 };
 
 describe("extension settings", () => {
+  it("registers Source Save In under VS Code configuration contributions", () => {
+    const manifest = JSON.parse(
+      fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    );
+    expect(manifest.configuration).toBeUndefined();
+    expect(
+      manifest.contributes.configuration.properties[
+        "nuget-code.sources.saveIn"
+      ],
+    ).toMatchObject({ type: "string", default: "workspace" });
+    vscodeMock.__setConfiguration("nuget-code", { "sources.saveIn": "user" });
+    expect(getSettings().sourceSaveIn).toBe("user");
+  });
   beforeEach(() => {
     vscodeMock.__resetVscodeMock();
   });
@@ -41,6 +55,7 @@ describe("extension settings", () => {
     vscodeMock.workspace.workspaceFile = { fsPath: "c:/repo/App.sln" };
 
     expect(getSettings()).toEqual({
+      sourceSaveIn: "workspace",
       tabButtonStyle: "icons",
       logLevel: "debug",
       maxLogEntries: 50,

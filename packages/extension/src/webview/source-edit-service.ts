@@ -6,10 +6,15 @@ import type {
   NuGetConfigFile,
   SourceDestination,
   SourceEdit,
+  SourcePropertiesEdit,
   SourceEditRequest,
   WorkspaceTarget,
 } from "#contracts";
-import { editPackageSource, credentialSourceName } from "#client/source-edits";
+import {
+  editPackageSource,
+  editSourceProperties,
+  credentialSourceName,
+} from "#client/source-edits";
 import {
   containsPath,
   decodeProjectText,
@@ -26,9 +31,11 @@ const hash = (bytes: Buffer | undefined) =>
   bytes ? createHash("sha256").update(bytes).digest("hex") : "missing";
 export function sourceEditSummary(
   file: string,
-  edit: SourceEdit,
+  edit: SourceEdit | SourcePropertiesEdit,
   sources: NuGetConfigFile[],
 ): string {
+  if (edit.action === "properties")
+    return `Saved package folder properties in ${file}. Empty fields inherit their values. Other projects using this file may also be affected.`;
   const feeds = sources.find((source) => source.origin === "effective")?.feeds;
   const original = edit.originalName ?? edit.name;
   let scope = "This file may also affect other projects.";
@@ -77,6 +84,7 @@ export class SourceEditService {
     sources: NuGetConfigFile[],
     roots: string[],
     target?: WorkspaceTarget,
+    saveIn = "workspace",
   ): Promise<SourceDestination[]> {
     const generation = ++this.generation;
     const files: string[] = [];
@@ -110,6 +118,20 @@ export class SourceEditService {
         .map((source) => source.path),
     );
     if (!suggested && roots.length === 1) suggested = files[0];
+    if (saveIn === "user") suggested = user;
+    else if (saveIn !== "workspace") {
+      const root =
+        roots.find((root) => target && containsPath(root, target.path)) ??
+        (roots.length === 1 ? roots[0] : undefined);
+      if (!saveIn.trim() || (!path.isAbsolute(saveIn) && !root))
+        throw new Error(
+          "Set nuget-code.sources.saveIn to workspace, user, or an absolute NuGet.Config path.",
+        );
+      suggested = path.isAbsolute(saveIn)
+        ? path.normalize(saveIn)
+        : path.resolve(root!, saveIn);
+      files.push(suggested);
+    }
     const unique = [
       ...new Map(files.map((file) => [pathKey(file), file])).values(),
     ];
@@ -153,50 +175,57 @@ export class SourceEditService {
     if (source.origin !== "effective" && source.path !== destination.path)
       throw new Error("Select the config file's own destination.");
     const edit = request.edit;
-    if (
-      !edit ||
-      !["upsert", "remove"].includes(edit.action) ||
-      typeof edit.name !== "string" ||
-      typeof edit.url !== "string" ||
-      typeof edit.enabled !== "boolean" ||
-      typeof edit.allowInsecure !== "boolean" ||
-      (edit.originalName !== undefined && typeof edit.originalName !== "string")
-    )
-      throw new Error("Invalid source edit.");
-    const name = edit.originalName ?? edit.name;
-    if (edit.originalName && !source.feeds.some((feed) => feed.name === name))
-      throw new Error("The source no longer exists.");
-    if (edit.action === "remove" && !edit.originalName)
-      throw new Error("Select an existing source to remove.");
-    if (
-      (!edit.originalName || name !== edit.name) &&
-      source.feeds.some((feed) => feed.name === edit.name)
-    )
-      throw new Error("A source with this name already exists.");
-    if (
-      (edit.action === "remove" || name !== edit.name) &&
-      sources.some(
-        (item) =>
-          item.credentialNames?.some(
-            (key) => credentialSourceName(key) === name,
-          ) || item.mappingNames?.includes(name),
+    if (edit?.action !== "properties") {
+      if (
+        !edit ||
+        !["upsert", "remove"].includes(edit.action) ||
+        typeof edit.name !== "string" ||
+        typeof edit.url !== "string" ||
+        typeof edit.enabled !== "boolean" ||
+        typeof edit.allowInsecure !== "boolean" ||
+        (edit.originalName !== undefined &&
+          typeof edit.originalName !== "string")
       )
-    )
-      throw new Error(
-        "Adjust source credentials or package source mappings before renaming or removing this source.",
-      );
+        throw new Error("Invalid source edit.");
+      const name = edit.originalName ?? edit.name;
+      if (edit.originalName && !source.feeds.some((feed) => feed.name === name))
+        throw new Error("The source no longer exists.");
+      if (edit.action === "remove" && !edit.originalName)
+        throw new Error("Select an existing source to remove.");
+      if (
+        (!edit.originalName || name !== edit.name) &&
+        source.feeds.some((feed) => feed.name === edit.name)
+      )
+        throw new Error("A source with this name already exists.");
+      if (
+        (edit.action === "remove" || name !== edit.name) &&
+        sources.some(
+          (item) =>
+            item.credentialNames?.some(
+              (key) => credentialSourceName(key) === name,
+            ) || item.mappingNames?.includes(name),
+        )
+      )
+        throw new Error(
+          "Adjust source credentials or package source mappings before renaming or removing this source.",
+        );
+    }
     const file = destination.path;
     const bytes = await read(file);
     assertCurrent();
     if (hash(bytes) !== request.destinationRevision)
       throw new Error("The destination changed. Reload Sources before saving.");
-    const replacement = editPackageSource(
-      bytes
-        ? decodeProjectText(bytes).text
-        : '<?xml version="1.0" encoding="utf-8"?>\n<configuration>\n</configuration>\n',
-      edit,
-      source.origin === "effective" ? source.feeds : undefined,
-    );
+    const originalText = bytes
+      ? decodeProjectText(bytes).text
+      : '<?xml version="1.0" encoding="utf-8"?>\n<configuration>\n</configuration>\n';
+    const replacement =
+      edit.action === "properties"
+        ? editSourceProperties(originalText, edit)
+        : editPackageSource(
+            originalText,
+            edit,
+            source.origin === "effective" ? source.feeds : undefined,
+          );
     if (bytes) {
       const io = createVersionEditIO(
         new Map([[file, path.dirname(file)]]),

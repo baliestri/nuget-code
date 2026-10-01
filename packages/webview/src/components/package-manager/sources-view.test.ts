@@ -11,6 +11,82 @@ vi.mock("#webview/composables/useVsCodeApi", () => ({
   useVsCodeApi: () => api,
 }));
 afterEach(() => api.postMessage.mockReset());
+it("provides keyboard-accessible source tabs, saves folder properties and displays a safe summary", async () => {
+  const { store, wrapper, requests } = await fixture();
+  store.model.sources[0]!.properties = { globalPackagesFolder: "cache" };
+  store.model.sources[0]!.packageFolders = [
+    {
+      projectPath: "/workspace/A.csproj",
+      globalPackagesFolder: "/user/packages",
+      repositoryPath: "/workspace/packages",
+    },
+    {
+      projectPath: "/workspace/B.csproj",
+      globalPackagesFolder: "/user/packages",
+      repositoryPath: "/workspace/packages",
+    },
+  ];
+  store.model.sources[0]!.restoreConsent = {
+    isGranted: true,
+    isGrantedInSettings: true,
+    isAutomatic: true,
+  };
+  store.model.sources[0]!.fallbackFolders = ["/fallback"];
+  await wrapper
+    .get("#sources-Feeds-tab")
+    .trigger("keydown", { key: "ArrowRight" });
+  expect(
+    wrapper.get("#sources-Properties-tab").attributes("aria-selected"),
+  ).toBe("true");
+  expect(
+    (
+      wrapper.get('[aria-label="Global packages folder"]')
+        .element as HTMLInputElement
+    ).value,
+  ).toBe("cache");
+  expect(wrapper.get("#sources-Properties-panel").text()).not.toContain(
+    "A.csproj",
+  );
+  expect(
+    wrapper
+      .get("#sources-Properties-panel")
+      .text()
+      .match(/\/user\/packages/g),
+  ).toHaveLength(1);
+  expect(wrapper.text()).not.toContain("Effective NuGet folder settings");
+  await wrapper
+    .get('[aria-label="Global packages folder"]')
+    .setValue("new-cache");
+  await wrapper.get("#sources-Properties-panel form").trigger("submit");
+  expect(requests()[0].request).toMatchObject({
+    sourceRevision: "source-old",
+    destinationRevision: "disk-old",
+    edit: {
+      action: "properties",
+      globalPackagesFolder: "new-cache",
+      repositoryPath: "",
+    },
+  });
+  await wrapper.get("#sources-Summary-tab").trigger("click");
+  expect(
+    wrapper.get('[aria-label="NuGet configuration summary"]').text(),
+  ).toContain("Source = /workspace/packages");
+  expect(
+    wrapper.get('[aria-label="NuGet configuration summary"]').text(),
+  ).toContain(
+    "IsGranted = true, IsGrantedInSettings = true, IsAutomatic = true",
+  );
+  expect(
+    wrapper.get('[aria-label="NuGet configuration summary"]').text(),
+  ).toContain("### FallbackFolders\n* /fallback");
+  expect(
+    wrapper.get('[aria-label="NuGet configuration summary"]').text(),
+  ).not.toContain("### Package folders");
+  expect(
+    wrapper.find('select[aria-label="Save source configuration in"]').exists(),
+  ).toBe(false);
+  wrapper.unmount();
+});
 async function fixture(effective = false, suggested = true) {
   setActivePinia(createPinia());
   const store = usePackageManagerStore();
@@ -108,23 +184,24 @@ it("sends a captured revision, preserves relative URL, and keeps the draft on fa
       .value,
   ).toBe("Renamed");
   expect(wrapper.text()).toContain("The source changed");
-  const reload = wrapper
-    .findAll("button")
-    .find((button) => button.text() === "Reload editor")!;
-  await reload.trigger("click");
-  expect(api.postMessage).toHaveBeenLastCalledWith({
-    type: "sourceEditor",
-    reload: true,
-  });
+  expect(wrapper.text()).not.toContain("Reload editor");
+  store.model.sourceEditor = {
+    ...store.model.sourceEditor!,
+    status: "loading",
+    destinations: [],
+  };
+  await nextTick();
   expect(wrapper.find("form").exists()).toBe(false);
   wrapper.unmount();
 });
-it("requires destination choice for ambiguous effective scope and uses the chosen destination", async () => {
-  const { wrapper, requests } = await fixture(true, false);
+it("uses the settings-selected destination without a Save in control", async () => {
+  const { store, wrapper, requests } = await fixture(true, false);
   expect(
     wrapper.get('[aria-label="Edit Local"]').attributes("disabled"),
   ).toBeDefined();
-  await wrapper.get("select").setValue("/user/NuGet.Config");
+  expect(wrapper.find("select").exists()).toBe(false);
+  store.model.sourceEditor!.destinations[1]!.suggested = true;
+  await nextTick();
   await wrapper.get('[aria-label="Enable Local"]').setValue(false);
   expect(requests()[0].request).toMatchObject({
     destinationId: "/user/NuGet.Config",

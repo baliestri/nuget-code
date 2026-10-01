@@ -114,6 +114,23 @@ async function readConfig(
       ).map((element) => credentialSourceName(element.name)),
     );
     const disabled = new Set(disabledSources.map((source) => source.key));
+    const origin = getConfigOrigin(
+      configPath,
+      options.workspaceFolderPaths ?? [],
+    );
+    const restoreDirectives = configDirectives(
+      configuration,
+      "packageRestore",
+      ["enabled", "automatic"],
+    );
+    const fallbackDirectives = configDirectives(
+      configuration,
+      "fallbackPackageFolders",
+    );
+    const restoreSettings = new Map<string, string>();
+    const fallbackSettings = new Map<string, string>();
+    mergeConfigValues(restoreSettings, restoreDirectives, configPath, false);
+    mergeConfigValues(fallbackSettings, fallbackDirectives, configPath, true);
     const feeds = packageSources
       .filter(hasPackageSource)
       .map<PackageFeed>((source) => ({
@@ -135,9 +152,57 @@ async function readConfig(
           String(source.allowInsecureConnections).toLowerCase() === "true",
         sourceConfigId: configPath,
         hasCredentials: credentialKeys.has(source.key),
+        protocolVersion: /^\d+$/.test(source.protocolVersion ?? "")
+          ? Number(source.protocolVersion)
+          : 2,
+        disableTLSCertificateValidation:
+          source.disableTLSCertificateValidation?.toLowerCase() === "true",
+        isHttp: /^https?:\/\//i.test(source.value),
+        isLocal:
+          !/^[a-z][a-z0-9+.-]*:\/\//i.test(source.value) ||
+          /^file:\/\//i.test(source.value),
+        isMachineWide: origin === "machine",
+        isOfficial: false,
+        isPersistable: true,
       }));
 
+    const propertyDirectives: NonNullable<
+      NuGetConfigFile["propertyDirectives"]
+    > = childElements(firstElement(configuration, "config"))
+      .filter(
+        (element) =>
+          element.name === "clear" ||
+          (["add", "remove"].includes(element.name) &&
+            ["globalPackagesFolder", "repositoryPath"].includes(
+              element.attributes.key ?? "",
+            )),
+      )
+      .map((element) => ({
+        action: element.name as "add" | "remove" | "clear",
+        ...(element.attributes.key ? { key: element.attributes.key } : {}),
+        ...(element.attributes.value !== undefined &&
+        ["globalPackagesFolder", "repositoryPath"].includes(
+          element.attributes.key ?? "",
+        )
+          ? { value: element.attributes.value }
+          : {}),
+      }));
+    const properties: NonNullable<NuGetConfigFile["properties"]> = {};
+    for (const directive of propertyDirectives) {
+      const key = directive.key as keyof typeof properties;
+      if (directive.action === "clear") {
+        delete properties.globalPackagesFolder;
+        delete properties.repositoryPath;
+      } else if (directive.action === "remove") delete properties[key];
+      else if (directive.value !== undefined) properties[key] = directive.value;
+    }
     return {
+      restoreDirectives,
+      fallbackDirectives,
+      restoreConsent: restoreConsent(restoreSettings),
+      fallbackFolders: [...fallbackSettings.values()],
+      properties,
+      propertyDirectives,
       revision: createHash("sha256").update(bytes).digest("hex"),
       mappingNames: childElements(
         firstElement(configuration, "packageSourceMapping"),
@@ -166,7 +231,7 @@ async function readConfig(
       id: configPath,
       name: path.basename(configPath),
       path: configPath,
-      origin: getConfigOrigin(configPath, options.workspaceFolderPaths ?? []),
+      origin,
       hasCredentials: feeds.some((feed) => credentialKeys.has(feed.name)),
       scope: path.dirname(configPath),
       feeds,
@@ -186,12 +251,21 @@ function createEffectiveConfig(
   explicit: ReadonlySet<string>,
 ): NuGetConfigFile {
   const union = new Map<string, PackageFeed>();
+  const packageFolders: NonNullable<
+    NuGetConfigFile["packageFolders"]
+  >[number][] = [];
+  const appliedConfigs = new Set<string>();
+  const consents: NonNullable<NuGetConfigFile["restoreConsent"]>[] = [];
+  const fallbackFolders = new Set<string>();
   for (const project of options.projectPaths?.length
     ? options.projectPaths
     : [undefined]) {
     const feeds = new Map<string, PackageFeed>();
     const disabled = new Map<string, boolean>();
     const credentials = new Set<string>();
+    const properties = new Map<string, string>();
+    const restoreSettings = new Map<string, string>();
+    const fallbackSettings = new Map<string, string>();
     for (const config of configs) {
       if (
         project &&
@@ -200,6 +274,34 @@ function createEffectiveConfig(
         !isParent(path.dirname(config.path), path.dirname(project))
       )
         continue;
+      appliedConfigs.add(config.path);
+      mergeConfigValues(
+        restoreSettings,
+        config.restoreDirectives ?? [],
+        config.path,
+        false,
+      );
+      mergeConfigValues(
+        fallbackSettings,
+        config.fallbackDirectives ?? [],
+        config.path,
+        true,
+      );
+      for (const directive of config.propertyDirectives ?? []) {
+        if (directive.action === "clear") properties.clear();
+        else if (directive.key && directive.action === "remove")
+          properties.delete(directive.key);
+        else if (directive.key && directive.value !== undefined) {
+          const expanded = directive.value.replace(
+            /%([^%]+)%/g,
+            (original, name: string) => process.env[name] ?? original,
+          );
+          properties.set(
+            directive.key,
+            path.resolve(path.dirname(config.path), expanded),
+          );
+        }
+      }
       for (const directive of config.sourceDirectives ?? []) {
         if (directive.action === "clear") feeds.clear();
         else if (directive.action === "remove" && directive.key)
@@ -208,7 +310,10 @@ function createEffectiveConfig(
           const feed = [...config.feeds]
             .reverse()
             .find((feed) => feed.name === directive.key);
-          if (feed) feeds.set(feed.name, feed);
+          if (feed) {
+            feeds.delete(feed.name);
+            feeds.set(feed.name, feed);
+          }
         }
       }
       for (const directive of config.disabledDirectives ?? []) {
@@ -229,6 +334,23 @@ function createEffectiveConfig(
         hasCredentials: credentials.has(feed.name),
       });
     }
+    packageFolders.push({
+      ...(project ? { projectPath: project } : {}),
+      globalPackagesFolder:
+        process.env.NUGET_PACKAGES ||
+        properties.get("globalPackagesFolder") ||
+        path.join(os.homedir(), ".nuget", "packages"),
+      ...(properties.has("repositoryPath")
+        ? { repositoryPath: properties.get("repositoryPath")! }
+        : options.solutionDirectory
+          ? { repositoryPath: path.join(options.solutionDirectory, "packages") }
+          : {}),
+    });
+    consents.push(restoreConsent(restoreSettings));
+    for (const folder of process.env.NUGET_FALLBACK_PACKAGES?.split(";").filter(
+      Boolean,
+    ) ?? [...fallbackSettings.values()])
+      fallbackFolders.add(folder);
   }
   if (!configs.length) {
     union.set("nuget.org", {
@@ -245,6 +367,20 @@ function createEffectiveConfig(
   }));
   return {
     id: "__effective__",
+    packageFolders,
+    restoreConsent: {
+      isGranted: commonConsent(consents, "isGranted"),
+      isGrantedInSettings: commonConsent(consents, "isGrantedInSettings"),
+      isAutomatic: commonConsent(consents, "isAutomatic"),
+    },
+    fallbackFolders: [...fallbackFolders],
+    configPaths: [...configs]
+      .sort(
+        (a, b) =>
+          (a.origin === "machine" ? 1 : 0) - (b.origin === "machine" ? 1 : 0),
+      )
+      .filter((config) => appliedConfigs.has(config.path))
+      .map((config) => config.path),
     revision: createHash("sha256")
       .update(
         JSON.stringify([
@@ -262,6 +398,77 @@ function createEffectiveConfig(
   };
 }
 
+type ConfigDirective = NonNullable<
+  NuGetConfigFile["restoreDirectives"]
+>[number];
+function configDirectives(
+  configuration: XmlContainer | undefined,
+  name: string,
+  keys?: string[],
+): ConfigDirective[] {
+  return childElements(firstElement(configuration, name))
+    .filter(
+      (node) =>
+        node.name === "clear" ||
+        (["add", "remove"].includes(node.name) &&
+          (!keys || keys.includes(node.attributes.key ?? ""))),
+    )
+    .map((node) => ({
+      action: node.name as ConfigDirective["action"],
+      ...(node.attributes.key ? { key: node.attributes.key } : {}),
+      ...(node.attributes.value !== undefined
+        ? { value: node.attributes.value }
+        : {}),
+    }));
+}
+function mergeConfigValues(
+  values: Map<string, string>,
+  directives: readonly ConfigDirective[],
+  file: string,
+  isPath: boolean,
+) {
+  for (const directive of directives) {
+    if (directive.action === "clear") values.clear();
+    else if (directive.key && directive.action === "remove")
+      values.delete(directive.key);
+    else if (directive.key && directive.value !== undefined)
+      values.set(
+        directive.key,
+        isPath
+          ? path.resolve(
+              path.dirname(file),
+              directive.value.replace(
+                /%([^%]+)%/g,
+                (original, name: string) => process.env[name] ?? original,
+              ),
+            )
+          : directive.value,
+      );
+  }
+}
+function restoreConsent(
+  values: ReadonlyMap<string, string>,
+): NonNullable<NuGetConfigFile["restoreConsent"]> {
+  const flag = (value: string | undefined, fallback: boolean) =>
+    value?.trim()
+      ? ["true", "1"].includes(value.trim().toLowerCase())
+      : fallback;
+  const isGrantedInSettings = flag(values.get("enabled"), true);
+  return {
+    isGrantedInSettings,
+    isGranted:
+      isGrantedInSettings || flag(process.env.EnableNuGetPackageRestore, false),
+    isAutomatic: flag(values.get("automatic"), isGrantedInSettings),
+  };
+}
+function commonConsent(
+  values: NonNullable<NuGetConfigFile["restoreConsent"]>[],
+  key: keyof NonNullable<NuGetConfigFile["restoreConsent"]>,
+) {
+  return values.every((value) => value[key] === values[0]?.[key])
+    ? values[0]![key]
+    : null;
+}
 function getConfigOrigin(
   configPath: string,
   workspaceFolderPaths: string[],

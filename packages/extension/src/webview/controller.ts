@@ -585,7 +585,7 @@ export class PackageManagerController implements Disposable {
         await this.packageCommands.upgradePackages();
         return;
       case "reloadSources":
-        await this.reloadSources();
+        await this.describeSourceEditor(true);
         return;
       case "recalculateCacheSizes":
         await this.folders.recalculateCacheSizes();
@@ -605,7 +605,7 @@ export class PackageManagerController implements Disposable {
       case "openSettings":
         await commands.executeCommand(
           "workbench.action.openSettings",
-          "@ext:nuget-code",
+          "@ext:baliestri.nuget-code",
         );
         return;
       case "addPackage":
@@ -844,6 +844,7 @@ export class PackageManagerController implements Disposable {
         this.state.sources,
         workspace.workspaceFolders?.map((folder) => folder.uri.fsPath) ?? [],
         this.state.targets.find((target) => target.id === targetId),
+        this.settings.sourceSaveIn,
       );
       if (!isCurrent()) return;
       this.state = {
@@ -967,6 +968,7 @@ export class PackageManagerController implements Disposable {
         this.state.sources,
         workspace.workspaceFolders?.map((folder) => folder.uri.fsPath) ?? [],
         target,
+        this.settings.sourceSaveIn,
       );
     } catch {
       status = "failed";

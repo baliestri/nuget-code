@@ -1,5 +1,5 @@
 import { parseXml, XmlElement } from "@rgrove/parse-xml";
-import type { PackageFeed, SourceEdit } from "#contracts";
+import type { PackageFeed, SourceEdit, SourcePropertiesEdit } from "#contracts";
 
 const elements = (node: XmlElement) =>
   node.children.filter(
@@ -22,6 +22,65 @@ export const credentialSourceName = (name: string) =>
   name.replace(/_x([0-9a-f]{4})_/gi, (_, code: string) =>
     String.fromCharCode(parseInt(code, 16)),
   );
+
+/** Empty fields remove this file's override and reveal inherited/default settings. */
+export function editSourceProperties(
+  text: string,
+  edit: SourcePropertiesEdit,
+): string {
+  let result = text;
+  for (const key of ["globalPackagesFolder", "repositoryPath"] as const) {
+    const value = edit[key];
+    if (
+      typeof value !== "string" ||
+      hasControlCharacters(value) ||
+      value !== value.trim()
+    )
+      throw new Error(
+        "Enter a folder path without control characters or surrounding whitespace.",
+      );
+    const root = parseXml(result, { includeOffsets: true }).root;
+    if (!root || root.name !== "configuration")
+      throw new Error("Expected a NuGet configuration document.");
+    const sections = elements(root).filter((node) => node.name === "config");
+    if (sections.length > 1)
+      throw new Error(
+        "Multiple config sections must be resolved before editing.",
+      );
+    const section = sections[0];
+    const nodes = section
+      ? elements(section).filter(
+          (node) =>
+            ["add", "remove"].includes(node.name) &&
+            node.attributes.key === key,
+        )
+      : [];
+    for (const node of nodes.reverse()) {
+      const bounds = span(node);
+      result = result.slice(0, bounds.start) + result.slice(bounds.end);
+    }
+    if (!value) continue;
+    const current = parseXml(result, { includeOffsets: true }).root!;
+    const target =
+      elements(current).find((node) => node.name === "config") ?? current;
+    const bounds = span(target);
+    const newline = result.includes("\r\n") ? "\r\n" : "\n";
+    const entry = `<add key="${key}" value="${escape(value)}" />`;
+    const insertion =
+      target === current
+        ? `${newline}  <config>${newline}    ${entry}${newline}  </config>${newline}`
+        : `${newline}    ${entry}${newline}  `;
+    const original = result.slice(bounds.start, bounds.end);
+    const close = original.lastIndexOf(`</${target.name}>`);
+    const replacement =
+      close < 0
+        ? original.replace(/\/\s*>$/, `>${insertion}</${target.name}>`)
+        : original.slice(0, close) + insertion + original.slice(close);
+    result =
+      result.slice(0, bounds.start) + replacement + result.slice(bounds.end);
+  }
+  return result;
+}
 
 /** Edit selected nodes only; unrelated XML, including credentials, stays intact. */
 export function editPackageSource(

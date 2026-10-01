@@ -1,6 +1,46 @@
 import { expect, it } from "vitest";
-import { editPackageSource } from "./source-edits";
+import { editPackageSource, editSourceProperties } from "./source-edits";
 import { parseXml } from "@rgrove/parse-xml";
+it("edits folder overrides without changing credentials, unrelated settings or comments", () => {
+  const original =
+    '<configuration>\r\n<!-- keep -->\r\n<config><add key="globalPackagesFolder" value="old"/><add key="http_proxy.password" value="secret"/></config><packageSourceCredentials><Private><add key="Password" value="keep"/></Private></packageSourceCredentials></configuration>';
+  const updated = editSourceProperties(original, {
+    action: "properties",
+    globalPackagesFolder: "cache & packages",
+    repositoryPath: "local",
+  });
+  expect(updated).toContain('value="cache &amp; packages"');
+  expect(updated).toContain('<add key="http_proxy.password" value="secret"/>');
+  expect(updated).toContain(
+    '<packageSourceCredentials><Private><add key="Password" value="keep"/></Private></packageSourceCredentials>',
+  );
+  expect(updated).toContain("<!-- keep -->");
+  expect(updated).not.toMatch(/(?<!\r)\n/);
+  const removed = editSourceProperties(updated, {
+    action: "properties",
+    globalPackagesFolder: "",
+    repositoryPath: "",
+  });
+  expect(removed).not.toContain('key="globalPackagesFolder"');
+  expect(removed).not.toContain('key="repositoryPath"');
+  expect(() => parseXml(removed)).not.toThrow();
+});
+it("inserts folder properties into empty config and rejects invalid fields", () => {
+  expect(
+    editSourceProperties("<configuration/>", {
+      action: "properties",
+      globalPackagesFolder: "cache",
+      repositoryPath: "",
+    }),
+  ).toContain("<config>");
+  expect(() =>
+    editSourceProperties("<configuration/>", {
+      action: "properties",
+      globalPackagesFolder: "cache\nother",
+      repositoryPath: "",
+    }),
+  ).toThrow();
+});
 const edit = {
   action: "upsert" as const,
   originalName: "Feed",

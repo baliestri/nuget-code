@@ -1,4 +1,11 @@
 export interface PackageFeed {
+  protocolVersion?: number;
+  disableTLSCertificateValidation?: boolean;
+  isHttp?: boolean;
+  isLocal?: boolean;
+  isMachineWide?: boolean;
+  isOfficial?: boolean;
+  isPersistable?: boolean;
   /** Non-secret packageSources attributes retained when editing inherited declarations. */
   sourceAttributes?: Record<string, string> | undefined;
   declaredUrl?: string;
@@ -71,6 +78,36 @@ export interface NuGetPackageItem {
 }
 
 export interface NuGetConfigFile {
+  restoreConsent?: {
+    isGranted: boolean | null;
+    isGrantedInSettings: boolean | null;
+    isAutomatic: boolean | null;
+  };
+  restoreDirectives?: readonly {
+    action: "add" | "remove" | "clear";
+    key?: string;
+    value?: string;
+  }[];
+  fallbackDirectives?: readonly {
+    action: "add" | "remove" | "clear";
+    key?: string;
+    value?: string;
+  }[];
+  fallbackFolders?: readonly string[];
+  properties?: Partial<
+    Record<"globalPackagesFolder" | "repositoryPath", string>
+  >;
+  propertyDirectives?: readonly {
+    action: "add" | "remove" | "clear";
+    key?: string;
+    value?: string;
+  }[];
+  packageFolders?: readonly {
+    projectPath?: string;
+    globalPackagesFolder: string;
+    repositoryPath?: string;
+  }[];
+  configPaths?: readonly string[];
   mappingNames?: string[];
   revision?: string;
   sourceDirectives?: readonly {
@@ -113,7 +150,12 @@ export interface SourceEditRequest {
   sourceRevision: string;
   destinationId: string;
   destinationRevision: string;
-  edit: SourceEdit;
+  edit: SourceEdit | SourcePropertiesEdit;
+}
+export interface SourcePropertiesEdit {
+  action: "properties";
+  globalPackagesFolder: string;
+  repositoryPath: string;
 }
 export interface SourceEditorState {
   requestId?: string;

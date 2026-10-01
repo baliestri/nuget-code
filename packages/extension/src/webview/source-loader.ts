@@ -1,4 +1,5 @@
 import { workspace } from "vscode";
+import path from "node:path";
 import { NuGetClient } from "#client";
 import type { ExtensionLogger } from "#extension/logger";
 import type { ExtensionSettings } from "#extension/settings";
@@ -15,6 +16,9 @@ export async function loadPackageSources(
   );
 
   return NuGetClient.loadSources(settings, logger, {
+    ...(target?.kind === "solution"
+      ? { solutionDirectory: path.dirname(target.path) }
+      : {}),
     projectPaths: target
       ? target.kind === "project"
         ? [target.path]

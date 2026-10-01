@@ -3,7 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { afterEach, expect, it } from "vitest";
-import type { NuGetConfigFile, SourceEditRequest } from "#contracts";
+import type {
+  NuGetConfigFile,
+  SourceEdit,
+  SourceEditRequest,
+} from "#contracts";
 import { decodeProjectText, encodeProjectText } from "#client/project-files";
 import type { EditorPort } from "./version-edit-io";
 import { SourceEditService } from "./source-edit-service";
@@ -73,7 +77,7 @@ async function fixture(
   };
   const destinations = await service.describe([config], [root]);
   const destination = destinations.find((item) => item.path === file)!;
-  const request: SourceEditRequest = {
+  const request: SourceEditRequest & { edit: SourceEdit } = {
     requestId: "edit-1",
     sourceId: file,
     sourceRevision: config.revision!,
@@ -104,6 +108,37 @@ it.each(["utf8", "utf16le", "utf16be"] as const)(
     expect(output.text).not.toMatch(/(?<!\r)\n/);
   },
 );
+it("selects workspace, user and custom destinations from settings", async () => {
+  const test = await fixture();
+  const select = async (saveIn: string) =>
+    (
+      await test.service.describe([test.config], [test.root], undefined, saveIn)
+    ).find((item) => item.suggested);
+  expect((await select("workspace"))?.path).toBe(test.file);
+  expect((await select("user"))?.label).toMatch(/^User:/);
+  const custom = path.join(test.root, "custom.config");
+  expect((await select("custom.config"))?.path).toBe(custom);
+  expect((await select(custom))?.path).toBe(custom);
+});
+it("saves folder properties through the guarded editor", async () => {
+  const test = await fixture();
+  await test.service.apply(
+    {
+      ...test.request,
+      edit: {
+        action: "properties",
+        globalPackagesFolder: "cache",
+        repositoryPath: "local",
+      },
+    },
+    [test.config],
+  );
+  const text = decodeProjectText(await fs.readFile(test.file)).text;
+  expect(text).toContain('key="globalPackagesFolder" value="cache"');
+  expect(text).toContain('key="repositoryPath" value="local"');
+  expect(text).toContain('value="../packages"');
+  expect(text).toContain("<!-- keep -->");
+});
 it("rejects stale disk revisions and unadvertised destinations without writing", async () => {
   const test = await fixture();
   await expect(
