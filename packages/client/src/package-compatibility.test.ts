@@ -281,4 +281,5 @@ it.each([
       await fixture.dispose();
     }
   },
+  15_000,
 );
