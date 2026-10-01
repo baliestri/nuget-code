@@ -12,7 +12,11 @@ import {
   classifyOpenVsx,
   recoverySteps,
 } from "./recovery.ts";
-import { openVsxHasVersion, publishOpenVsx } from "./openvsx.ts";
+import {
+  openVsxHasVersion,
+  publishOpenVsx,
+  recoverOpenVsxReceipt,
+} from "./openvsx.ts";
 import {
   classifyGithubRelease,
   createGithubRelease,
@@ -137,9 +141,15 @@ if (action === "prepare") {
     prepared,
     artifact,
   );
-  const openVsxReceipt = await fs
+  let openVsxReceipt = await fs
     .readFile(path.resolve(args[2]), "utf8")
     .then(JSON.parse, () => null);
+  if (!openVsxReceipt)
+    openVsxReceipt = await recoverOpenVsxReceipt(
+      prepared,
+      artifact,
+      path.resolve(args[2]),
+    );
   const openVsx = classifyOpenVsx(
     await openVsxHasVersion(prepared.version),
     openVsxReceipt,
