@@ -13,9 +13,10 @@ import type { DataEnvironment } from "./package-data-adapter";
 import type { MutationPlan } from "#contracts";
 import type { EditorPort } from "./version-edit-io";
 
-it.each(["central", "simple"] as const)(
+it.each(["central", "simple", "explicit-central", "explicit-simple"] as const)(
   "executes fixed %s operations with the effective SDK and actual inventory",
-  async (layout) => {
+  async (scenario) => {
+    const layout = scenario.includes("central") ? "central" : "simple";
     const fixture = await createDotnetFixture({
       sdkMajor: Number(process.env.SDK_MAJOR),
       layout,
@@ -47,6 +48,28 @@ it.each(["central", "simple"] as const)(
           ],
           path.dirname(file),
         );
+      if (scenario.startsWith("explicit")) {
+        if (layout === "simple")
+          await checkedDotnet(
+            fixture.cli,
+            [
+              "add",
+              projects[0]!,
+              "package",
+              "Demo",
+              "--version",
+              "1.0.0",
+              "--source",
+              fixture.feedPath,
+            ],
+            fixture.root,
+          );
+        await fs.unlink(path.join(fixture.root, "Directory.Build.targets"));
+        await fs.writeFile(
+          path.join(fixture.root, "Extra.Config"),
+          "<configuration/>",
+        );
+      }
       const environment: DataEnvironment = {
         target: {
           id: "target",
@@ -58,7 +81,12 @@ it.each(["central", "simple"] as const)(
         feeds: [
           { id: "local", name: "Local", enabled: true, url: fixture.feedPath },
         ],
-        configPaths: [path.join(fixture.root, "NuGet.Config")],
+        configPaths: [
+          path.join(fixture.root, "NuGet.Config"),
+          ...(scenario.startsWith("explicit")
+            ? [path.join(fixture.root, "Extra.Config")]
+            : []),
+        ],
         allowedRoots: [fixture.root],
         settings: {
           dotnetPath: "dotnet",
@@ -104,7 +132,7 @@ it.each(["central", "simple"] as const)(
       };
       let reconciled = 0;
       const port = new PackageMutationPort(
-        { context, environment, automatic: layout === "central" },
+        { context, environment, automatic: scenario === "central" },
         () => environment,
         logger,
         async () => {
@@ -127,6 +155,29 @@ it.each(["central", "simple"] as const)(
         })),
       };
       const prepared = await port.prepare(plan, new AbortController().signal);
+      if (scenario === "explicit-central") {
+        const scoped = new PackageMutationPort(
+          {
+            context: { ...context, projectPaths: [projects[0]!] },
+            environment,
+            automatic: false,
+          },
+          () => environment,
+          logger,
+          async () => {},
+          editor,
+        );
+        const expanded = await scoped.prepare(
+          { ...plan, steps: [plan.steps[0]!] },
+          new AbortController().signal,
+        );
+        expect(expanded.plan.steps[0]!.projectPaths).toEqual(projects);
+        const approved = await scoped.prepare(
+          expanded.plan,
+          new AbortController().signal,
+        );
+        expect(approved.plan.steps[0]!.projectPaths).toEqual(projects);
+      }
       const outcome = await runMutation(
         prepared.plan,
         {
@@ -156,7 +207,7 @@ it.each(["central", "simple"] as const)(
           .filter((reference) => reference.packageId === "Demo")
           .every((reference) => reference.resolvedVersion === "1.5.0"),
       ).toBe(true);
-      if (layout === "simple") {
+      if (scenario === "simple") {
         const remove = {
           ...plan,
           id: "remove",

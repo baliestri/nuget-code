@@ -38,6 +38,14 @@ const globalActions = computed(() =>
 const target = computed(() => selectedTarget(model.value));
 const projectPaths = computed(() => target.value?.projectPaths ?? []);
 const authorLinks = computed(() => splitAuthors(props.packageItem.authors));
+const unverifiedUpdate = computed(() =>
+  model.value.updates.evaluation.candidates.some(
+    (candidate) =>
+      candidate.packageId.toLowerCase() ===
+        props.packageItem.name.toLowerCase() &&
+      candidate.compatibility.status === "unverified",
+  ),
+);
 
 function setSearch(query: string): void {
   emit("search", query);
@@ -179,6 +187,11 @@ function dependencyKey(group: NuGetPackageDependencyGroup): string {
       </div>
     </div>
 
+    <p v-if="unverifiedUpdate" class="text-xs text-fg-muted">
+      Automatic compatibility verification is unavailable. Choose a version and
+      use Update selected projects to update explicitly; NuGet restore will
+      validate the result.
+    </p>
     <details class="rounded border border-border-muted bg-surface-1" open>
       <summary class="cursor-pointer px-3 py-2 font-semibold">Info</summary>
       <dl class="grid gap-2 p-3 text-sm">

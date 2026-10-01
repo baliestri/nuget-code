@@ -53,6 +53,7 @@ import {
   type EditorPort,
 } from "#extension/webview/version-edit-io";
 import type { NuGetClientLogger } from "#client/types";
+import { prepareExplicitUpdate } from "./explicit-package-update";
 
 export interface PackageMutationIntent {
   context: UpgradeContext;
@@ -142,6 +143,26 @@ export class PackageMutationPort implements OperationPort {
           }
         },
       };
+    }
+    if (
+      !this.intent.automatic &&
+      plan.steps.length &&
+      plan.steps.every(
+        (step) =>
+          step.kind === "package" &&
+          ["update", "downgrade"].includes(step.action),
+      )
+    ) {
+      const explicit = await prepareExplicitUpdate(
+        plan,
+        environment,
+        projects,
+        signal,
+        (paths) => this.assertClean(paths),
+        this.logger,
+        this.editor,
+      );
+      if (explicit) return explicit;
     }
     const adapter = new PackageDataAdapter(() => environment, this.logger);
     try {

@@ -96,7 +96,7 @@ const explanation = computed(() =>
           : pending(candidate)
             ? "Verification is pending or in progress. Excluded from Update All until verified."
             : `${result.status === "unverified" ? (reasons[result.reason] ?? "No applicable compatibility verification is available for this project.") : "This update is incompatible with the project."} Excluded from Update All.`;
-      return `${candidate.projectPath} — ${candidate.version}\n${reason}`;
+      return `${candidate.projectPath} — ${candidate.version}\n${reason}${result.status === "unverified" && !pending(candidate) ? " Select a version in package details to update explicitly and let NuGet restore validate it. See Log for project evaluation details." : ""}`;
     })
     .join("\n\n"),
 );

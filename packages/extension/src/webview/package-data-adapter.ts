@@ -175,8 +175,17 @@ export class PackageDataAdapter implements PackageDataPort {
             signal,
           );
           evaluatedRoots.set(pathKey(root), evaluated);
+          if (!evaluated.isolation.supported)
+            this.logger.warning(
+              "nuget.packages",
+              `Automatic verification unavailable for ${root}: ${evaluated.isolation.reasons.join(", ")}. Explicit updates can use NuGet restore.`,
+            );
         } catch (error) {
           if (signal.aborted) throw error;
+          this.logger.warning(
+            "nuget.packages",
+            `Project context evaluation failed for ${projectPath}: ${error instanceof Error && "code" in error ? String(error.code) : "evaluation-failed"}.`,
+          );
         }
       }
       if (evaluated) {
