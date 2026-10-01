@@ -32,6 +32,7 @@ jobs:
       artifact_name: ${{ steps.locate.outputs.artifact_name }}
       promote: ${{ steps.plan.outputs.promote }}
       publish_marketplace: ${{ steps.plan.outputs.publish_marketplace }}
+      publish_openvsx: ${{ steps.plan.outputs.publish_openvsx }}
       create_github_release: ${{ steps.plan.outputs.create_github_release }}
       sync: ${{ steps.plan.outputs.sync }}
     env:
@@ -86,7 +87,7 @@ jobs:
           run-id: ${{ inputs.run_id }}
           github-token: ${{ github.token }}
           path: release-artifacts/
-      - name: Validate original identity and find publication receipt
+      - name: Validate original identity and find publication receipts
         shell: bash
         env:
           ORIGINAL_RUN: ${{ inputs.run_id }}
@@ -96,21 +97,25 @@ jobs:
         run: |
           node scripts/verify-vsix.mjs --manifest release-artifacts/artifact.json
           node -e 'const a=require("./release-artifacts/artifact.json");if(a.runId!==process.env.ORIGINAL_RUN||String(a.runAttempt)!==process.env.ORIGINAL_ATTEMPT||a.version!==process.env.VERSION||a.sourceSha!==process.env.SOURCE_SHA)throw Error("Original artifact identity differs.")'
-          receipt_name="marketplace-${SOURCE_SHA}-${ORIGINAL_RUN}-${ORIGINAL_ATTEMPT}"
-          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100&name=$receipt_name" > receipts.json
-          receipt_run="$(node -e 'const a=require("./receipts.json").artifacts.filter(x=>!x.expired);if(a.length)process.stdout.write(String(a.sort((x,y)=>y.created_at.localeCompare(x.created_at))[0].workflow_run.id))')"
-          if [[ -n "$receipt_run" ]]; then
-            gh run download "$receipt_run" --name "$receipt_name" --dir release-artifacts
-          else
-            printf 'null\n' > release-artifacts/marketplace-receipt.json
-          fi
+          for registry in marketplace openvsx; do
+            receipt_name="${registry}-${SOURCE_SHA}-${ORIGINAL_RUN}-${ORIGINAL_ATTEMPT}"
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100&name=$receipt_name" > receipts.json
+            receipt_run="$(node -e 'const a=require("./receipts.json").artifacts.filter(x=>!x.expired);if(a.length)process.stdout.write(String(a.sort((x,y)=>y.created_at.localeCompare(x.created_at))[0].workflow_run.id))')"
+            if [[ -n "$receipt_run" ]]; then
+              gh run download "$receipt_run" --name "$receipt_name" --dir release-artifacts
+            else
+              printf 'null\n' > "release-artifacts/${registry}-receipt.json"
+            fi
+          done
       - name: Classify pending steps
         id: plan
-        run: node scripts/release/cli.mjs plan-recovery release-artifacts/artifact.json release-artifacts/marketplace-receipt.json
+        run: node scripts/release/cli.mjs plan-recovery release-artifacts/artifact.json release-artifacts/marketplace-receipt.json release-artifacts/openvsx-receipt.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: recovery-input-${{ github.run_id }}-${{ github.run_attempt }}
-          path: release-artifacts/marketplace-receipt.json
+          path: |
+            release-artifacts/marketplace-receipt.json
+            release-artifacts/openvsx-receipt.json
           if-no-files-found: error
           retention-days: 90
 
@@ -192,8 +197,52 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+  openvsx:
+    needs: [inspect, promote, marketplace]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.inspect.outputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          run_install: false
+          cache: true
+          cache_dependency_path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ needs.inspect.outputs.artifact_name }}
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+          path: release-artifacts/
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: recovery-input-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-artifacts/
+      - name: Verify or publish the same VSIX to Open VSX
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: node scripts/release/cli.mjs openvsx release-artifacts/artifact.json release-artifacts/openvsx-receipt.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: openvsx-${{ needs.inspect.outputs.source_sha }}-${{ inputs.run_id }}-${{ inputs.run_attempt }}
+          path: release-artifacts/openvsx-receipt.json
+          if-no-files-found: error
+          retention-days: 90
+
   finish:
-    needs: [inspect, marketplace]
+    needs: [inspect, marketplace, openvsx]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -238,7 +287,7 @@ jobs:
 
   summary:
     if: ${{ always() }}
-    needs: [inspect, promote, marketplace, finish]
+    needs: [inspect, promote, marketplace, openvsx, finish]
     runs-on: ubuntu-latest
     steps:
       - name: Report recovery outcome
@@ -248,7 +297,8 @@ jobs:
           INSPECT: ${{ needs.inspect.result }}
           PROMOTE: ${{ needs.promote.result }}
           MARKETPLACE: ${{ needs.marketplace.result }}
+          OPENVSX: ${{ needs.openvsx.result }}
           FINISH: ${{ needs.finish.result }}
         run: |
-          printf '## Recovery\n\nOriginal SHA: %s\n\nInspection: %s\nPromotion: %s\nMarketplace: %s\nRelease and sync: %s\n' "$SHA" "$INSPECT" "$PROMOTE" "$MARKETPLACE" "$FINISH" >> "$GITHUB_STEP_SUMMARY"
-          if [[ "$INSPECT" != success || "$PROMOTE" != success || "$MARKETPLACE" != success || "$FINISH" != success ]]; then exit 1; fi
+          printf '## Recovery\n\nOriginal SHA: %s\n\nInspection: %s\nPromotion: %s\nMarketplace: %s\nOpen VSX: %s\nRelease and sync: %s\n' "$SHA" "$INSPECT" "$PROMOTE" "$MARKETPLACE" "$OPENVSX" "$FINISH" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$INSPECT" != success || "$PROMOTE" != success || "$MARKETPLACE" != success || "$OPENVSX" != success || "$FINISH" != success ]]; then exit 1; fi

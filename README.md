@@ -2,7 +2,7 @@
 
 This repository contains the NuGet Manager extension for Visual Studio Code. It brings package browsing, project actions, NuGet source management, cache folders, and logs into a dedicated panel for .NET workspaces.
 
-If you want to use the extension, see the [Marketplace listing](https://marketplace.visualstudio.com/items?itemName=baliestri.nuget-code) and the [extension README](packages/extension/README.md) for features, screenshots, installation, and configuration.
+If you want to use the extension, see its [Visual Studio Marketplace listing](https://marketplace.visualstudio.com/items?itemName=baliestri.nuget-code), [Open VSX listing](https://open-vsx.org/extension/baliestri/nuget-code), and [extension README](packages/extension/README.md) for features, screenshots, installation, and configuration.
 
 ## Repository
 

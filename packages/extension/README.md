@@ -33,7 +33,7 @@ Browse and manage NuGet packages in a dedicated VS Code panel for .NET workspace
 
 ## Installation
 
-Install **NuGet Manager for VS Code** by **baliestri** from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=baliestri.nuget-code), or run:
+Install **NuGet Manager for VS Code** by **baliestri** from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=baliestri.nuget-code) or [Open VSX](https://open-vsx.org/extension/baliestri/nuget-code), or run:
 
 ```bash
 code --install-extension baliestri.nuget-code

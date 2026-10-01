@@ -7,7 +7,12 @@ import { syncDevelop } from "./sync.ts";
 import { verifyVsix } from "./artifact.ts";
 import { assertArtifactMatches, validatePreparedRelease } from "./identity.ts";
 import { git, gitSucceeds } from "./git.ts";
-import { classifyMarketplace, recoverySteps } from "./recovery.ts";
+import {
+  classifyMarketplace,
+  classifyOpenVsx,
+  recoverySteps,
+} from "./recovery.ts";
+import { openVsxHasVersion, publishOpenVsx } from "./openvsx.ts";
 import {
   classifyGithubRelease,
   createGithubRelease,
@@ -44,6 +49,8 @@ if (action === "prepare") {
     if (/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(published))
       assertVersionIncreases(args[0], published);
   }
+  if (await openVsxHasVersion(args[0]))
+    throw new Error("Open VSX already contains the requested release version.");
   const prepared = await prepareRelease(repo, args[0], args[1]);
   console.log(JSON.stringify(prepared));
 } else if (action === "promote") {
@@ -57,6 +64,17 @@ if (action === "prepare") {
     throw new Error("Usage: cli.mjs marketplace <manifest> <receipt-path>");
   const { manifestPath, prepared } = await checked(args[0]);
   const receipt = await publishMarketplace(
+    repo,
+    manifestPath,
+    prepared,
+    path.resolve(args[1]),
+  );
+  console.log(JSON.stringify(receipt));
+} else if (action === "openvsx") {
+  if (args.length !== 2)
+    throw new Error("Usage: cli.mjs openvsx <manifest> <receipt-path>");
+  const { manifestPath, prepared } = await checked(args[0]);
+  const receipt = await publishOpenVsx(
     repo,
     manifestPath,
     prepared,
@@ -84,9 +102,9 @@ if (action === "prepare") {
     );
   console.log(result);
 } else if (action === "plan-recovery") {
-  if (args.length !== 2)
+  if (args.length !== 3)
     throw new Error(
-      "Usage: cli.mjs plan-recovery <manifest> <receipt-or-missing-path>",
+      "Usage: cli.mjs plan-recovery <manifest> <marketplace-receipt> <openvsx-receipt>",
     );
   const { manifestPath, artifact, prepared } = await checked(args[0]);
   git(repo, ["fetch", "origin", "main", "develop", prepared.branch, "--tags"]);
@@ -111,6 +129,15 @@ if (action === "prepare") {
     prepared,
     artifact,
   );
+  const openVsxReceipt = await fs
+    .readFile(path.resolve(args[2]), "utf8")
+    .then(JSON.parse, () => null);
+  const openVsx = classifyOpenVsx(
+    await openVsxHasVersion(prepared.version),
+    openVsxReceipt,
+    prepared,
+    artifact,
+  );
   const githubRelease = await classifyGithubRelease(
     repo,
     manifestPath,
@@ -125,6 +152,7 @@ if (action === "prepare") {
   const steps = recoverySteps({
     promoted: tag === prepared.sourceSha && main === prepared.sourceSha,
     marketplace,
+    openVsx,
     githubRelease,
     developContainsRelease,
   });
@@ -132,7 +160,7 @@ if (action === "prepare") {
   if (process.env.GITHUB_OUTPUT) {
     await fs.appendFile(
       process.env.GITHUB_OUTPUT,
-      `source_sha=${prepared.sourceSha}\nversion=${prepared.version}\n${["promote", "publish-marketplace", "create-github-release", "sync"].map((step) => `${step.replaceAll("-", "_")}=${steps.includes(step)}`).join("\n")}\n`,
+      `source_sha=${prepared.sourceSha}\nversion=${prepared.version}\n${["promote", "publish-marketplace", "publish-openvsx", "create-github-release", "sync"].map((step) => `${step.replaceAll("-", "_")}=${steps.includes(step)}`).join("\n")}\n`,
     );
   }
 } else {

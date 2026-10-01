@@ -139,8 +139,45 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+  openvsx:
+    needs: [prepare, package, promote, marketplace]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          run_install: false
+          cache: true
+          cache_dependency_path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ needs.package.outputs.artifact_name }}
+          path: release-artifacts/
+      - name: Publish validated VSIX to Open VSX
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: node scripts/release/cli.mjs openvsx release-artifacts/artifact.json release-artifacts/openvsx-receipt.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: openvsx-${{ needs.prepare.outputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-artifacts/openvsx-receipt.json
+          if-no-files-found: error
+          retention-days: 90
+
   github_release:
-    needs: [prepare, package, marketplace]
+    needs: [prepare, package, marketplace, openvsx]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -208,7 +245,17 @@ jobs:
 
   summary:
     if: ${{ always() }}
-    needs: [prepare, ci, package, promote, marketplace, github_release, sync]
+    needs:
+      [
+        prepare,
+        ci,
+        package,
+        promote,
+        marketplace,
+        openvsx,
+        github_release,
+        sync,
+      ]
     runs-on: ubuntu-latest
     steps:
       - name: Report separate release stages
@@ -220,13 +267,14 @@ jobs:
           PACKAGE: ${{ needs.package.result }}
           PROMOTE: ${{ needs.promote.result }}
           MARKETPLACE: ${{ needs.marketplace.result }}
+          OPENVSX: ${{ needs.openvsx.result }}
           GITHUB_RELEASE: ${{ needs.github_release.result }}
           SYNC: ${{ needs.sync.result }}
         run: |
           {
             printf '## Release progress\n\nPrepared SHA: %s\n\n' "$SHA"
             printf '| Stage | Result |\n|---|---|\n'
-            printf '| Prepare | %s |\n| CI | %s |\n| Package verification | %s |\n| Promote | %s |\n| Marketplace | %s |\n| GitHub Release | %s |\n| Sync develop | %s |\n' "$PREPARE" "$CI" "$PACKAGE" "$PROMOTE" "$MARKETPLACE" "$GITHUB_RELEASE" "$SYNC"
-            if [[ "$MARKETPLACE" == success && "$SYNC" != success ]]; then printf '\nPublished; develop synchronization is pending.\n'; fi
+            printf '| Prepare | %s |\n| CI | %s |\n| Package verification | %s |\n| Promote | %s |\n| Marketplace | %s |\n| Open VSX | %s |\n| GitHub Release | %s |\n| Sync develop | %s |\n' "$PREPARE" "$CI" "$PACKAGE" "$PROMOTE" "$MARKETPLACE" "$OPENVSX" "$GITHUB_RELEASE" "$SYNC"
+            if [[ "$MARKETPLACE" == success && "$OPENVSX" == success && "$SYNC" != success ]]; then printf '\nPublished; develop synchronization is pending.\n'; fi
           } >> "$GITHUB_STEP_SUMMARY"
-          if [[ "$PREPARE" != success || "$CI" != success || "$PACKAGE" != success || "$PROMOTE" != success || "$MARKETPLACE" != success || "$GITHUB_RELEASE" != success || "$SYNC" != success ]]; then exit 1; fi
+          if [[ "$PREPARE" != success || "$CI" != success || "$PACKAGE" != success || "$PROMOTE" != success || "$MARKETPLACE" != success || "$OPENVSX" != success || "$GITHUB_RELEASE" != success || "$SYNC" != success ]]; then exit 1; fi

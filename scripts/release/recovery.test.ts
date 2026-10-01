@@ -1,5 +1,9 @@
 import { expect, it } from "vitest";
-import { classifyMarketplace, recoverySteps } from "./recovery.ts";
+import {
+  classifyMarketplace,
+  classifyOpenVsx,
+  recoverySteps,
+} from "./recovery.ts";
 
 const prepared = {
   version: "2.0.0",
@@ -28,6 +32,7 @@ it("resumes only pending steps after partial publication", () => {
     recoverySteps({
       promoted: true,
       marketplace: "verified",
+      openVsx: "verified",
       githubRelease: "absent",
       developContainsRelease: false,
     }),
@@ -36,6 +41,7 @@ it("resumes only pending steps after partial publication", () => {
     recoverySteps({
       promoted: true,
       marketplace: "verified",
+      openVsx: "verified",
       githubRelease: "verified",
       developContainsRelease: false,
     }),
@@ -44,6 +50,7 @@ it("resumes only pending steps after partial publication", () => {
     recoverySteps({
       promoted: true,
       marketplace: "ambiguous",
+      openVsx: "verified",
       githubRelease: "absent",
       developContainsRelease: false,
     }),
@@ -52,10 +59,36 @@ it("resumes only pending steps after partial publication", () => {
     recoverySteps({
       promoted: false,
       marketplace: "verified",
+      openVsx: "verified",
       githubRelease: "absent",
       developContainsRelease: false,
     }),
   ).toThrow();
+});
+
+it("requires Open VSX publication before GitHub Release and resumes it independently", () => {
+  expect(
+    recoverySteps({
+      promoted: true,
+      marketplace: "verified",
+      openVsx: "absent",
+      githubRelease: "absent",
+      developContainsRelease: false,
+    }),
+  ).toEqual(["publish-openvsx", "create-github-release", "sync"]);
+  expect(() =>
+    recoverySteps({
+      promoted: true,
+      marketplace: "verified",
+      openVsx: "absent",
+      githubRelease: "verified",
+      developContainsRelease: true,
+    }),
+  ).toThrow();
+  expect(classifyOpenVsx(false, null, prepared, artifact)).toBe("absent");
+  expect(classifyOpenVsx(true, null, prepared, artifact)).toBe("ambiguous");
+  expect(classifyOpenVsx(true, receipt, prepared, artifact)).toBe("verified");
+  expect(() => classifyOpenVsx(false, receipt, prepared, artifact)).toThrow();
 });
 
 it("requires a matching receipt and remote version for Marketplace verification", () => {
