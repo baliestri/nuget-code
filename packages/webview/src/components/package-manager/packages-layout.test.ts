@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import type { NuGetPackageItem, UpgradeCandidate } from "#contracts";
 import { usePackageManagerStore } from "#webview/stores/packageManager";
@@ -108,7 +108,7 @@ it("changes explicit feed selection without mutating feed definitions or queryin
   const wrapper = mount(FeedFilter, {
     props: { feeds, filter: { mode: "all" } },
   });
-  await wrapper.get("summary").trigger("click");
+  await wrapper.get('button[aria-expanded="false"]').trigger("click");
   expect(wrapper.emitted("change")).toBeUndefined();
   await wrapper
     .get('input[aria-label="Public: https://a.test/index.json"]')
@@ -118,9 +118,30 @@ it("changes explicit feed selection without mutating feed definitions or queryin
   ]);
   expect(feeds.every((feed) => feed.enabled)).toBe(true);
   await wrapper.setProps({ filter: { mode: "selected", ids: [] } });
-  expect(wrapper.get("summary").text()).toBe("No feeds selected");
-  await wrapper.get("button").trigger("click");
+  expect(wrapper.get('button[aria-expanded="true"]').text()).toBe(
+    "No feeds selected",
+  );
+  await wrapper.get("button.border-t").trigger("click");
   expect(wrapper.emitted("manage")).toHaveLength(1);
+  wrapper.unmount();
+});
+it("keeps the feed panel open when clicking its empty area and closes it outside", async () => {
+  const wrapper = mount(FeedFilter, {
+    props: { feeds, filter: { mode: "all" } },
+    attachTo: document.body,
+  });
+  await wrapper.get('button[aria-expanded="false"]').trigger("click");
+  expect(wrapper.find('button[aria-expanded="true"]').exists()).toBe(true);
+  await wrapper.get("div.fixed").trigger("pointerdown");
+  await wrapper.get('button[aria-expanded="true"]').trigger("focusout", {
+    relatedTarget: null,
+  });
+  await wrapper.get("div.fixed").trigger("click");
+  expect(wrapper.find("div.fixed").exists()).toBe(true);
+  expect(wrapper.emitted("change")).toBeUndefined();
+  document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+  await wrapper.vm.$nextTick();
+  expect(wrapper.find("div.fixed").exists()).toBe(false);
   wrapper.unmount();
 });
 it("keeps Installed searches local, switches tabs by keyboard, and keeps implicit packages collapsed", async () => {
@@ -239,8 +260,8 @@ it("keeps the feed popup within the viewport and returns keyboard focus on Escap
     attachTo: document.body,
     props: { feeds, filter: { mode: "all" } },
   });
-  const summary = wrapper.get("summary");
-  vi.spyOn(summary.element, "getBoundingClientRect").mockReturnValue({
+  const trigger = wrapper.get('button[aria-expanded="false"]');
+  vi.spyOn(trigger.element, "getBoundingClientRect").mockReturnValue({
     left: 50,
     right: 180,
     top: 40,
@@ -251,6 +272,7 @@ it("keeps the feed popup within the viewport and returns keyboard focus on Escap
     y: 40,
     toJSON: () => ({}),
   });
+  await trigger.trigger("click");
   const panel = wrapper.get("div.fixed");
   vi.spyOn(panel.element, "getBoundingClientRect").mockReturnValue({
     left: 0,
@@ -263,13 +285,12 @@ it("keeps the feed popup within the viewport and returns keyboard focus on Escap
     y: 0,
     toJSON: () => ({}),
   });
-  (wrapper.element as HTMLDetailsElement).open = true;
-  await wrapper.trigger("toggle");
-  await wrapper.vm.$nextTick();
+  window.dispatchEvent(new Event("resize"));
+  await flushPromises();
   expect((panel.element as HTMLElement).style.left).toBe("8px");
   await panel.trigger("keydown", { key: "Escape" });
-  expect((wrapper.element as HTMLDetailsElement).open).toBe(false);
-  expect(document.activeElement).toBe(summary.element);
+  expect(wrapper.find("div.fixed").exists()).toBe(false);
+  expect(document.activeElement).toBe(trigger.element);
   expect(wrapper.emitted("change")).toBeUndefined();
   wrapper.unmount();
 });

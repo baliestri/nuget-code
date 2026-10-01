@@ -1,19 +1,21 @@
 <script setup lang="ts">
 import { computed, ref, nextTick, onMounted, onUnmounted } from "vue";
 import type { PackageFeed, PackageFeedFilter } from "#contracts";
+import VscodeIcon from "#webview/components/vscode/VscodeIcon.vue";
 const props = defineProps<{
   feeds: PackageFeed[];
   filter: PackageFeedFilter;
 }>();
 const emit = defineEmits<{ change: [filter: PackageFeedFilter]; manage: [] }>();
-const dropdown = ref<HTMLDetailsElement>();
+const dropdown = ref<HTMLElement>();
 const panel = ref<HTMLElement>();
+const open = ref(false);
 const panelStyle = ref({ left: "0px", top: "0px", maxHeight: "80vh" });
 async function positionPanel(): Promise<void> {
-  if (!dropdown.value?.open) return;
+  if (!open.value) return;
   await nextTick();
   const anchor = dropdown.value
-    ?.querySelector("summary")
+    ?.querySelector("button")
     ?.getBoundingClientRect();
   const bounds = panel.value?.getBoundingClientRect();
   if (!anchor || !bounds) return;
@@ -33,8 +35,19 @@ async function positionPanel(): Promise<void> {
     maxHeight: `${Math.max(40, window.innerHeight - top - 8)}px`,
   };
 }
-onMounted(() => window.addEventListener("resize", positionPanel));
-onUnmounted(() => window.removeEventListener("resize", positionPanel));
+function closeOnOutsidePointerDown(event: PointerEvent): void {
+  if (open.value && !dropdown.value?.contains(event.target as Node)) {
+    open.value = false;
+  }
+}
+onMounted(() => {
+  window.addEventListener("resize", positionPanel);
+  window.addEventListener("pointerdown", closeOnOutsidePointerDown);
+});
+onUnmounted(() => {
+  window.removeEventListener("resize", positionPanel);
+  window.removeEventListener("pointerdown", closeOnOutsidePointerDown);
+});
 const enabled = computed(() =>
   props.feeds.filter((feed) => feed.enabled && feed.id !== "__all__"),
 );
@@ -60,32 +73,41 @@ function toggle(id: string, event: Event): void {
   emit("change", { mode: "selected", ids: [...selected] });
 }
 function close(): void {
-  if (dropdown.value) {
-    dropdown.value.open = false;
-    dropdown.value.querySelector("summary")?.focus();
-  }
+  open.value = false;
+  dropdown.value?.querySelector("button")?.focus();
+}
+function toggleDropdown(): void {
+  open.value = !open.value;
+  if (open.value) void positionPanel();
 }
 </script>
 <template>
-  <details
+  <div
     ref="dropdown"
     class="relative max-w-full text-sm"
     @keydown.esc.stop="close"
-    @toggle="positionPanel"
     @focusout="
       (event) => {
-        if (dropdown && !dropdown.contains(event.relatedTarget as Node))
-          dropdown.open = false;
+        if (
+          event.relatedTarget &&
+          !dropdown?.contains(event.relatedTarget as Node)
+        )
+          open = false;
       }
     "
   >
-    <summary
-      class="cursor-pointer truncate rounded border border-dropdown-border bg-dropdown px-2 py-1 text-dropdown-fg"
+    <button
+      type="button"
+      class="flex max-w-full cursor-pointer items-center justify-between gap-2 rounded border border-dropdown-border bg-dropdown px-2 py-1 text-left text-dropdown-fg"
       :title="label"
+      :aria-expanded="open"
+      @click="toggleDropdown"
     >
-      {{ label }}
-    </summary>
+      <span class="truncate">{{ label }}</span>
+      <VscodeIcon icon="chevron-down" />
+    </button>
     <div
+      v-if="open"
       ref="panel"
       :style="panelStyle"
       class="fixed z-50 grid w-72 max-w-[85vw] gap-2 overflow-auto rounded border border-dropdown-border bg-dropdown p-3 text-dropdown-fg shadow-lg"
@@ -139,5 +161,5 @@ function close(): void {
         Manage Feeds
       </button>
     </div>
-  </details>
+  </div>
 </template>
