@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { setTimeout as delay } from "node:timers/promises";
 import { sha256, verifyVsix } from "./artifact.ts";
 import {
   assertArtifactMatches,
@@ -32,7 +33,14 @@ export function command(
   return result.status === 0 ? result.stdout.trim() : "";
 }
 
-export function marketplaceVersions(repo: string): readonly string[] {
+interface MarketplaceVersion {
+  version: string;
+  properties?: { key: string; value: string }[];
+}
+
+export function marketplaceVersionInfo(
+  repo: string,
+): readonly MarketplaceVersion[] {
   const output = command(
     "pnpm",
     [
@@ -46,14 +54,54 @@ export function marketplaceVersions(repo: string): readonly string[] {
     ],
     repo,
   );
-  const info = JSON.parse(output) as { versions?: { version: string }[] };
+  const info = JSON.parse(output) as { versions?: MarketplaceVersion[] };
   if (!Array.isArray(info.versions))
     throw new Error("Marketplace version list unavailable.");
-  return info.versions.map((item) => item.version);
+  return info.versions;
+}
+
+export function marketplaceVersions(repo: string): readonly string[] {
+  return marketplaceVersionInfo(repo).map((item) => item.version);
 }
 
 export function marketplaceHasVersion(repo: string, version: string): boolean {
   return marketplaceVersions(repo).includes(version);
+}
+
+export function verifyMarketplaceChecksum(
+  versions: readonly MarketplaceVersion[],
+  version: string,
+  checksum: string,
+): boolean {
+  const published = versions.find((item) => item.version === version);
+  if (!published) return false;
+  const publishedChecksum = published.properties?.find(
+    (item) => item.key === "Microsoft.VisualStudio.Services.VsixSha256",
+  )?.value;
+  if (!publishedChecksum || publishedChecksum.toLowerCase() !== checksum)
+    throw new Error("Marketplace VSIX checksum differs from release artifact.");
+  return true;
+}
+
+export async function recoverMarketplaceReceipt(
+  repo: string,
+  prepared: PreparedRelease,
+  artifact: Awaited<ReturnType<typeof verifyVsix>>,
+  receiptPath: string,
+): Promise<PublicationReceipt | null> {
+  const versions = marketplaceVersionInfo(repo);
+  if (!verifyMarketplaceChecksum(versions, artifact.version, artifact.sha256))
+    return null;
+  const receipt: PublicationReceipt = {
+    version: artifact.version,
+    sourceSha: artifact.sourceSha,
+    sha256: artifact.sha256,
+    runId: artifact.runId,
+    runAttempt: artifact.runAttempt,
+  };
+  validateReceipt(receipt, prepared, artifact);
+  await fs.writeFile(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
+  return receipt;
 }
 
 export async function publishMarketplace(
@@ -64,9 +112,16 @@ export async function publishMarketplace(
 ): Promise<PublicationReceipt> {
   const artifact = await verifyVsix(manifestPath);
   assertArtifactMatches(prepared, artifact);
-  const existing = (await fs
+  let existing = (await fs
     .readFile(receiptPath, "utf8")
     .then(JSON.parse, () => null)) as unknown;
+  if (!existing)
+    existing = await recoverMarketplaceReceipt(
+      repo,
+      prepared,
+      artifact,
+      receiptPath,
+    );
   const state = classifyMarketplace(
     marketplaceHasVersion(repo, artifact.version),
     existing,
@@ -93,7 +148,21 @@ export async function publishMarketplace(
     ],
     repo,
   );
-  if (!marketplaceHasVersion(repo, artifact.version))
+  let published = false;
+  for (let attempt = 0; attempt < 120; attempt++) {
+    if (
+      verifyMarketplaceChecksum(
+        marketplaceVersionInfo(repo),
+        artifact.version,
+        artifact.sha256,
+      )
+    ) {
+      published = true;
+      break;
+    }
+    if (attempt < 119) await delay(5000);
+  }
+  if (!published)
     throw new Error("Marketplace did not confirm the published version.");
   const receipt = {
     version: artifact.version,

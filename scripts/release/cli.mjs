@@ -19,6 +19,7 @@ import {
   marketplaceHasVersion,
   marketplaceVersions,
   publishMarketplace,
+  recoverMarketplaceReceipt,
 } from "./publish.ts";
 import { assertVersionIncreases, parseReleaseVersion } from "./version.ts";
 
@@ -120,9 +121,16 @@ if (action === "prepare") {
     (tag === prepared.sourceSha && main !== prepared.sourceSha)
   )
     throw new Error("Main and tag have conflicting release identities.");
-  const receipt = await fs
+  let receipt = await fs
     .readFile(path.resolve(args[1]), "utf8")
     .then(JSON.parse, () => null);
+  if (!receipt)
+    receipt = await recoverMarketplaceReceipt(
+      repo,
+      prepared,
+      artifact,
+      path.resolve(args[1]),
+    );
   const marketplace = classifyMarketplace(
     marketplaceHasVersion(repo, prepared.version),
     receipt,
