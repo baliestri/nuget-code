@@ -50,6 +50,8 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ORIGINAL_RUN/artifacts?per_page=100" > artifacts.json
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ORIGINAL_RUN" > run.json
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ORIGINAL_RUN/attempts/$ORIGINAL_ATTEMPT/jobs?per_page=100" > jobs.json
+          # The template literals belong to JavaScript and must stay literal in bash.
+          # shellcheck disable=SC2016
           node -e '
             const fs=require("fs");
             const artifacts=JSON.parse(fs.readFileSync("artifacts.json")).artifacts;

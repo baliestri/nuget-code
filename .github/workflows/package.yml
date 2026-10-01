@@ -67,9 +67,11 @@ jobs:
           SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
           artifact_name="vsix-${SOURCE_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          printf 'source_sha=%s\n' "$SOURCE_SHA" >> "$GITHUB_OUTPUT"
-          printf 'artifact_name=%s\n' "$artifact_name" >> "$GITHUB_OUTPUT"
-          node -e 'const fs=require("fs");process.stdout.write("sha256="+JSON.parse(fs.readFileSync("release-artifacts/artifact.json")).sha256+"\n")' >> "$GITHUB_OUTPUT"
+          {
+            printf 'source_sha=%s\n' "$SOURCE_SHA"
+            printf 'artifact_name=%s\n' "$artifact_name"
+            node -e 'const fs=require("fs");process.stdout.write("sha256="+JSON.parse(fs.readFileSync("release-artifacts/artifact.json")).sha256+"\n")'
+          } >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ steps.identity.outputs.artifact_name }}
@@ -99,6 +101,8 @@ jobs:
           test "$PACKAGE_RESULT" = success
           test "$SOURCE_SHA" = "$EXPECTED_SHA"
           [[ "$SHA256" =~ ^[0-9a-f]{64}$ ]]
-          printf 'source_sha=%s\n' "$SOURCE_SHA" >> "$GITHUB_OUTPUT"
-          printf 'artifact_name=%s\n' "$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
-          printf 'sha256=%s\n' "$SHA256" >> "$GITHUB_OUTPUT"
+          {
+            printf 'source_sha=%s\n' "$SOURCE_SHA"
+            printf 'artifact_name=%s\n' "$ARTIFACT_NAME"
+            printf 'sha256=%s\n' "$SHA256"
+          } >> "$GITHUB_OUTPUT"
