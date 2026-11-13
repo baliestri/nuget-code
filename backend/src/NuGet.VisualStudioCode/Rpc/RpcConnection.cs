@@ -60,11 +60,11 @@ internal sealed class RpcConnection(MessageReader reader, MessageWriter writer) 
         JsonSerializer.Serialize(json, parameters, paramsInfo);
       }).ConfigureAwait(false);
       var result = await completion.Task.WaitAsync(ct).ConfigureAwait(false);
-      return result.Deserialize(resultInfo)
-             ?? throw new RpcException(RpcErrorCodes.INTERNAL_ERROR, $"Peer returned no result for '{method}'.");
+      return result.Deserialize(resultInfo) ??
+             throw new RpcException(RpcErrorCodes.INTERNAL_ERROR, $"Peer returned no result for '{method}'.");
     }
     finally {
-      _outbound.TryRemove(id, out var _);
+      _outbound.TryRemove(KeyValuePair.Create(id, completion));
     }
   }
 
@@ -82,8 +82,8 @@ internal sealed class RpcConnection(MessageReader reader, MessageWriter writer) 
   private static TParams ReadParams<TParams>(JsonElement element, JsonTypeInfo<TParams> paramsInfo) {
     var source = element.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null ? EmptyObject : element;
     try {
-      return source.Deserialize(paramsInfo)
-             ?? throw new RpcException(RpcErrorCodes.INVALID_PARAMS, "Params must be an object.");
+      return source.Deserialize(paramsInfo) ??
+             throw new RpcException(RpcErrorCodes.INVALID_PARAMS, "Params must be an object.");
     }
     catch (JsonException exception) {
       throw new RpcException(RpcErrorCodes.INVALID_PARAMS, exception.Message);
@@ -124,11 +124,8 @@ internal sealed class RpcConnection(MessageReader reader, MessageWriter writer) 
     _ = SendErrorAsync(null, RpcErrorCodes.INVALID_REQUEST, "Message is neither a request nor a response.", null);
   }
 
-  [SuppressMessage(
-    "Design",
-    "CA1031:Do not catch general exception types",
-    Justification = "Protocol boundary: no handler failure may end the process; it becomes an error response."
-  )]
+  [SuppressMessage("Design", "CA1031:Do not catch general exception types",
+    Justification = "Protocol boundary: no handler failure may end the process; it becomes an error response.")]
   private async Task HandleRequestAsync(JsonElement id, string method, JsonElement parameters, CancellationToken ct) {
     var key = id.GetRawText();
     using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -158,7 +155,7 @@ internal sealed class RpcConnection(MessageReader reader, MessageWriter writer) 
         .ConfigureAwait(false);
     }
     finally {
-      _inbound.TryRemove(key, out var _);
+      _inbound.TryRemove(KeyValuePair.Create(key, cancellation));
     }
   }
 

@@ -1,6 +1,7 @@
 // Copyright (c) Bruno Sales <me@baliestri.dev>. Licensed under the zlib/libpng License.
 // See the LICENSE file in the repository root for full license text.
 
+using NuGet.VisualStudioCode.Projects;
 using NuGet.VisualStudioCode.Protocol;
 using NuGet.VisualStudioCode.Rpc;
 using NuGet.VisualStudioCode.Sessions;
@@ -11,7 +12,7 @@ namespace NuGet.VisualStudioCode.Methods;
 internal static class SolutionMethods {
   private readonly static Empty Done = new();
 
-  public static void Register(RpcConnection connection, SessionManager sessions) {
+  public static void Register(RpcConnection connection, SessionManager sessions, ProjectEvaluator evaluator) {
     connection.OnRequest(
       MethodNames.SOLUTION_OPEN,
       ProtocolJsonContext.Default.SolutionOpenParams,
@@ -19,18 +20,14 @@ internal static class SolutionMethods {
       async (parameters, ct) =>
       {
         var solution = await SolutionReader.ReadAsync(parameters.Path, parameters.Projects, ct).ConfigureAwait(false);
-        var projects = solution.ProjectPaths
-          .Select(path => new ProjectInfo(Path.GetFileNameWithoutExtension(path), path, [], false, null))
-          .ToList();
-        sessions.Replace(new Session(solution, projects));
-        return new SolutionOpenResult(solution.Path, KindName(solution.Kind), projects);
+        var models = await evaluator.EvaluateAsync(solution, ct).ConfigureAwait(false);
+        sessions.Replace(new Session(solution, models));
+        return new SolutionOpenResult(solution.Path, KindName(solution.Kind),
+          models.Select(model => model.Info).ToList());
       }
     );
-    connection.OnRequest(
-      MethodNames.SOLUTION_CLOSE,
-      ProtocolJsonContext.Default.Empty,
-      ProtocolJsonContext.Default.Empty,
-      (_, _) =>
+    connection.OnRequest(MethodNames.SOLUTION_CLOSE, ProtocolJsonContext.Default.Empty,
+      ProtocolJsonContext.Default.Empty, (_, _) =>
       {
         sessions.Close();
         return Task.FromResult(Done);

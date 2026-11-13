@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.VisualStudio.SolutionPersistence" />
+    <PackageReference Include="NuGet.ProjectModel" />
     <PackageReference Include="NuGet.Protocol" />
     <PackageReference Include="System.Security.Cryptography.Pkcs" />
   </ItemGroup>

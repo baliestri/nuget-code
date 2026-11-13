@@ -4,6 +4,7 @@
 using NuGet.VisualStudioCode.Configuration;
 using NuGet.VisualStudioCode.Logging;
 using NuGet.VisualStudioCode.Methods;
+using NuGet.VisualStudioCode.Projects;
 using NuGet.VisualStudioCode.Protocol;
 using NuGet.VisualStudioCode.Rpc;
 using NuGet.VisualStudioCode.Sdk;
@@ -19,10 +20,12 @@ var log = new BackendLog(entry
 var sdk = new SdkService();
 var sessions = new SessionManager();
 var settings = new SettingsProvider(() => sessions.Current?.Solution.Directory);
+var evaluator = new ProjectEvaluator(new RestoreGraphGenerator(sdk), log);
 
 LifecycleMethods.Register(connection, sdk, log);
 ConfigurationMethods.Register(connection, settings, () => sessions.Current is not null);
-SolutionMethods.Register(connection, sessions);
+SolutionMethods.Register(connection, sessions, evaluator);
+PackagesMethods.Register(connection, sessions);
 
 try {
   await connection.RunAsync(CancellationToken.None).ConfigureAwait(false);

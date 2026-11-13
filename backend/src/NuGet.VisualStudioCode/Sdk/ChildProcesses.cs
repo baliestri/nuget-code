@@ -14,7 +14,7 @@ internal static class ChildProcesses {
     => Running[process.Id] = process;
 
   public static void Untrack(Process process)
-    => Running.TryRemove(process.Id, out var _);
+    => Running.TryRemove(KeyValuePair.Create(process.Id, process));
 
   public static void KillAll() {
     foreach (var process in Running.Values) Kill(process);

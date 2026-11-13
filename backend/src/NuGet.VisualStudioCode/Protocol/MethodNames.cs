@@ -10,6 +10,8 @@ internal static class MethodNames {
   public const string SOLUTION_OPEN = "solution/open";
   public const string SOLUTION_CLOSE = "solution/close";
 
+  public const string PACKAGES_INSTALLED = "packages/installed";
+
   public const string SOURCES_LIST = "sources/list";
   public const string FOLDERS_LIST = "folders/list";
   public const string FOLDERS_SIZE = "folders/size";

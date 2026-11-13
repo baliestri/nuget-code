@@ -15,6 +15,7 @@ namespace NuGet.VisualStudioCode.Protocol;
 [JsonSerializable(typeof(LogEntry))]
 [JsonSerializable(typeof(SolutionOpenParams))]
 [JsonSerializable(typeof(SolutionOpenResult))]
+[JsonSerializable(typeof(PackagesInstalledResult))]
 [JsonSerializable(typeof(SourcesListResult))]
 [JsonSerializable(typeof(FoldersListResult))]
 [JsonSerializable(typeof(FolderSizeParams))]
