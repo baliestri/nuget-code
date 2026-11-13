@@ -10,6 +10,7 @@
     <Project Path="src/NuGet.VisualStudioCode/NuGet.VisualStudioCode.csproj" />
   </Folder>
   <Folder Name="/Tests/">
+    <Project Path="tests/NuGet.VisualStudioCode.AotTests/NuGet.VisualStudioCode.AotTests.csproj" />
     <Project Path="tests/NuGet.VisualStudioCode.TestSupport/NuGet.VisualStudioCode.TestSupport.csproj" />
     <Project Path="tests/NuGet.VisualStudioCode.Tests/NuGet.VisualStudioCode.Tests.csproj" />
   </Folder>

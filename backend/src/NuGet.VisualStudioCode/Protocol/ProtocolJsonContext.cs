@@ -1,0 +1,15 @@
+// Copyright (c) Bruno Sales <me@baliestri.dev>. Licensed under the zlib/libpng License.
+// See the LICENSE file in the repository root for full license text.
+
+using System.Text.Json.Serialization;
+
+namespace NuGet.VisualStudioCode.Protocol;
+
+[JsonSourceGenerationOptions(
+  PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+  DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+)]
+[JsonSerializable(typeof(Empty))]
+[JsonSerializable(typeof(InitializeParams))]
+[JsonSerializable(typeof(InitializeResult))]
+internal sealed partial class ProtocolJsonContext : JsonSerializerContext;
