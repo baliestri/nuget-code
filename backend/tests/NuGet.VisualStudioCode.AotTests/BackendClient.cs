@@ -47,11 +47,8 @@ internal sealed class BackendClient : IAsyncDisposable {
     _process.Dispose();
   }
 
-  public static BackendClient Start(
-    PublishedBackend backend,
-    string workingDirectory,
-    IReadOnlyDictionary<string, string>? environment = null
-  ) {
+  public static BackendClient Start(PublishedBackend backend, string workingDirectory,
+    IReadOnlyDictionary<string, string>? environment = null) {
     var startInfo = new ProcessStartInfo(backend.ExecutablePath) {
       WorkingDirectory = workingDirectory,
       RedirectStandardInput = true,

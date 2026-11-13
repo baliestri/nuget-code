@@ -4,6 +4,7 @@
 using System.Reflection;
 using NuGet.VisualStudioCode.Protocol;
 using NuGet.VisualStudioCode.Rpc;
+using NuGet.VisualStudioCode.Sdk;
 
 namespace NuGet.VisualStudioCode.Methods;
 
@@ -12,18 +13,27 @@ internal static class LifecycleMethods {
 
   private readonly static Empty Done = new();
 
-  public static void Register(RpcConnection connection) {
+  public static void Register(RpcConnection connection, SdkService sdk) {
     connection.OnRequest(
       MethodNames.INITIALIZE,
       ProtocolJsonContext.Default.InitializeParams,
       ProtocolJsonContext.Default.InitializeResult,
-      (_, _) => Task.FromResult(new InitializeResult(PROTOCOL_VERSION, BackendVersion(), null))
+      async (parameters, ct) =>
+      {
+        sdk.Configure(parameters.DotnetPath);
+        var info = await sdk.DescribeAsync(Environment.CurrentDirectory, ct).ConfigureAwait(false);
+        return new InitializeResult(PROTOCOL_VERSION, BackendVersion(), info);
+      }
     );
     connection.OnRequest(
       MethodNames.SHUTDOWN,
       ProtocolJsonContext.Default.Empty,
       ProtocolJsonContext.Default.Empty,
-      (_, _) => Task.FromResult(Done)
+      (_, _) =>
+      {
+        ChildProcesses.KillAll();
+        return Task.FromResult(Done);
+      }
     );
   }
 

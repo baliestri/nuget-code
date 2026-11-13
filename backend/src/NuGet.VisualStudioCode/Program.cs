@@ -3,13 +3,15 @@
 
 using NuGet.VisualStudioCode.Methods;
 using NuGet.VisualStudioCode.Rpc;
+using NuGet.VisualStudioCode.Sdk;
 
 var input = new BufferedStream(Console.OpenStandardInput());
 var output = Console.OpenStandardOutput();
 using var writer = new MessageWriter(output);
 var connection = new RpcConnection(new MessageReader(input), writer);
+var sdk = new SdkService();
 
-LifecycleMethods.Register(connection);
+LifecycleMethods.Register(connection, sdk);
 
 try {
   await connection.RunAsync(CancellationToken.None).ConfigureAwait(false);
@@ -20,6 +22,7 @@ catch (Exception exception) when (exception is IOException or InvalidDataExcepti
   return 1;
 }
 finally {
+  ChildProcesses.KillAll();
   await input.DisposeAsync().ConfigureAwait(false);
   await output.DisposeAsync().ConfigureAwait(false);
 }

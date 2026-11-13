@@ -89,10 +89,10 @@ public sealed class PublishedBackend : IDisposable {
       startInfo.Environment["PATH"] = VSWHERE_DIRECTORY + Path.PathSeparator + path;
     }
 
-    using var process = Process.Start(startInfo)
-                        ?? throw new InvalidOperationException("dotnet publish did not start.");
-    var output = process.StandardOutput.ReadToEndAsync();
-    var error = process.StandardError.ReadToEndAsync();
+    using var process = Process.Start(startInfo) ??
+                        throw new InvalidOperationException("dotnet publish did not start.");
+    var output = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
+    var error = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
     if (!process.WaitForExit(TimeSpan.FromMinutes(15))) {
       process.Kill(true);
       throw new TimeoutException("dotnet publish did not finish in 15 minutes.");
