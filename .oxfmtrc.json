@@ -1,0 +1,11 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "ignorePatterns": ["node_modules/**", "dist/**", "pnpm-lock.yaml", ".vscode-test/**"],
+  "printWidth": 120,
+  "semi": false,
+  "endOfLine": "lf",
+  "singleQuote": false,
+  "insertFinalNewline": true,
+  "sortTailwindcss": true,
+  "vueIndentScriptAndStyle": true
+}
