@@ -26,6 +26,15 @@
         "resolved": "1.0.52",
         "contentHash": "oNv2JtYXhpdJrX63nibx1JT3uCESOBQ1LAk7Dtz/sr0+laW0KRM6eKp4CZ3MHDR2siIkKsY8MmUkeP5DKkQQ5w=="
       },
+      "NuGet.Credentials": {
+        "type": "Direct",
+        "requested": "[8.0.0, )",
+        "resolved": "8.0.0",
+        "contentHash": "m6KfiyZrojiRN1FroQXFNudZeJIpC9um3iOMtCRu8JopfYByBXrvW6Jr4l+SMWJSoS/4ZRQSAlNG7SE64gpKrQ==",
+        "dependencies": {
+          "NuGet.Protocol": "8.0.0"
+        }
+      },
       "NuGet.ProjectModel": {
         "type": "Direct",
         "requested": "[8.0.0, )",

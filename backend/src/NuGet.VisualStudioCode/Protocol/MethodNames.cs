@@ -25,4 +25,7 @@ internal static class MethodNames {
 
   public const string LOG_ENTRY = "log/entry";
   public const string PROGRESS = "progress";
+
+  public const string CREDENTIALS_REQUEST = "credentials/request";
+  public const string CREDENTIALS_RESET = "credentials/reset";
 }

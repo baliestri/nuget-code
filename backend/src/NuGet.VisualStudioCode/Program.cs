@@ -3,6 +3,7 @@
 
 using NuGet.Versioning;
 using NuGet.VisualStudioCode.Configuration;
+using NuGet.VisualStudioCode.Credentials;
 using NuGet.VisualStudioCode.Feeds;
 using NuGet.VisualStudioCode.Logging;
 using NuGet.VisualStudioCode.Methods;
@@ -41,6 +42,12 @@ ConfigurationMethods.Register(connection, settings, () => sessions.Current is no
 SolutionMethods.Register(connection, sessions, evaluator);
 PackagesMethods.Register(connection, sessions, search, details, updates);
 WorkspaceMethods.Register(connection, refresher, ResetFeeds);
+
+var credentials = new HostCredentialProvider((request, ct) => connection.RequestAsync(MethodNames.CREDENTIALS_REQUEST,
+  request, ProtocolJsonContext.Default.CredentialsRequestParams, ProtocolJsonContext.Default.CredentialsRequestResult,
+  ct));
+CredentialSetup.Install(credentials, nugetLogger, log);
+CredentialsMethods.Register(connection, credentials, ResetFeeds);
 
 try {
   await connection.RunAsync(CancellationToken.None).ConfigureAwait(false);
