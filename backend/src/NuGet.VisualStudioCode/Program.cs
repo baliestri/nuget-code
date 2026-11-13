@@ -1,7 +1,9 @@
 // Copyright (c) Bruno Sales <me@baliestri.dev>. Licensed under the zlib/libpng License.
 // See the LICENSE file in the repository root for full license text.
 
+using NuGet.VisualStudioCode.Logging;
 using NuGet.VisualStudioCode.Methods;
+using NuGet.VisualStudioCode.Protocol;
 using NuGet.VisualStudioCode.Rpc;
 using NuGet.VisualStudioCode.Sdk;
 
@@ -9,9 +11,12 @@ var input = new BufferedStream(Console.OpenStandardInput());
 var output = Console.OpenStandardOutput();
 using var writer = new MessageWriter(output);
 var connection = new RpcConnection(new MessageReader(input), writer);
+var log = new BackendLog(entry
+  => connection.NotifyAsync(MethodNames.LOG_ENTRY, entry, ProtocolJsonContext.Default.LogEntry)
+);
 var sdk = new SdkService();
 
-LifecycleMethods.Register(connection, sdk);
+LifecycleMethods.Register(connection, sdk, log);
 
 try {
   await connection.RunAsync(CancellationToken.None).ConfigureAwait(false);
@@ -23,6 +28,7 @@ catch (Exception exception) when (exception is IOException or InvalidDataExcepti
 }
 finally {
   ChildProcesses.KillAll();
+  await log.DisposeAsync().ConfigureAwait(false);
   await input.DisposeAsync().ConfigureAwait(false);
   await output.DisposeAsync().ConfigureAwait(false);
 }

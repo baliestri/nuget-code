@@ -5,6 +5,11 @@
     search and metadata fail at runtime under NativeAOT.
   -->
   <ItemGroup>
+    <TrimmerRootAssembly Include="NuGet.Protocol" />
+    <TrimmerRootAssembly Include="NuGet.Packaging" />
+    <TrimmerRootAssembly Include="NuGet.Versioning" />
+    <TrimmerRootAssembly Include="NuGet.Frameworks" />
+    <TrimmerRootAssembly Include="Newtonsoft.Json" />
   </ItemGroup>
 
   <!--
@@ -15,4 +20,17 @@
   <PropertyGroup>
     <NoWarn>$(NoWarn);IL2104;IL3053</NoWarn>
   </PropertyGroup>
+
+  <!--
+    NuGet.Protocol flags its own Newtonsoft.Json code paths with
+    RequiresUnreferencedCode, and the native compiler reports each of those
+    call sites as IL2026 even with per-assembly summaries enabled. The warning
+    is turned off for the native compiler only: the C# compiler still runs the
+    trim analyzers on this project (IsAotCompatible), so IL2026 in our own code
+    remains a build error. The assemblies rooted above are what makes those
+    paths work at runtime; the AOT test suite is what verifies it.
+  -->
+  <ItemGroup>
+    <IlcArg Include="--nowarn:IL2026" />
+  </ItemGroup>
 </Project>

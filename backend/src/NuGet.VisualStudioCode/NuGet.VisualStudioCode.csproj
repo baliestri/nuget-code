@@ -15,4 +15,9 @@
     <InternalsVisibleTo Include="NuGet.VisualStudioCode.Tests" />
     <InternalsVisibleTo Include="NuGet.VisualStudioCode.AotTests" />
   </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NuGet.Protocol" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
+  </ItemGroup>
 </Project>

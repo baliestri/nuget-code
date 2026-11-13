@@ -6,4 +6,6 @@ namespace NuGet.VisualStudioCode.Protocol;
 internal static class MethodNames {
   public const string INITIALIZE = "initialize";
   public const string SHUTDOWN = "shutdown";
+
+  public const string LOG_ENTRY = "log/entry";
 }
