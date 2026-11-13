@@ -13,6 +13,8 @@ internal static class MethodNames {
   public const string SOLUTION_DID_CHANGE = "solution/didChange";
 
   public const string PACKAGES_INSTALLED = "packages/installed";
+  public const string PACKAGES_SEARCH = "packages/search";
+  public const string PACKAGES_DETAILS = "packages/details";
 
   public const string SOURCES_LIST = "sources/list";
   public const string FOLDERS_LIST = "folders/list";

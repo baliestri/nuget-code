@@ -1,0 +1,66 @@
+// Copyright (c) Bruno Sales <me@baliestri.dev>. Licensed under the zlib/libpng License.
+// See the LICENSE file in the repository root for full license text.
+
+using NuGet.Protocol.Core.Types;
+using NuGet.VisualStudioCode.Logging;
+using NuGet.VisualStudioCode.Protocol;
+
+namespace NuGet.VisualStudioCode.Feeds;
+
+internal sealed class PackageDetailsService(
+  FeedRegistry feeds,
+  FeedQuery query,
+  NuGetLogAdapter logger,
+  TimedCache<PackageDetailsResult> cache
+) {
+  public Task<PackageDetailsResult> GetAsync(PackagesDetailsParams parameters, CancellationToken ct)
+    => cache.GetAsync($"{parameters.Feed}|{parameters.Id}|{parameters.Prerelease}", parameters.NoCache,
+      () => LoadAsync(parameters, ct));
+
+  private async Task<PackageDetailsResult> LoadAsync(PackagesDetailsParams parameters, CancellationToken ct) {
+    var repositories = feeds.Select(parameters.Feed, parameters.Id);
+    var outcome = await query
+      .RunAsync(repositories, (repository, token) => LoadOneAsync(repository, parameters, token), ct)
+      .ConfigureAwait(false);
+    outcome.ThrowIfRequestedFeedFailed(parameters.Feed);
+
+    var hit = outcome.Results.FirstOrDefault(result => result.Value.Count > 0);
+    if (hit is null) {
+      return new PackageDetailsResult(parameters.Id, [], null, null, null, null, null, null, [], null,
+        outcome.Failures);
+    }
+
+    var latest = hit.Value.MaxBy(metadata => metadata.Identity.Version)!;
+    var versions = outcome.Results
+      .SelectMany(result => result.Value)
+      .Select(metadata => metadata.Identity.Version)
+      .Distinct()
+      .OrderDescending()
+      .Select(version => version.ToNormalizedString())
+      .ToList();
+
+    return new PackageDetailsResult(latest.Identity.Id, versions, latest.Description, latest.Authors,
+      latest.LicenseMetadata?.License, latest.LicenseUrl?.ToString(), latest.ProjectUrl?.ToString(),
+      latest.IconUrl?.ToString(), Groups(latest), hit.Feed, outcome.Failures);
+  }
+
+  private async Task<List<IPackageSearchMetadata>> LoadOneAsync(SourceRepository repository,
+    PackagesDetailsParams parameters, CancellationToken ct) {
+    var resource = await repository.GetResourceAsync<PackageMetadataResource>(ct).ConfigureAwait(false) ??
+                   throw new InvalidOperationException("The feed does not expose package metadata.");
+    using var context = new SourceCacheContext();
+    context.NoCache = parameters.NoCache;
+    context.RefreshMemoryCache = parameters.NoCache;
+    var found = await resource
+      .GetMetadataAsync(parameters.Id, parameters.Prerelease, false, context, logger, ct)
+      .ConfigureAwait(false);
+    return found.ToList();
+  }
+
+  private static List<DependencyGroupInfo> Groups(IPackageSearchMetadata metadata)
+    => metadata.DependencySets
+      .Select(group => new DependencyGroupInfo(group.TargetFramework.GetShortFolderName(), group.Packages
+        .Select(dependency => new DependencyInfo(dependency.Id, dependency.VersionRange.ToNormalizedString()))
+        .ToList()))
+      .ToList();
+}

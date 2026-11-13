@@ -2,6 +2,7 @@
 // See the LICENSE file in the repository root for full license text.
 
 using NuGet.VisualStudioCode.Configuration;
+using NuGet.VisualStudioCode.Feeds;
 using NuGet.VisualStudioCode.Logging;
 using NuGet.VisualStudioCode.Methods;
 using NuGet.VisualStudioCode.Projects;
@@ -24,11 +25,19 @@ using var refresher = new SessionRefresher(sessions, evaluator, log,
   change => connection.NotifyAsync(MethodNames.SOLUTION_DID_CHANGE, change,
     ProtocolJsonContext.Default.SolutionDidChangeParams), TimeSpan.FromMilliseconds(250));
 
-LifecycleMethods.Register(connection, sdk, log);
+var feedOptions = new FeedOptions();
+var nugetLogger = new NuGetLogAdapter(log);
+var feeds = new FeedRegistry(settings);
+var feedQuery = new FeedQuery(feedOptions, log);
+var detailsCache = new TimedCache<PackageDetailsResult>(TimeSpan.FromMinutes(2), TimeProvider.System);
+var search = new PackageSearchService(feeds, feedQuery, nugetLogger);
+var details = new PackageDetailsService(feeds, feedQuery, nugetLogger, detailsCache);
+
+LifecycleMethods.Register(connection, sdk, log, feedOptions);
 ConfigurationMethods.Register(connection, settings, () => sessions.Current is not null);
 SolutionMethods.Register(connection, sessions, evaluator);
-PackagesMethods.Register(connection, sessions);
-WorkspaceMethods.Register(connection, refresher);
+PackagesMethods.Register(connection, sessions, search, details);
+WorkspaceMethods.Register(connection, refresher, ResetFeeds);
 
 try {
   await connection.RunAsync(CancellationToken.None).ConfigureAwait(false);
@@ -43,4 +52,9 @@ finally {
   await log.DisposeAsync().ConfigureAwait(false);
   await input.DisposeAsync().ConfigureAwait(false);
   await output.DisposeAsync().ConfigureAwait(false);
+}
+
+void ResetFeeds() {
+  feeds.Reset();
+  detailsCache.Clear();
 }

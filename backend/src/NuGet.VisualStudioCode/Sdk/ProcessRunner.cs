@@ -17,14 +17,10 @@ internal static class ProcessRunner {
       CreateNoWindow = true
     };
 
-    foreach (var argument in arguments) {
-      startInfo.ArgumentList.Add(argument);
-    }
+    foreach (var argument in arguments) startInfo.ArgumentList.Add(argument);
 
     if (environment is not null) {
-      foreach (var (name, value) in environment) {
-        startInfo.Environment[name] = value;
-      }
+      foreach (var (name, value) in environment) startInfo.Environment[name] = value;
     }
 
     using var process = new Process();

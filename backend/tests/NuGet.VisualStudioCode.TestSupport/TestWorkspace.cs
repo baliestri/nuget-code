@@ -34,6 +34,20 @@ public sealed class TestWorkspace : IDisposable {
   public void AddPackage(string id, string version, params (string Id, string Range)[] dependencies)
     => TestPackages.Create(FeedPath, id, version, dependencies);
 
+  public void WriteConfig(string sectionsXml)
+    => Root.WriteFile(
+      "NuGet.config",
+      $"""
+      <?xml version="1.0" encoding="utf-8"?>
+      <configuration>
+      {sectionsXml}
+        <config>
+          <add key="globalPackagesFolder" value="global-packages" />
+        </config>
+      </configuration>
+      """
+    );
+
   public async Task RestoreAsync(string target, CancellationToken ct) {
     var result = await DotnetCli.RunAsync(["restore", target], Path, ct).ConfigureAwait(false);
     if (result.ExitCode != 0) {
