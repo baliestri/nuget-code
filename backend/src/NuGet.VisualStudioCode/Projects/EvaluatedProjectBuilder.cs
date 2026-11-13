@@ -25,7 +25,8 @@ internal static class EvaluatedProjectBuilder {
           .Distinct(StringComparer.Ordinal)
           .OrderBy(frameworks.IndexOf)
           .ToList(),
-        group.All(entry => entry.Dependency.AutoReferenced)
+        group.All(entry => entry.Dependency.AutoReferenced),
+        group.Any(entry => entry.Dependency.VersionOverride is not null)
       ))
       .OrderBy(package => package.Id, StringComparer.OrdinalIgnoreCase)
       .ToList();

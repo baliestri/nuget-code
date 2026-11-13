@@ -9,5 +9,6 @@ internal sealed record InstalledPackage(
   string? ResolvedVersion,
   IReadOnlyList<string> Frameworks,
   bool Implicit,
-  bool Restored
+  bool Restored,
+  VersionOrigin? Origin
 );

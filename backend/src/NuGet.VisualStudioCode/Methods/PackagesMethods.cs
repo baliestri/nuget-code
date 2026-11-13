@@ -19,12 +19,19 @@ internal static class PackagesMethods {
 
   private static ProjectPackages Describe(EvaluatedProject model) {
     var resolved = AssetsReader.ReadResolved(model.AssetsPath);
-    var packages = model.Packages.Select(package => Describe(package, resolved?.GetValueOrDefault(package.Id)))
+    var locator = new VersionOriginLocator();
+    var packages = model.Packages
+      .Select(package => Describe(model.Info, package, resolved?.GetValueOrDefault(package.Id), locator))
       .ToList();
     return new ProjectPackages(model.Info.Path, packages);
   }
 
-  private static InstalledPackage Describe(DeclaredPackage package, string? resolvedVersion)
-    => new(package.Id, package.RequestedVersion, resolvedVersion, package.Frameworks, package.Implicit,
-      resolvedVersion is not null);
+  private static InstalledPackage Describe(ProjectInfo project, DeclaredPackage package, string? resolvedVersion,
+    VersionOriginLocator locator) {
+    var origin = package.Implicit
+      ? null
+      : locator.Locate(project.Path, package.Id, project.CentralPackageManagement, package.HasVersionOverride);
+    return new InstalledPackage(package.Id, package.RequestedVersion, resolvedVersion, package.Frameworks,
+      package.Implicit, resolvedVersion is not null, origin);
+  }
 }

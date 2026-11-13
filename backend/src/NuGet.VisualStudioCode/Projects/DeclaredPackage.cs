@@ -7,5 +7,6 @@ internal sealed record DeclaredPackage(
   string Id,
   string? RequestedVersion,
   IReadOnlyList<string> Frameworks,
-  bool Implicit
+  bool Implicit,
+  bool HasVersionOverride
 );

@@ -67,22 +67,12 @@ public sealed class ProjectsTests(PublishedBackend backend) {
   private const string BROKEN = "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup>";
 
   private static Task<SolutionOpenResult> OpenAsync(BackendClient client, string path, CancellationToken ct)
-    => client.Connection.RequestAsync(
-      MethodNames.SOLUTION_OPEN,
-      new SolutionOpenParams(path, null),
-      ProtocolJsonContext.Default.SolutionOpenParams,
-      ProtocolJsonContext.Default.SolutionOpenResult,
-      ct
-    );
+    => client.Connection.RequestAsync(MethodNames.SOLUTION_OPEN, new SolutionOpenParams(path, null),
+      ProtocolJsonContext.Default.SolutionOpenParams, ProtocolJsonContext.Default.SolutionOpenResult, ct);
 
   private static Task<PackagesInstalledResult> InstalledAsync(BackendClient client, CancellationToken ct)
-    => client.Connection.RequestAsync(
-      MethodNames.PACKAGES_INSTALLED,
-      new Empty(),
-      ProtocolJsonContext.Default.Empty,
-      ProtocolJsonContext.Default.PackagesInstalledResult,
-      ct
-    );
+    => client.Connection.RequestAsync(MethodNames.PACKAGES_INSTALLED, new Empty(), ProtocolJsonContext.Default.Empty,
+      ProtocolJsonContext.Default.PackagesInstalledResult, ct);
 
   private static IReadOnlyList<InstalledPackage> PackagesOf(PackagesInstalledResult installed, string projectFile)
     => installed.Projects
@@ -205,5 +195,31 @@ public sealed class ProjectsTests(PublishedBackend backend) {
 
     Assert.Equal(RpcErrorCodes.NO_SOLUTION_OPEN, noSession.Code);
     Assert.Equal(RpcErrorCodes.SDK_NOT_FOUND, noSdk.Code);
+  }
+
+  [Fact]
+  public async Task Installed_reports_where_each_version_is_declared() {
+    var ct = TestContext.Current.CancellationToken;
+    using var workspace = new TestWorkspace();
+    var app = SampleSolution.WriteProject(workspace.Root, "App", APP);
+    SampleSolution.WriteProject(workspace.Root, "Central", CENTRAL);
+    var props = workspace.Root.WriteFile(Path.Combine("Central", "Directory.Packages.props"), CENTRAL_VERSIONS);
+    var solution = SampleSolution.WriteSlnx(workspace.Root, "Sample", "App", "Central");
+    await using var client = BackendClient.Start(backend, workspace.Path);
+    await client.InitializeAsync(ct);
+    await OpenAsync(client, solution, ct);
+
+    var installed = await InstalledAsync(client, ct);
+
+    var inProject = Package(PackagesOf(installed, "App.csproj"), "Alpha").Origin;
+    var central = Package(PackagesOf(installed, "Central.csproj"), "Alpha").Origin;
+    Assert.NotNull(inProject);
+    Assert.Equal("project", inProject.Kind);
+    Assert.Equal(app, inProject.File, true);
+    Assert.Equal(6, inProject.Line);
+    Assert.NotNull(central);
+    Assert.Equal("central", central.Kind);
+    Assert.Equal(props, central.File, true);
+    Assert.Equal(6, central.Line);
   }
 }
