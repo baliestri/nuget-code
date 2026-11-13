@@ -1,6 +1,7 @@
 // Copyright (c) Bruno Sales <me@baliestri.dev>. Licensed under the zlib/libpng License.
 // See the LICENSE file in the repository root for full license text.
 
+using NuGet.VisualStudioCode.Configuration;
 using NuGet.VisualStudioCode.Logging;
 using NuGet.VisualStudioCode.Methods;
 using NuGet.VisualStudioCode.Protocol;
@@ -15,8 +16,10 @@ var log = new BackendLog(entry
   => connection.NotifyAsync(MethodNames.LOG_ENTRY, entry, ProtocolJsonContext.Default.LogEntry)
 );
 var sdk = new SdkService();
+var settings = new SettingsProvider(() => null);
 
 LifecycleMethods.Register(connection, sdk, log);
+ConfigurationMethods.Register(connection, settings, () => false);
 
 try {
   await connection.RunAsync(CancellationToken.None).ConfigureAwait(false);

@@ -13,4 +13,8 @@ namespace NuGet.VisualStudioCode.Protocol;
 [JsonSerializable(typeof(InitializeParams))]
 [JsonSerializable(typeof(InitializeResult))]
 [JsonSerializable(typeof(LogEntry))]
+[JsonSerializable(typeof(SourcesListResult))]
+[JsonSerializable(typeof(FoldersListResult))]
+[JsonSerializable(typeof(FolderSizeParams))]
+[JsonSerializable(typeof(FolderSizeResult))]
 internal sealed partial class ProtocolJsonContext : JsonSerializerContext;
