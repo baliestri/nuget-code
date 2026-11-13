@@ -1,6 +1,7 @@
 // Copyright (c) Bruno Sales <me@baliestri.dev>. Licensed under the zlib/libpng License.
 // See the LICENSE file in the repository root for full license text.
 
+using NuGet.Versioning;
 using NuGet.VisualStudioCode.Configuration;
 using NuGet.VisualStudioCode.Feeds;
 using NuGet.VisualStudioCode.Logging;
@@ -32,11 +33,13 @@ var feedQuery = new FeedQuery(feedOptions, log);
 var detailsCache = new TimedCache<PackageDetailsResult>(TimeSpan.FromMinutes(2), TimeProvider.System);
 var search = new PackageSearchService(feeds, feedQuery, nugetLogger);
 var details = new PackageDetailsService(feeds, feedQuery, nugetLogger, detailsCache);
+var versionsCache = new TimedCache<IReadOnlyList<NuGetVersion>>(TimeSpan.FromMinutes(2), TimeProvider.System);
+var updates = new PackageUpdatesService(feeds, feedQuery, nugetLogger, versionsCache);
 
 LifecycleMethods.Register(connection, sdk, log, feedOptions);
 ConfigurationMethods.Register(connection, settings, () => sessions.Current is not null);
 SolutionMethods.Register(connection, sessions, evaluator);
-PackagesMethods.Register(connection, sessions, search, details);
+PackagesMethods.Register(connection, sessions, search, details, updates);
 WorkspaceMethods.Register(connection, refresher, ResetFeeds);
 
 try {
@@ -57,4 +60,5 @@ finally {
 void ResetFeeds() {
   feeds.Reset();
   detailsCache.Clear();
+  versionsCache.Clear();
 }

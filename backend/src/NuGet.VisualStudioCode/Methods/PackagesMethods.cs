@@ -11,7 +11,10 @@ namespace NuGet.VisualStudioCode.Methods;
 
 internal static class PackagesMethods {
   public static void Register(RpcConnection connection, SessionManager sessions, PackageSearchService search,
-    PackageDetailsService details) {
+    PackageDetailsService details, PackageUpdatesService updates) {
+    connection.OnRequest(MethodNames.PACKAGES_UPDATES, ProtocolJsonContext.Default.PackagesUpdatesParams,
+      ProtocolJsonContext.Default.PackagesUpdatesResult,
+      (parameters, ct) => UpdatesAsync(connection, sessions, updates, parameters, ct));
     connection.OnRequest(MethodNames.PACKAGES_INSTALLED, ProtocolJsonContext.Default.Empty,
       ProtocolJsonContext.Default.PackagesInstalledResult,
       (_, _) => Task.FromResult(new PackagesInstalledResult(sessions.Require().Projects.Select(Describe).ToList())));
@@ -20,6 +23,33 @@ internal static class PackagesMethods {
     connection.OnRequest(MethodNames.PACKAGES_DETAILS, ProtocolJsonContext.Default.PackagesDetailsParams,
       ProtocolJsonContext.Default.PackageDetailsResult, details.GetAsync);
   }
+
+  private static async Task<PackagesUpdatesResult> UpdatesAsync(RpcConnection connection, SessionManager sessions,
+    PackageUpdatesService updates, PackagesUpdatesParams parameters, CancellationToken ct) {
+    var ids = sessions.Require().Projects
+      .SelectMany(model => model.Packages)
+      .Where(package => !package.Implicit)
+      .Select(package => package.Id)
+      .Distinct(StringComparer.OrdinalIgnoreCase)
+      .ToList();
+    await ProgressAsync(connection, parameters.ProgressToken, ProgressKinds.BEGIN, null).ConfigureAwait(false);
+    try {
+      return await updates
+        .GetAsync(ids, parameters,
+          package => ProgressAsync(connection, parameters.ProgressToken, ProgressKinds.REPORT, package),
+          ct)
+        .ConfigureAwait(false);
+    }
+    finally {
+      await ProgressAsync(connection, parameters.ProgressToken, ProgressKinds.END, null).ConfigureAwait(false);
+    }
+  }
+
+  private static Task ProgressAsync(RpcConnection connection, string? token, string kind, PackageLatest? package)
+    => token is null
+      ? Task.CompletedTask
+      : connection.NotifyAsync(MethodNames.PROGRESS, new ProgressParams(token, kind, package),
+        ProtocolJsonContext.Default.ProgressParams);
 
   private static ProjectPackages Describe(EvaluatedProject model) {
     var resolved = AssetsReader.ReadResolved(model.AssetsPath);

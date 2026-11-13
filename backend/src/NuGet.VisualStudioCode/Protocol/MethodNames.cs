@@ -13,6 +13,7 @@ internal static class MethodNames {
   public const string SOLUTION_DID_CHANGE = "solution/didChange";
 
   public const string PACKAGES_INSTALLED = "packages/installed";
+  public const string PACKAGES_UPDATES = "packages/updates";
   public const string PACKAGES_SEARCH = "packages/search";
   public const string PACKAGES_DETAILS = "packages/details";
 
@@ -23,4 +24,5 @@ internal static class MethodNames {
   public const string WORKSPACE_DID_CHANGE_FILES = "workspace/didChangeFiles";
 
   public const string LOG_ENTRY = "log/entry";
+  public const string PROGRESS = "progress";
 }
