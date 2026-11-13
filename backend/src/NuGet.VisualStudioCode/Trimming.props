@@ -1,0 +1,18 @@
+<Project>
+  <!--
+    Assemblies kept whole by the trimmer. NuGet.Client deserializes with
+    Newtonsoft.Json through reflection; without rooting these assemblies,
+    search and metadata fail at runtime under NativeAOT.
+  -->
+  <ItemGroup>
+  </ItemGroup>
+
+  <!--
+    IL2104 and IL3053 are the "assembly X produced trim/AOT warnings" summaries.
+    They only appear for referenced assemblies; warnings in this project's own
+    code stay individual and stay errors.
+  -->
+  <PropertyGroup>
+    <NoWarn>$(NoWarn);IL2104;IL3053</NoWarn>
+  </PropertyGroup>
+</Project>
