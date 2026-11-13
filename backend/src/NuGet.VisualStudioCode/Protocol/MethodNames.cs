@@ -7,6 +7,9 @@ internal static class MethodNames {
   public const string INITIALIZE = "initialize";
   public const string SHUTDOWN = "shutdown";
 
+  public const string SOLUTION_OPEN = "solution/open";
+  public const string SOLUTION_CLOSE = "solution/close";
+
   public const string SOURCES_LIST = "sources/list";
   public const string FOLDERS_LIST = "folders/list";
   public const string FOLDERS_SIZE = "folders/size";

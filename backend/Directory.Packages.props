@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <PackageVersion Include="Meziantou.Analyzer" Version="3.0.339" />
+    <PackageVersion Include="Microsoft.VisualStudio.SolutionPersistence" Version="1.0.52" />
     <PackageVersion Include="NuGet.Protocol" Version="8.0.0" />
     <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.15" />
     <PackageVersion Include="xunit.v3.mtp-v2" Version="4.0.3" />

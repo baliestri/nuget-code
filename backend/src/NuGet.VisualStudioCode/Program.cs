@@ -7,6 +7,7 @@ using NuGet.VisualStudioCode.Methods;
 using NuGet.VisualStudioCode.Protocol;
 using NuGet.VisualStudioCode.Rpc;
 using NuGet.VisualStudioCode.Sdk;
+using NuGet.VisualStudioCode.Sessions;
 
 var input = new BufferedStream(Console.OpenStandardInput());
 var output = Console.OpenStandardOutput();
@@ -16,10 +17,12 @@ var log = new BackendLog(entry
   => connection.NotifyAsync(MethodNames.LOG_ENTRY, entry, ProtocolJsonContext.Default.LogEntry)
 );
 var sdk = new SdkService();
-var settings = new SettingsProvider(() => null);
+var sessions = new SessionManager();
+var settings = new SettingsProvider(() => sessions.Current?.Solution.Directory);
 
 LifecycleMethods.Register(connection, sdk, log);
-ConfigurationMethods.Register(connection, settings, () => false);
+ConfigurationMethods.Register(connection, settings, () => sessions.Current is not null);
+SolutionMethods.Register(connection, sessions);
 
 try {
   await connection.RunAsync(CancellationToken.None).ConfigureAwait(false);
