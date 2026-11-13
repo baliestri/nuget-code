@@ -189,10 +189,13 @@ public sealed class RpcConnectionTests {
     var pending = peer.Server.RequestAsync("ask", new EchoParams("q"),
       TestJsonContext.Default.EchoParams, TestJsonContext.Default.EchoResult, ct);
     var id = (await peer.ReceiveAsync(ct)).GetProperty("id").GetInt64();
-    await peer.SendAsync($$$"""{"jsonrpc":"2.0","id":{{{id}}},"error":{"code":-5,"message":"denied"}}""", ct);
+    await peer.SendAsync($$$"""{"jsonrpc":"2.0","id":{{{id}}},"error":{"code":-5,"message":"denied","data":"why"}}""",
+      ct);
 
     var exception = await Assert.ThrowsAsync<RpcException>(() => pending);
     Assert.Equal(-5, exception.Code);
     Assert.Equal("denied", exception.Message);
+    Assert.Equal("why", exception.ErrorData);
+    Assert.Contains("Data: why", exception.ToString(), StringComparison.Ordinal);
   }
 }

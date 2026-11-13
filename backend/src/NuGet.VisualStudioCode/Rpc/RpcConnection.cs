@@ -195,7 +195,10 @@ internal sealed class RpcConnection(MessageReader reader, MessageWriter writer) 
         ? parsed
         : RpcErrorCodes.INTERNAL_ERROR;
       var message = error.TryGetProperty("message", out var messageElement) ? messageElement.GetString() : null;
-      completion.TrySetException(new RpcException(code, message ?? "Peer returned an error."));
+      var data = error.TryGetProperty("data", out var dataElement) && dataElement.ValueKind == JsonValueKind.String
+        ? dataElement.GetString()
+        : null;
+      completion.TrySetException(new RpcException(code, message ?? "Peer returned an error.", data));
       return;
     }
 
