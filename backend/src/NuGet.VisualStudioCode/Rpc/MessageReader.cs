@@ -12,22 +12,22 @@ internal sealed class MessageReader(Stream input) {
 
   private readonly byte[] _single = new byte[1];
 
-  public async ValueTask<byte[]?> ReadAsync(CancellationToken cancellationToken) {
-    var length = await ReadContentLengthAsync(cancellationToken).ConfigureAwait(false);
+  public async ValueTask<byte[]?> ReadAsync(CancellationToken ct) {
+    var length = await ReadContentLengthAsync(ct).ConfigureAwait(false);
     if (length is null) {
       return null;
     }
 
     var payload = new byte[length.Value];
-    await input.ReadExactlyAsync(payload, cancellationToken).ConfigureAwait(false);
+    await input.ReadExactlyAsync(payload, ct).ConfigureAwait(false);
     return payload;
   }
 
-  private async ValueTask<int?> ReadContentLengthAsync(CancellationToken cancellationToken) {
+  private async ValueTask<int?> ReadContentLengthAsync(CancellationToken ct) {
     int? length = null;
     var sawHeader = false;
     while (true) {
-      var line = await ReadLineAsync(cancellationToken).ConfigureAwait(false);
+      var line = await ReadLineAsync(ct).ConfigureAwait(false);
       if (line is null) {
         return sawHeader ? throw new EndOfStreamException("Stream ended inside the message headers.") : null;
       }
@@ -43,10 +43,10 @@ internal sealed class MessageReader(Stream input) {
     }
   }
 
-  private async ValueTask<string?> ReadLineAsync(CancellationToken cancellationToken) {
+  private async ValueTask<string?> ReadLineAsync(CancellationToken ct) {
     var builder = new StringBuilder();
     while (true) {
-      var read = await input.ReadAsync(_single, cancellationToken).ConfigureAwait(false);
+      var read = await input.ReadAsync(_single, ct).ConfigureAwait(false);
       if (read == 0) {
         return builder.Length == 0 ? null : throw new EndOfStreamException("Stream ended inside a header line.");
       }

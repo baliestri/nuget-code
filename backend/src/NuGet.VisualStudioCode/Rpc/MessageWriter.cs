@@ -12,14 +12,14 @@ internal sealed class MessageWriter(Stream output) : IDisposable {
   public void Dispose()
     => _gate.Dispose();
 
-  public async ValueTask WriteAsync(ReadOnlyMemory<byte> payload, CancellationToken cancellationToken) {
+  public async ValueTask WriteAsync(ReadOnlyMemory<byte> payload, CancellationToken ct) {
     var header =
       Encoding.ASCII.GetBytes(string.Create(CultureInfo.InvariantCulture, $"Content-Length: {payload.Length}\r\n\r\n"));
-    await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+    await _gate.WaitAsync(ct).ConfigureAwait(false);
     try {
-      await output.WriteAsync(header, cancellationToken).ConfigureAwait(false);
-      await output.WriteAsync(payload, cancellationToken).ConfigureAwait(false);
-      await output.FlushAsync(cancellationToken).ConfigureAwait(false);
+      await output.WriteAsync(header, ct).ConfigureAwait(false);
+      await output.WriteAsync(payload, ct).ConfigureAwait(false);
+      await output.FlushAsync(ct).ConfigureAwait(false);
     }
     finally {
       _gate.Release();

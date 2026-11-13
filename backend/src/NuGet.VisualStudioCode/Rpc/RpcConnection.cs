@@ -26,16 +26,12 @@ internal sealed class RpcConnection(MessageReader reader, MessageWriter writer) 
 
   private long _nextId;
 
-  public void OnRequest<TParams, TResult>(
-    string method,
-    JsonTypeInfo<TParams> paramsInfo,
-    JsonTypeInfo<TResult> resultInfo,
-    Func<TParams, CancellationToken, Task<TResult>> handler
-  )
-    => _requestHandlers[method] = async (element, cancellationToken) =>
+  public void OnRequest<TParams, TResult>(string method, JsonTypeInfo<TParams> paramsInfo,
+    JsonTypeInfo<TResult> resultInfo, Func<TParams, CancellationToken, Task<TResult>> handler)
+    => _requestHandlers[method] = async (element, ct) =>
     {
       var parameters = ReadParams(element, paramsInfo);
-      var result = await handler(parameters, cancellationToken).ConfigureAwait(false);
+      var result = await handler(parameters, ct).ConfigureAwait(false);
       return json => JsonSerializer.Serialize(json, result, resultInfo);
     };
 
@@ -50,13 +46,8 @@ internal sealed class RpcConnection(MessageReader reader, MessageWriter writer) 
       JsonSerializer.Serialize(json, parameters, paramsInfo);
     });
 
-  public async Task<TResult> RequestAsync<TParams, TResult>(
-    string method,
-    TParams parameters,
-    JsonTypeInfo<TParams> paramsInfo,
-    JsonTypeInfo<TResult> resultInfo,
-    CancellationToken cancellationToken
-  ) {
+  public async Task<TResult> RequestAsync<TParams, TResult>(string method, TParams parameters,
+    JsonTypeInfo<TParams> paramsInfo, JsonTypeInfo<TResult> resultInfo, CancellationToken ct) {
     var id = Interlocked.Increment(ref _nextId);
     var completion = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
     _outbound[id] = completion;
@@ -68,7 +59,7 @@ internal sealed class RpcConnection(MessageReader reader, MessageWriter writer) 
         json.WritePropertyName("params");
         JsonSerializer.Serialize(json, parameters, paramsInfo);
       }).ConfigureAwait(false);
-      var result = await completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+      var result = await completion.Task.WaitAsync(ct).ConfigureAwait(false);
       return result.Deserialize(resultInfo)
              ?? throw new RpcException(RpcErrorCodes.INTERNAL_ERROR, $"Peer returned no result for '{method}'.");
     }
@@ -77,14 +68,14 @@ internal sealed class RpcConnection(MessageReader reader, MessageWriter writer) 
     }
   }
 
-  public async Task RunAsync(CancellationToken cancellationToken) {
-    while (!cancellationToken.IsCancellationRequested) {
-      var payload = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+  public async Task RunAsync(CancellationToken ct) {
+    while (!ct.IsCancellationRequested) {
+      var payload = await reader.ReadAsync(ct).ConfigureAwait(false);
       if (payload is null) {
         return;
       }
 
-      Dispatch(payload, cancellationToken);
+      Dispatch(payload, ct);
     }
   }
 
@@ -99,7 +90,7 @@ internal sealed class RpcConnection(MessageReader reader, MessageWriter writer) 
     }
   }
 
-  private void Dispatch(byte[] payload, CancellationToken cancellationToken) {
+  private void Dispatch(byte[] payload, CancellationToken ct) {
     JsonElement root;
     try {
       using var document = JsonDocument.Parse(payload);
@@ -120,7 +111,7 @@ internal sealed class RpcConnection(MessageReader reader, MessageWriter writer) 
         method.ValueKind == JsonValueKind.String) {
       root.TryGetProperty("params", out var parameters);
       _ = hasId
-        ? HandleRequestAsync(id, method.GetString()!, parameters, cancellationToken)
+        ? HandleRequestAsync(id, method.GetString()!, parameters, ct)
         : HandleNotificationAsync(method.GetString()!, parameters);
       return;
     }
@@ -138,14 +129,9 @@ internal sealed class RpcConnection(MessageReader reader, MessageWriter writer) 
     "CA1031:Do not catch general exception types",
     Justification = "Protocol boundary: no handler failure may end the process; it becomes an error response."
   )]
-  private async Task HandleRequestAsync(
-    JsonElement id,
-    string method,
-    JsonElement parameters,
-    CancellationToken cancellationToken
-  ) {
+  private async Task HandleRequestAsync(JsonElement id, string method, JsonElement parameters, CancellationToken ct) {
     var key = id.GetRawText();
-    using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+    using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(ct);
     _inbound[key] = cancellation;
     try {
       if (!_requestHandlers.TryGetValue(method, out var handler)) {
