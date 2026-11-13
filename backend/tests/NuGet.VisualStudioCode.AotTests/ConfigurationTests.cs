@@ -24,22 +24,12 @@ public sealed class ConfigurationTests(PublishedBackend backend) {
   private const string GLOBAL_PACKAGES = "Global Packages";
 
   private static Task<FoldersListResult> FoldersAsync(BackendClient client, CancellationToken ct)
-    => client.Connection.RequestAsync(
-      MethodNames.FOLDERS_LIST,
-      new Empty(),
-      ProtocolJsonContext.Default.Empty,
-      ProtocolJsonContext.Default.FoldersListResult,
-      ct
-    );
+    => client.Connection.RequestAsync(MethodNames.FOLDERS_LIST, new Empty(), ProtocolJsonContext.Default.Empty,
+      ProtocolJsonContext.Default.FoldersListResult, ct);
 
   private static Task<FolderSizeResult> SizeAsync(BackendClient client, string path, CancellationToken ct)
-    => client.Connection.RequestAsync(
-      MethodNames.FOLDERS_SIZE,
-      new FolderSizeParams(path),
-      ProtocolJsonContext.Default.FolderSizeParams,
-      ProtocolJsonContext.Default.FolderSizeResult,
-      ct
-    );
+    => client.Connection.RequestAsync(MethodNames.FOLDERS_SIZE, new FolderSizeParams(path),
+      ProtocolJsonContext.Default.FolderSizeParams, ProtocolJsonContext.Default.FolderSizeResult, ct);
 
   [Fact]
   public async Task Sources_list_reads_the_config_hierarchy_from_the_working_directory() {
@@ -49,13 +39,8 @@ public sealed class ConfigurationTests(PublishedBackend backend) {
     await using var client = BackendClient.Start(backend, directory.Path);
     await client.InitializeAsync(ct);
 
-    var result = await client.Connection.RequestAsync(
-      MethodNames.SOURCES_LIST,
-      new Empty(),
-      ProtocolJsonContext.Default.Empty,
-      ProtocolJsonContext.Default.SourcesListResult,
-      ct
-    );
+    var result = await client.Connection.RequestAsync(MethodNames.SOURCES_LIST, new Empty(),
+      ProtocolJsonContext.Default.Empty, ProtocolJsonContext.Default.SourcesListResult, ct);
 
     Assert.Equal(configPath, result.Files[0].Path, true);
     var feed = Assert.Single(result.Effective);
@@ -73,10 +58,8 @@ public sealed class ConfigurationTests(PublishedBackend backend) {
 
     var result = await FoldersAsync(client, ct);
 
-    var global = Assert.Single(
-      result.Folders,
-      folder => string.Equals(folder.Title, GLOBAL_PACKAGES, StringComparison.Ordinal)
-    );
+    var global = Assert.Single(result.Folders,
+      folder => string.Equals(folder.Title, GLOBAL_PACKAGES, StringComparison.Ordinal));
     Assert.StartsWith(directory.Combine("global-packages"), global.Path, StringComparison.OrdinalIgnoreCase);
     Assert.Contains(result.Folders, folder => string.Equals(folder.Title, "HTTP Cache", StringComparison.Ordinal));
   }
@@ -90,9 +73,8 @@ public sealed class ConfigurationTests(PublishedBackend backend) {
     await using var client = BackendClient.Start(backend, directory.Path);
     await client.InitializeAsync(ct);
     var folders = await FoldersAsync(client, ct);
-    var global = folders.Folders.Single(folder
-      => string.Equals(folder.Title, GLOBAL_PACKAGES, StringComparison.Ordinal)
-    );
+    var global =
+      folders.Folders.Single(folder => string.Equals(folder.Title, GLOBAL_PACKAGES, StringComparison.Ordinal));
 
     var size = await SizeAsync(client, global.Path, ct);
     var rejected = await Assert.ThrowsAsync<RpcException>(() => SizeAsync(client, directory.Path, ct));

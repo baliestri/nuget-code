@@ -100,9 +100,7 @@ public sealed class MessageFramingTests {
     var received = new List<string>();
     while (await reader.ReadAsync(ct) is { } payload) received.Add(Encoding.UTF8.GetString(payload));
 
-    Assert.Equal(
-      payloads.Select(p => Encoding.UTF8.GetString(p)).Order(StringComparer.Ordinal),
-      received.Order(StringComparer.Ordinal)
-    );
+    Assert.Equal(payloads.Select(p => Encoding.UTF8.GetString(p)).Order(StringComparer.Ordinal),
+      received.Order(StringComparer.Ordinal));
   }
 }

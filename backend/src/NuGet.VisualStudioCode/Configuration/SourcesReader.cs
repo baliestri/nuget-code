@@ -20,12 +20,6 @@ internal static class SourcesReader {
   }
 
   private static FeedInfo ToFeed(PackageSource source)
-    => new(
-      source.Name,
-      source.Source,
-      source.IsEnabled,
-      source.AllowInsecureConnections,
-      source.ProtocolVersion,
-      source.IsLocal
-    );
+    => new(source.Name, source.Source, source.IsEnabled, source.AllowInsecureConnections, source.ProtocolVersion,
+      source.IsLocal);
 }

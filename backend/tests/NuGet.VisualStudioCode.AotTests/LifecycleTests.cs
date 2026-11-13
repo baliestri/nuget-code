@@ -27,13 +27,8 @@ public sealed class LifecycleTests(PublishedBackend backend) {
     await using var client = BackendClient.Start(backend, directory.Path);
     await client.InitializeAsync(ct);
 
-    await client.Connection.RequestAsync(
-      MethodNames.SHUTDOWN,
-      new Empty(),
-      ProtocolJsonContext.Default.Empty,
-      ProtocolJsonContext.Default.Empty,
-      ct
-    );
+    await client.Connection.RequestAsync(MethodNames.SHUTDOWN, new Empty(), ProtocolJsonContext.Default.Empty,
+      ProtocolJsonContext.Default.Empty, ct);
     var exitCode = await client.CloseAsync();
 
     Assert.Equal(0, exitCode);
@@ -45,13 +40,8 @@ public sealed class LifecycleTests(PublishedBackend backend) {
     using var directory = new TempDirectory();
     await using var client = BackendClient.Start(backend, directory.Path);
 
-    var exception = await Assert.ThrowsAsync<RpcException>(() => client.Connection.RequestAsync(
-      "does/notExist",
-      new Empty(),
-      ProtocolJsonContext.Default.Empty,
-      ProtocolJsonContext.Default.Empty,
-      ct
-    ));
+    var exception = await Assert.ThrowsAsync<RpcException>(() => client.Connection.RequestAsync("does/notExist",
+      new Empty(), ProtocolJsonContext.Default.Empty, ProtocolJsonContext.Default.Empty, ct));
     var result = await client.InitializeAsync(ct);
 
     Assert.Equal(RpcErrorCodes.METHOD_NOT_FOUND, exception.Code);

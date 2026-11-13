@@ -21,9 +21,6 @@ public static class DotnetCli {
     var output = process.StandardOutput.ReadToEndAsync(ct);
     var error = process.StandardError.ReadToEndAsync(ct);
     await process.WaitForExitAsync(ct).ConfigureAwait(false);
-    return new DotnetResult(
-      process.ExitCode,
-      await output.ConfigureAwait(false) + await error.ConfigureAwait(false)
-    );
+    return new DotnetResult(process.ExitCode, await output.ConfigureAwait(false) + await error.ConfigureAwait(false));
   }
 }

@@ -14,15 +14,12 @@ public sealed class LoggingTests(PublishedBackend backend) {
     using var directory = new TempDirectory();
     await using var client = BackendClient.Start(backend, directory.Path);
     var received = new TaskCompletionSource<LogEntry>(TaskCreationOptions.RunContinuationsAsynchronously);
-    client.Connection.OnNotification(
-      MethodNames.LOG_ENTRY,
-      ProtocolJsonContext.Default.LogEntry,
+    client.Connection.OnNotification(MethodNames.LOG_ENTRY, ProtocolJsonContext.Default.LogEntry,
       entry =>
       {
         received.TrySetResult(entry);
         return Task.CompletedTask;
-      }
-    );
+      });
 
     await client.InitializeAsync(ct);
     var entry = await received.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);

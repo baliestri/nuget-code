@@ -18,9 +18,7 @@ internal static class EvaluatedProjectBuilder {
       .SelectMany(framework
         => framework.Dependencies.Select(dependency => (Framework: Alias(framework), Dependency: dependency)))
       .GroupBy(entry => entry.Dependency.Name, StringComparer.OrdinalIgnoreCase)
-      .Select(group => new DeclaredPackage(
-        group.First().Dependency.Name,
-        Requested(group.First().Dependency),
+      .Select(group => new DeclaredPackage(group.First().Dependency.Name, Requested(group.First().Dependency),
         group.Select(entry => entry.Framework)
           .Distinct(StringComparer.Ordinal)
           .OrderBy(frameworks.IndexOf)

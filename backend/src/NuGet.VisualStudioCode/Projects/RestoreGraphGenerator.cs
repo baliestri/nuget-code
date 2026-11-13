@@ -26,13 +26,14 @@ internal sealed class RestoreGraphGenerator(SdkService sdk) {
         workingDirectory,
         ct
       ).ConfigureAwait(false);
-      if (result.ExitCode != 0 ||
-          !File.Exists(output)) {
-        var text = (result.StandardOutput + result.StandardError).Trim();
-        return new GraphResult(null, text.Length > 0 ? text : "MSBuild did not produce the restore graph.");
+
+      if (result.ExitCode == 0 &&
+          File.Exists(output)) {
+        return new GraphResult(DependencyGraphSpec.Load(output), null);
       }
 
-      return new GraphResult(DependencyGraphSpec.Load(output), null);
+      var text = (result.StandardOutput + result.StandardError).Trim();
+      return new GraphResult(null, text.Length > 0 ? text : "MSBuild did not produce the restore graph.");
     }
     finally {
       if (File.Exists(output)) {

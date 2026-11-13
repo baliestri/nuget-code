@@ -10,12 +10,9 @@ namespace NuGet.VisualStudioCode.Methods;
 
 internal static class PackagesMethods {
   public static void Register(RpcConnection connection, SessionManager sessions)
-    => connection.OnRequest(
-      MethodNames.PACKAGES_INSTALLED,
-      ProtocolJsonContext.Default.Empty,
+    => connection.OnRequest(MethodNames.PACKAGES_INSTALLED, ProtocolJsonContext.Default.Empty,
       ProtocolJsonContext.Default.PackagesInstalledResult,
-      (_, _) => Task.FromResult(new PackagesInstalledResult(sessions.Require().Projects.Select(Describe).ToList()))
-    );
+      (_, _) => Task.FromResult(new PackagesInstalledResult(sessions.Require().Projects.Select(Describe).ToList())));
 
   private static ProjectPackages Describe(EvaluatedProject model) {
     var resolved = AssetsReader.ReadResolved(model.AssetsPath);

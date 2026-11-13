@@ -21,13 +21,8 @@ public sealed class ProcessRunnerTests {
   public async Task RunAsync_reports_a_non_zero_exit_code_without_throwing() {
     var ct = TestContext.Current.CancellationToken;
 
-    var result = await ProcessRunner.RunAsync(
-      "dotnet",
-      ["this-command-does-not-exist"],
-      Environment.CurrentDirectory,
-      null,
-      ct
-    );
+    var result = await ProcessRunner.RunAsync("dotnet", ["this-command-does-not-exist"],
+      Environment.CurrentDirectory, null, ct);
 
     Assert.NotEqual(0, result.ExitCode);
   }

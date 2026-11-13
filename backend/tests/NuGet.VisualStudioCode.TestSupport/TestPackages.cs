@@ -19,15 +19,10 @@ public static class TestPackages {
       Description = $"Test package {id}."
     };
     builder.Authors.Add("tests");
-    builder.DependencyGroups.Add(
-      new PackageDependencyGroup(
-        NuGetFramework.Parse("netstandard2.0"),
-        dependencies.Select(dependency => new PackageDependency(dependency.Id, VersionRange.Parse(dependency.Range)))
-      )
-    );
-    builder.Files.Add(
-      new PhysicalPackageFile(new MemoryStream(Encoding.UTF8.GetBytes(id))) { TargetPath = "lib/netstandard2.0/_._" }
-    );
+    builder.DependencyGroups.Add(new PackageDependencyGroup(NuGetFramework.Parse("netstandard2.0"),
+      dependencies.Select(dependency => new PackageDependency(dependency.Id, VersionRange.Parse(dependency.Range)))));
+    builder.Files.Add(new PhysicalPackageFile(new MemoryStream(Encoding.UTF8.GetBytes(id)))
+      { TargetPath = "lib/netstandard2.0/_._" });
     var path = Path.Combine(feedDirectory, $"{id}.{version}.nupkg");
     using var stream = File.Create(path);
     builder.Save(stream);

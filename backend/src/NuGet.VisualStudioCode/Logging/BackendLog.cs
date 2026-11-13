@@ -21,9 +21,8 @@ internal sealed class BackendLog : IAsyncDisposable {
   }
 
   public void Write(string level, string context, string message)
-    => _channel.Writer.TryWrite(
-      new LogEntry(level, TimeProvider.System.GetUtcNow(), context, SecretMasker.Mask(message))
-    );
+    => _channel.Writer.TryWrite(new LogEntry(level, TimeProvider.System.GetUtcNow(), context,
+      SecretMasker.Mask(message)));
 
   private async Task PumpAsync(Func<LogEntry, Task> sink) {
     await foreach (var entry in _channel.Reader.ReadAllAsync().ConfigureAwait(false)) {

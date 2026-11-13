@@ -62,19 +62,14 @@ internal sealed class BackendClient : IAsyncDisposable {
       foreach (var (name, value) in environment) startInfo.Environment[name] = value;
     }
 
-    var process = Process.Start(startInfo)
-                  ?? throw new InvalidOperationException("The backend process did not start.");
+    var process = Process.Start(startInfo) ??
+                  throw new InvalidOperationException("The backend process did not start.");
     return new BackendClient(process);
   }
 
   public Task<InitializeResult> InitializeAsync(CancellationToken ct, string? dotnetPath = null)
-    => Connection.RequestAsync(
-      MethodNames.INITIALIZE,
-      new InitializeParams(dotnetPath, null),
-      ProtocolJsonContext.Default.InitializeParams,
-      ProtocolJsonContext.Default.InitializeResult,
-      ct
-    );
+    => Connection.RequestAsync(MethodNames.INITIALIZE, new InitializeParams(dotnetPath, null),
+      ProtocolJsonContext.Default.InitializeParams, ProtocolJsonContext.Default.InitializeResult, ct);
 
   public async Task<int> CloseAsync() {
     _process.StandardInput.Close();

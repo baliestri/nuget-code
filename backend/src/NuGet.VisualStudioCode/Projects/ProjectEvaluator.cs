@@ -27,7 +27,7 @@ internal sealed class ProjectEvaluator(RestoreGraphGenerator generator, BackendL
     return models;
   }
 
-  private async Task<EvaluatedProject> EvaluateProjectAsync(string projectPath, string workingDirectory,
+  public async Task<EvaluatedProject> EvaluateProjectAsync(string projectPath, string workingDirectory,
     CancellationToken ct) {
     var result = await generator.GenerateAsync(projectPath, workingDirectory, ct).ConfigureAwait(false);
     if (result.Graph is not null) {
@@ -46,11 +46,8 @@ internal sealed class ProjectEvaluator(RestoreGraphGenerator generator, BackendL
         return solution.ProjectPaths.Select(path => FromGraph(whole.Graph, path)).ToList();
       }
 
-      log.Write(
-        LogLevels.WARNING,
-        LogContexts.BACKEND,
-        "Solution-wide evaluation failed; evaluating project by project."
-      );
+      log.Write(LogLevels.WARNING, LogContexts.BACKEND,
+        "Solution-wide evaluation failed; evaluating project by project.");
     }
 
     using var gate = new SemaphoreSlim(MAX_PARALLEL);

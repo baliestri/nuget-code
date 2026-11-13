@@ -13,26 +13,21 @@ internal static class SolutionMethods {
   private readonly static Empty Done = new();
 
   public static void Register(RpcConnection connection, SessionManager sessions, ProjectEvaluator evaluator) {
-    connection.OnRequest(
-      MethodNames.SOLUTION_OPEN,
-      ProtocolJsonContext.Default.SolutionOpenParams,
-      ProtocolJsonContext.Default.SolutionOpenResult,
-      async (parameters, ct) =>
+    connection.OnRequest(MethodNames.SOLUTION_OPEN, ProtocolJsonContext.Default.SolutionOpenParams,
+      ProtocolJsonContext.Default.SolutionOpenResult, async (parameters, ct) =>
       {
         var solution = await SolutionReader.ReadAsync(parameters.Path, parameters.Projects, ct).ConfigureAwait(false);
         var models = await evaluator.EvaluateAsync(solution, ct).ConfigureAwait(false);
         sessions.Replace(new Session(solution, models));
         return new SolutionOpenResult(solution.Path, KindName(solution.Kind),
           models.Select(model => model.Info).ToList());
-      }
-    );
+      });
     connection.OnRequest(MethodNames.SOLUTION_CLOSE, ProtocolJsonContext.Default.Empty,
       ProtocolJsonContext.Default.Empty, (_, _) =>
       {
         sessions.Close();
         return Task.FromResult(Done);
-      }
-    );
+      });
   }
 
   private static string KindName(SolutionKind kind)

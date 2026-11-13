@@ -24,10 +24,8 @@ internal sealed class SdkService {
 
   public DotnetRunner GetRunner()
     => TryGetRunner() ??
-       throw new RpcException(
-         RpcErrorCodes.SDK_NOT_FOUND,
-         "The .NET SDK was not found. Install it or set the dotnet path in the extension settings."
-       );
+       throw new RpcException(RpcErrorCodes.SDK_NOT_FOUND,
+         "The .NET SDK was not found. Install it or set the dotnet path in the extension settings.");
 
   private DotnetRunner? TryGetRunner() {
     var path = DotnetLocator.Find(_configuredPath, Environment.GetEnvironmentVariable, File.Exists);

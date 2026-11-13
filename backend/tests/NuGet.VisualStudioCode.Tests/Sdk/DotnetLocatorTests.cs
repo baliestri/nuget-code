@@ -26,11 +26,8 @@ public sealed class DotnetLocatorTests {
 
   [Fact]
   public void Configured_path_that_does_not_exist_is_not_replaced_by_a_fallback() {
-    var found = DotnetLocator.Find(
-      Path.Combine("missing", Executable),
-      Variables("root", "bin"),
-      path => path.StartsWith("root", StringComparison.Ordinal)
-    );
+    var found = DotnetLocator.Find(Path.Combine("missing", Executable), Variables("root", "bin"),
+      path => path.StartsWith("root", StringComparison.Ordinal));
 
     Assert.Null(found);
   }
@@ -49,11 +46,8 @@ public sealed class DotnetLocatorTests {
     var path = string.Join(Path.PathSeparator, "first", "second");
     var expected = Path.Combine("second", Executable);
 
-    var found = DotnetLocator.Find(
-      null,
-      Variables(null, path),
-      candidate => string.Equals(candidate, expected, StringComparison.Ordinal)
-    );
+    var found = DotnetLocator.Find(null, Variables(null, path),
+      candidate => string.Equals(candidate, expected, StringComparison.Ordinal));
 
     Assert.Equal(expected, found);
   }

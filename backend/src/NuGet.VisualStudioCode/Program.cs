@@ -15,17 +15,20 @@ var output = Console.OpenStandardOutput();
 using var writer = new MessageWriter(output);
 var connection = new RpcConnection(new MessageReader(input), writer);
 var log = new BackendLog(entry
-  => connection.NotifyAsync(MethodNames.LOG_ENTRY, entry, ProtocolJsonContext.Default.LogEntry)
-);
+  => connection.NotifyAsync(MethodNames.LOG_ENTRY, entry, ProtocolJsonContext.Default.LogEntry));
 var sdk = new SdkService();
 var sessions = new SessionManager();
 var settings = new SettingsProvider(() => sessions.Current?.Solution.Directory);
 var evaluator = new ProjectEvaluator(new RestoreGraphGenerator(sdk), log);
+using var refresher = new SessionRefresher(sessions, evaluator, log,
+  change => connection.NotifyAsync(MethodNames.SOLUTION_DID_CHANGE, change,
+    ProtocolJsonContext.Default.SolutionDidChangeParams), TimeSpan.FromMilliseconds(250));
 
 LifecycleMethods.Register(connection, sdk, log);
 ConfigurationMethods.Register(connection, settings, () => sessions.Current is not null);
 SolutionMethods.Register(connection, sessions, evaluator);
 PackagesMethods.Register(connection, sessions);
+WorkspaceMethods.Register(connection, refresher);
 
 try {
   await connection.RunAsync(CancellationToken.None).ConfigureAwait(false);

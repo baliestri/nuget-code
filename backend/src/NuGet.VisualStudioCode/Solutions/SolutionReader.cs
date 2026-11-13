@@ -12,18 +12,11 @@ namespace NuGet.VisualStudioCode.Solutions;
 internal static class SolutionReader {
   private readonly static string[] ProjectExtensions = [".csproj", ".fsproj", ".vbproj"];
 
-  public static async Task<SolutionDescriptor> ReadAsync(
-    string path,
-    IReadOnlyList<string>? implicitProjects,
-    CancellationToken ct
-  ) {
+  public static async Task<SolutionDescriptor> ReadAsync(string path, IReadOnlyList<string>? implicitProjects,
+    CancellationToken ct) {
     if (implicitProjects is not null) {
-      return new SolutionDescriptor(
-        path,
-        Path.GetFullPath(path),
-        SolutionKind.Implicit,
-        Normalize(implicitProjects.Select(Path.GetFullPath))
-      );
+      return new SolutionDescriptor(path, Path.GetFullPath(path), SolutionKind.Implicit,
+        Normalize(implicitProjects.Select(Path.GetFullPath)));
     }
 
     if (!File.Exists(path)) {

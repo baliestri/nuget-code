@@ -8,19 +8,10 @@ using NuGet.VisualStudioCode.TestSupport;
 namespace NuGet.VisualStudioCode.AotTests;
 
 public sealed class SolutionTests(PublishedBackend backend) {
-  private static Task<SolutionOpenResult> OpenAsync(
-    BackendClient client,
-    string path,
-    IReadOnlyList<string>? projects,
-    CancellationToken ct
-  )
-    => client.Connection.RequestAsync(
-      MethodNames.SOLUTION_OPEN,
-      new SolutionOpenParams(path, projects),
-      ProtocolJsonContext.Default.SolutionOpenParams,
-      ProtocolJsonContext.Default.SolutionOpenResult,
-      ct
-    );
+  private static Task<SolutionOpenResult> OpenAsync(BackendClient client, string path, IReadOnlyList<string>? projects,
+    CancellationToken ct)
+    => client.Connection.RequestAsync(MethodNames.SOLUTION_OPEN, new SolutionOpenParams(path, projects),
+      ProtocolJsonContext.Default.SolutionOpenParams, ProtocolJsonContext.Default.SolutionOpenResult, ct);
 
   [Theory]
   [InlineData("slnx")]
@@ -72,13 +63,8 @@ public sealed class SolutionTests(PublishedBackend backend) {
     await client.InitializeAsync(ct);
 
     var exception = await Assert.ThrowsAsync<RpcException>(() => OpenAsync(client, missing, null, ct));
-    await client.Connection.RequestAsync(
-      MethodNames.SOLUTION_CLOSE,
-      new Empty(),
-      ProtocolJsonContext.Default.Empty,
-      ProtocolJsonContext.Default.Empty,
-      ct
-    );
+    await client.Connection.RequestAsync(MethodNames.SOLUTION_CLOSE, new Empty(), ProtocolJsonContext.Default.Empty,
+      ProtocolJsonContext.Default.Empty, ct);
 
     Assert.Equal(RpcErrorCodes.SOLUTION_UNREADABLE, exception.Code);
   }

@@ -8,12 +8,8 @@ namespace NuGet.VisualStudioCode.Tests.Rpc;
 
 public sealed class RpcConnectionTests {
   private static void RegisterEcho(RpcConnection connection)
-    => connection.OnRequest(
-      "echo",
-      TestJsonContext.Default.EchoParams,
-      TestJsonContext.Default.EchoResult,
-      (parameters, _) => Task.FromResult(new EchoResult(parameters.Text ?? "<none>"))
-    );
+    => connection.OnRequest("echo", TestJsonContext.Default.EchoParams, TestJsonContext.Default.EchoResult,
+      (parameters, _) => Task.FromResult(new EchoResult(parameters.Text ?? "<none>")));
 
   [Fact]
   public async Task Request_returns_the_handler_result_with_the_same_id() {
@@ -77,12 +73,8 @@ public sealed class RpcConnectionTests {
     await using var peer = new RpcTestPeer(connection =>
     {
       RegisterEcho(connection);
-      connection.OnRequest<EchoParams, EchoResult>(
-        "boom",
-        TestJsonContext.Default.EchoParams,
-        TestJsonContext.Default.EchoResult,
-        (_, _) => throw new InvalidOperationException("bad")
-      );
+      connection.OnRequest<EchoParams, EchoResult>("boom", TestJsonContext.Default.EchoParams,
+        TestJsonContext.Default.EchoResult, (_, _) => throw new InvalidOperationException("bad"));
     });
 
     await peer.SendAsync("""{"jsonrpc":"2.0","id":1,"method":"boom"}""", ct);
@@ -122,18 +114,13 @@ public sealed class RpcConnectionTests {
     var ct = TestContext.Current.CancellationToken;
     var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
     await using var peer = new RpcTestPeer(connection =>
-      connection.OnRequest<EchoParams, EchoResult>(
-        "wait",
-        TestJsonContext.Default.EchoParams,
-        TestJsonContext.Default.EchoResult,
-        async (_, token) =>
+      connection.OnRequest<EchoParams, EchoResult>("wait", TestJsonContext.Default.EchoParams,
+        TestJsonContext.Default.EchoResult, async (_, token) =>
         {
           started.SetResult();
           await Task.Delay(Timeout.Infinite, token).ConfigureAwait(false);
           return new EchoResult("never");
-        }
-      )
-    );
+        }));
 
     await peer.SendAsync("""{"jsonrpc":"2.0","id":9,"method":"wait"}""", ct);
     await started.Task.WaitAsync(ct);
@@ -151,15 +138,11 @@ public sealed class RpcConnectionTests {
     await using var peer = new RpcTestPeer(connection =>
     {
       RegisterEcho(connection);
-      connection.OnNotification(
-        "note",
-        TestJsonContext.Default.EchoParams,
-        parameters =>
-        {
-          received.SetResult(parameters.Text);
-          return Task.CompletedTask;
-        }
-      );
+      connection.OnNotification("note", TestJsonContext.Default.EchoParams, parameters =>
+      {
+        received.SetResult(parameters.Text);
+        return Task.CompletedTask;
+      });
     });
 
     await peer.SendAsync("""{"jsonrpc":"2.0","method":"note","params":{"text":"n"}}""", ct);
@@ -188,13 +171,8 @@ public sealed class RpcConnectionTests {
     var ct = TestContext.Current.CancellationToken;
     await using var peer = new RpcTestPeer(_ => { });
 
-    var pending = peer.Server.RequestAsync(
-      "ask",
-      new EchoParams("q"),
-      TestJsonContext.Default.EchoParams,
-      TestJsonContext.Default.EchoResult,
-      ct
-    );
+    var pending = peer.Server.RequestAsync("ask", new EchoParams("q"),
+      TestJsonContext.Default.EchoParams, TestJsonContext.Default.EchoResult, ct);
     var request = await peer.ReceiveAsync(ct);
     var id = request.GetProperty("id").GetInt64();
     await peer.SendAsync($$$"""{"jsonrpc":"2.0","id":{{{id}}},"result":{"text":"a"}}""", ct);
@@ -208,13 +186,8 @@ public sealed class RpcConnectionTests {
     var ct = TestContext.Current.CancellationToken;
     await using var peer = new RpcTestPeer(_ => { });
 
-    var pending = peer.Server.RequestAsync(
-      "ask",
-      new EchoParams("q"),
-      TestJsonContext.Default.EchoParams,
-      TestJsonContext.Default.EchoResult,
-      ct
-    );
+    var pending = peer.Server.RequestAsync("ask", new EchoParams("q"),
+      TestJsonContext.Default.EchoParams, TestJsonContext.Default.EchoResult, ct);
     var id = (await peer.ReceiveAsync(ct)).GetProperty("id").GetInt64();
     await peer.SendAsync($$$"""{"jsonrpc":"2.0","id":{{{id}}},"error":{"code":-5,"message":"denied"}}""", ct);
 

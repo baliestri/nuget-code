@@ -6,11 +6,8 @@ namespace NuGet.VisualStudioCode.Sdk;
 internal static class DotnetLocator {
   private readonly static string Executable = OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet";
 
-  public static string? Find(
-    string? configuredPath,
-    Func<string, string?> getEnvironmentVariable,
-    Func<string, bool> fileExists
-  ) {
+  public static string? Find(string? configuredPath, Func<string, string?> getEnvironmentVariable,
+    Func<string, bool> fileExists) {
     if (!string.IsNullOrWhiteSpace(configuredPath)) {
       return fileExists(configuredPath) ? configuredPath : null;
     }

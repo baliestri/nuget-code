@@ -38,8 +38,8 @@ internal sealed class RpcTestPeer : IAsyncDisposable {
     => _clientWriter.WriteAsync(Encoding.UTF8.GetBytes(json), ct);
 
   public async Task<JsonElement> ReceiveAsync(CancellationToken ct) {
-    var payload = await _clientReader.ReadAsync(ct).ConfigureAwait(false)
-                  ?? throw new EndOfStreamException();
+    var payload = await _clientReader.ReadAsync(ct).ConfigureAwait(false) ??
+                  throw new EndOfStreamException();
     using var document = JsonDocument.Parse(payload);
     return document.RootElement.Clone();
   }

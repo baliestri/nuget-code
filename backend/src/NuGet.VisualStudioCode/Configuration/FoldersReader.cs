@@ -24,15 +24,10 @@ internal static class FoldersReader {
     folders.Add(new FolderInfo("HTTP Cache", httpCache));
     folders.Add(new FolderInfo("NuGetHome", NuGetEnvironment.GetFolderPath(NuGetFolderPath.NuGetHome)));
     folders.Add(new FolderInfo("UserSettings", NuGetEnvironment.GetFolderPath(NuGetFolderPath.UserSettingsDirectory)));
-    folders.Add(
-      new FolderInfo(
-        "MachineSettingsBase",
-        NuGetEnvironment.GetFolderPath(NuGetFolderPath.MachineWideSettingsBaseDirectory)
-      )
-    );
-    folders.Add(
-      new FolderInfo("MachineConfigDir", NuGetEnvironment.GetFolderPath(NuGetFolderPath.MachineWideConfigDirectory))
-    );
+    folders.Add(new FolderInfo("MachineSettingsBase",
+      NuGetEnvironment.GetFolderPath(NuGetFolderPath.MachineWideSettingsBaseDirectory)));
+    folders.Add(new FolderInfo("MachineConfigDir",
+      NuGetEnvironment.GetFolderPath(NuGetFolderPath.MachineWideConfigDirectory)));
     folders.Add(new FolderInfo("Temp", NuGetEnvironment.GetFolderPath(NuGetFolderPath.Temp)));
     var fallback = SettingsUtility.GetFallbackPackageFolders(settings);
     for (var index = 0; index < fallback.Count; index++) {

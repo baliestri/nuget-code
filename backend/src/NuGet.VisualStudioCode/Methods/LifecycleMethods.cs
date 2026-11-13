@@ -15,29 +15,21 @@ internal static class LifecycleMethods {
   private readonly static Empty Done = new();
 
   public static void Register(RpcConnection connection, SdkService sdk, BackendLog log) {
-    connection.OnRequest(
-      MethodNames.INITIALIZE,
-      ProtocolJsonContext.Default.InitializeParams,
-      ProtocolJsonContext.Default.InitializeResult,
-      async (parameters, ct) =>
+    connection.OnRequest(MethodNames.INITIALIZE, ProtocolJsonContext.Default.InitializeParams,
+      ProtocolJsonContext.Default.InitializeResult, async (parameters, ct) =>
       {
         sdk.Configure(parameters.DotnetPath);
         var info = await sdk.DescribeAsync(Environment.CurrentDirectory, ct).ConfigureAwait(false);
         log.Write(LogLevels.INFO, LogContexts.BACKEND,
           info is null ? "Backend started without a .NET SDK." : $"Backend started with .NET SDK {info.Version}.");
         return new InitializeResult(PROTOCOL_VERSION, BackendVersion(), info);
-      }
-    );
-    connection.OnRequest(
-      MethodNames.SHUTDOWN,
-      ProtocolJsonContext.Default.Empty,
-      ProtocolJsonContext.Default.Empty,
-      (_, _) =>
+      });
+    connection.OnRequest(MethodNames.SHUTDOWN, ProtocolJsonContext.Default.Empty,
+      ProtocolJsonContext.Default.Empty, (_, _) =>
       {
         ChildProcesses.KillAll();
         return Task.FromResult(Done);
-      }
-    );
+      });
   }
 
   private static string BackendVersion()

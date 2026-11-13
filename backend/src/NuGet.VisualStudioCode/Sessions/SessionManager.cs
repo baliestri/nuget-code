@@ -17,6 +17,9 @@ internal sealed class SessionManager {
   public void Replace(Session session)
     => Volatile.Write(ref _current, session);
 
+  public bool TryReplace(Session expected, Session next)
+    => ReferenceEquals(Interlocked.CompareExchange(ref _current, next, expected), expected);
+
   public void Close()
     => Volatile.Write(ref _current, null);
 }
