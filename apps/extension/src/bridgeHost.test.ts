@@ -1,7 +1,14 @@
 import { BackendRestartedError, BackendStoppedError, ResponseError, type BackendApi } from "@nuget-code/backend-client";
 import { ALLOWED_BACKEND_METHODS, BridgeError, type BackendMethod } from "@nuget-code/bridge";
 import { describe, expect, it } from "vitest";
-import { createBackendHandler, createHostHandler, toSessionState, warningNotice, type HostDeps } from "./bridgeHost";
+import {
+  createBackendHandler,
+  createHostHandler,
+  FOLDER_SIZE_LIFETIME_MS,
+  toSessionState,
+  warningNotice,
+  type HostDeps
+} from "./bridgeHost";
 
 const WITHOUT_PARAMS: readonly BackendMethod[] = ["installedPackages", "cancelOperation", "listSources", "listFolders"];
 
@@ -21,6 +28,8 @@ function fakeApi(fail?: unknown): { api: BackendApi; calls: { method: string; ar
   ) as BackendApi;
   return { api, calls };
 }
+
+const NOW = 1_800_000_000_000;
 
 function fakeDeps(overrides: Partial<HostDeps> = {}): { deps: HostDeps; calls: string[] } {
   const calls: string[] = [];
@@ -42,6 +51,9 @@ function fakeDeps(overrides: Partial<HostDeps> = {}): { deps: HostDeps; calls: s
     notifyWarnings: (...args) =>
       void calls.push(`notifyWarnings(${args.map((arg) => JSON.stringify(arg)).join(", ")})`),
     notify: (...args) => void calls.push(`notify(${args.map((arg) => JSON.stringify(arg)).join(", ")})`),
+    readFolderSizes: () => undefined,
+    writeFolderSizes: () => Promise.resolve(),
+    now: () => NOW,
     ...overrides
   };
   return { deps, calls };
@@ -193,6 +205,77 @@ describe("createHostHandler", () => {
     await handler("notify", { kind: "info", messages: [] });
 
     expect(calls).toEqual([`notify("warning", ["One.","Two."])`, `notify("info", ["Three."])`]);
+  });
+
+  it("folderSizes answers with the stored sizes that are well formed and under thirty days old", async () => {
+    const fresh = { exists: true, bytes: 10, at: NOW - FOLDER_SIZE_LIFETIME_MS + 1 };
+    const { deps } = fakeDeps({
+      readFolderSizes: () => ({
+        "/fresh": fresh,
+        "/old": { exists: true, bytes: 10, at: NOW - FOLDER_SIZE_LIFETIME_MS },
+        "/broken": { exists: "yes", bytes: 10, at: NOW },
+        "/nothing": null
+      })
+    });
+
+    expect(await createHostHandler(deps)("folderSizes", {})).toEqual({ sizes: { "/fresh": fresh } });
+  });
+
+  it.each([undefined, "text", [1, 2], 5])("folderSizes with %j stored has no sizes", async (stored) => {
+    const { deps } = fakeDeps({ readFolderSizes: () => stored });
+
+    expect(await createHostHandler(deps)("folderSizes", {})).toEqual({ sizes: {} });
+  });
+
+  it("saveFolderSize stores the size with the time, beside the fresh ones, and answers with it", async () => {
+    const written: unknown[] = [];
+    const other = { exists: true, bytes: 1, at: NOW - 1000 };
+    const { deps } = fakeDeps({
+      readFolderSizes: () => ({ "/other": other, "/old": { exists: true, bytes: 1, at: 0 } }),
+      writeFolderSizes: (sizes) => {
+        written.push(sizes);
+        return Promise.resolve();
+      }
+    });
+
+    const answer = await createHostHandler(deps)("saveFolderSize", { path: "/cache", exists: true, bytes: 2048 });
+
+    const size = { exists: true, bytes: 2048, at: NOW };
+    expect(answer).toEqual({ size });
+    expect(written).toEqual([{ "/other": other, "/cache": size }]);
+  });
+
+  it("saveFolderSize refuses a folder the backend does not list", async () => {
+    const written: unknown[] = [];
+    const { deps } = fakeDeps({
+      isKnownFolder: () => Promise.resolve(false),
+      writeFolderSizes: (sizes) => {
+        written.push(sizes);
+        return Promise.resolve();
+      }
+    });
+
+    const error = await createHostHandler(deps)("saveFolderSize", { path: "/etc", exists: true, bytes: 1 }).catch(
+      (reason: unknown) => reason
+    );
+
+    expect(error).toBeInstanceOf(BridgeError);
+    expect(written).toEqual([]);
+  });
+
+  it.each([
+    { path: "/cache", exists: "yes", bytes: 1 },
+    { path: "/cache", exists: true, bytes: -1 },
+    { path: "/cache", exists: true, bytes: "many" },
+    { path: "", exists: true, bytes: 1 }
+  ])("saveFolderSize refuses %j", async (params) => {
+    const { deps } = fakeDeps();
+
+    const error = await Promise.resolve()
+      .then(() => createHostHandler(deps)("saveFolderSize", params))
+      .catch((reason: unknown) => reason);
+
+    expect(error).toBeInstanceOf(BridgeError);
   });
 
   it("notifyWarnings with nothing to say shows nothing", async () => {

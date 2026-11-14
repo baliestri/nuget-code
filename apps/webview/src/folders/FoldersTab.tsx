@@ -1,13 +1,12 @@
+import type { HostRequests, MeasuredSize } from "@nuget-code/bridge";
 import type { FolderInfo, FoldersClearResult, FolderSizeResult } from "@nuget-code/protocol";
-import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState, type ReactNode } from "react";
 import { Placeholder } from "../app/Placeholder";
 import { SideBar } from "../app/SideBar";
 import { useBridge } from "../bridge/BridgeContext";
 import { formatBytes } from "../lib/format";
 import { queryKeys } from "../packages/queries";
-import type { MeasuredSize } from "../state/preferences";
-import { usePreferences } from "../state/PreferencesContext";
 import { Banner } from "../ui/Banner";
 import { Button } from "../ui/Button";
 import { Dialog } from "../ui/Dialog";
@@ -31,8 +30,8 @@ export function overlaps(left: string, right: string): boolean {
   return short.every((part, index) => long[index] === part);
 }
 
-/** When a measurement finished. Read only as an answer arrives, never while rendering. */
-const timestamp = (): number => Date.now();
+type FolderSizes = HostRequests["folderSizes"]["result"];
+const SIZES_KEY = ["folderSizes"] as const;
 
 const CELL = "border-border border-b px-2 py-0.5";
 const SKIPPED_SHOWN = 5;
@@ -75,17 +74,15 @@ export function describeCleared(result: FoldersClearResult, folders: readonly Fo
 export function FoldersTab(): ReactNode {
   const bridge = useBridge();
   const list = useQuery({ queryKey: queryKeys.folders, queryFn: () => bridge.backend("listFolders", {}) });
-  const { preferences, set } = usePreferences();
+  const queries = useQueryClient();
+  // The extension remembers the measured sizes for the machine: the folders are the same whichever solution
+  // is open. They are there when the tab or the editor is opened again, until measured again or too old.
+  const remembered = useQuery({ queryKey: SIZES_KEY, queryFn: () => bridge.host("folderSizes", {}) });
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
-  // A measured size is kept with the preferences, so it is still there when the tab or the view is opened
-  // again. What is only true for now, a measurement under way or one that failed, is kept here.
-  const [passing, setPassing] = useState<ReadonlyMap<string, "measuring" | { failed: string }>>(new Map());
-  // The loop that measures runs across renders: it adds to the newest sizes, not to the ones it started with.
-  const kept = useRef(preferences.folderSizes);
-  useEffect(() => {
-    kept.current = preferences.folderSizes;
-  }, [preferences.folderSizes]);
-  const sizeOf = (path: string): Size | undefined => passing.get(path) ?? preferences.folderSizes[path];
+  // What is newer than what the extension holds: a measurement under way, one that failed, or one whose
+  // result is on its way to being remembered.
+  const [passing, setPassing] = useState<ReadonlyMap<string, Size>>(new Map());
+  const sizeOf = (path: string): Size | undefined => passing.get(path) ?? remembered.data?.sizes?.[path];
   const [measuring, setMeasuring] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -97,21 +94,34 @@ export function FoldersTab(): ReactNode {
   const only = chosen.length === 1 ? chosen[0] : undefined;
   const canClear = chosen.length > 0 && chosen.every((folder) => folder.clearable) && !clearing;
 
-  const setSize = (path: string, size: Size): void => {
+  const pass = (path: string, size: Size | undefined): void =>
     setPassing((current) => {
       const next = new Map(current);
-      if (size === "measuring" || "failed" in size) {
-        next.set(path, size);
-      } else {
+      if (size === undefined) {
         next.delete(path);
+      } else {
+        next.set(path, size);
       }
 
       return next;
     });
-    if (size !== "measuring" && !("failed" in size)) {
-      kept.current = { ...kept.current, [path]: { exists: size.exists, bytes: size.bytes, at: timestamp() } };
-      set({ folderSizes: kept.current });
+
+  const setSize = (path: string, size: Size): void => {
+    pass(path, size);
+    if (size === "measuring" || "failed" in size) {
+      return;
     }
+
+    void bridge.host("saveFolderSize", { path, exists: size.exists, bytes: size.bytes }).then(
+      (saved) => {
+        // An answer without a size is a host that does not remember: the size stays shown for this visit.
+        if (saved.size !== undefined) {
+          queries.setQueryData<FolderSizes>(SIZES_KEY, (old) => ({ sizes: { ...old?.sizes, [path]: saved.size } }));
+          pass(path, undefined);
+        }
+      },
+      () => {}
+    );
   };
 
   /**

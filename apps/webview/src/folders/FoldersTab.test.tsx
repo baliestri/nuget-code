@@ -1,4 +1,4 @@
-import { BridgeError } from "@nuget-code/bridge";
+import { BridgeError, type MeasuredSize } from "@nuget-code/bridge";
 import type { FolderInfo, FolderSizeResult } from "@nuget-code/protocol";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -18,16 +18,23 @@ const SIZES: Record<string, FolderSizeResult> = {
   [SETTINGS.path]: { exists: false, bytes: 0 }
 };
 
-function open(configure?: (fake: FakeBridge) => void, stored: Record<string, unknown> = {}) {
+/** `remembered` is what the extension holds as measured sizes when the view opens; it remembers what it is given. */
+function open(configure?: (fake: FakeBridge) => void, remembered: Record<string, MeasuredSize> = {}) {
   const fake = createFakeBridge();
+  const sizes = { ...remembered };
   fake.backend.listFolders = () => Promise.resolve({ folders: FOLDERS });
   fake.backend.folderSize = (params) => Promise.resolve(SIZES[params.path]!);
   fake.backend.clearFolders = (params) =>
     Promise.resolve({ folders: params.paths.map((path) => ({ path, bytesFreed: 2048, skipped: [] })) });
+  fake.host.folderSizes = () => Promise.resolve({ sizes: { ...sizes } });
+  fake.host.saveFolderSize = (params) => {
+    const size = { exists: params.exists, bytes: params.bytes, at: Date.now() };
+    sizes[params.path] = size;
+    return Promise.resolve({ size });
+  };
   configure?.(fake);
-  const storage = createMemoryStorage({ tab: "folders", ...stored });
-  render(<Root client={fake.client} storage={storage} />);
-  return { fake, storage, user: userEvent.setup() };
+  render(<Root client={fake.client} storage={createMemoryStorage({ tab: "folders" })} />);
+  return { fake, sizes, user: userEvent.setup() };
 }
 
 const row = (title: string): Promise<HTMLElement> => screen.findByRole("row", { name: new RegExp(`^${title}`) });
@@ -75,7 +82,7 @@ describe("Folders", () => {
   });
 
   it("measured sizes are kept: they are there when the tab is opened again, without measuring", async () => {
-    const { fake, user, storage } = open();
+    const { fake, user, sizes } = open();
     await row("Global Packages");
     await user.click(screen.getByRole("button", { name: "Recalculate Folder Sizes" }));
     await waitFor(async () => expect(cells(await row("UserSettings"))[1]).toBe("—"));
@@ -87,14 +94,31 @@ describe("Folders", () => {
     expect(cells(await row("Global Packages"))[1]).toBe("13.0 MB");
     expect(cells(await row("HTTP Cache"))[1]).toBe("1.5 KB");
     expect(fake.callsOf("folderSize")).toHaveLength(asked);
-    expect(storage.get()).toMatchObject({
-      folderSizes: { [GLOBAL.path]: { exists: true, bytes: 13 * 1024 * 1024 }, [SETTINGS.path]: { exists: false } }
-    });
+    // The extension was given each size to remember, and nothing of it is kept with the view's preferences.
+    await waitFor(() =>
+      expect(sizes).toMatchObject({
+        [GLOBAL.path]: { exists: true, bytes: 13 * 1024 * 1024 },
+        [SETTINGS.path]: { exists: false }
+      })
+    );
+    expect(fake.callsOf("saveFolderSize")).toContainEqual({ path: HTTP.path, exists: true, bytes: 1536 });
   });
 
-  it("sizes stored by an earlier session are shown, with when they were measured", async () => {
+  it("a size the extension could not remember is still shown for this visit", async () => {
+    const { user } = open((fake) => {
+      fake.host.saveFolderSize = () => Promise.reject(new BridgeError({ kind: "host", message: "no" }));
+    });
+    await row("Global Packages");
+
+    await user.click(screen.getByRole("button", { name: "Recalculate Folder Sizes" }));
+
+    await waitFor(async () => expect(cells(await row("HTTP Cache"))[1]).toBe("1.5 KB"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("sizes the extension remembers are shown, with when they were measured", async () => {
     const at = Date.now() - 24 * 60 * 60 * 1000;
-    const { fake } = open(undefined, { folderSizes: { [HTTP.path]: { exists: true, bytes: 2048, at } } });
+    const { fake } = open(undefined, { [HTTP.path]: { exists: true, bytes: 2048, at } });
 
     const http = await row("HTTP Cache");
     expect(cells(http)[1]).toBe("2.0 KB");
@@ -103,15 +127,8 @@ describe("Folders", () => {
     expect(fake.callsOf("folderSize")).toEqual([]);
   });
 
-  it("a size measured more than a month ago is not shown", async () => {
-    const at = Date.now() - 31 * 24 * 60 * 60 * 1000;
-    open(undefined, { folderSizes: { [HTTP.path]: { exists: true, bytes: 2048, at } } });
-
-    expect(cells(await row("HTTP Cache"))[1]).toBe("?");
-  });
-
-  it("measuring again replaces what was stored", async () => {
-    const { user } = open(undefined, { folderSizes: { [HTTP.path]: { exists: true, bytes: 2048, at: Date.now() } } });
+  it("measuring again replaces what was remembered", async () => {
+    const { user } = open(undefined, { [HTTP.path]: { exists: true, bytes: 2048, at: Date.now() } });
     await row("HTTP Cache");
 
     await user.click(screen.getByRole("button", { name: "Recalculate Folder Sizes" }));

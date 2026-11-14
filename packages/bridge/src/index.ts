@@ -9,6 +9,7 @@ export {
   type Channel,
   type HostRequest,
   type HostRequests,
+  type MeasuredSize,
   type Message,
   type SessionState,
   type SolutionSession

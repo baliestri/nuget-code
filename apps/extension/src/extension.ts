@@ -20,6 +20,8 @@ export interface ExtensionApi {
   view: NugetViewProvider;
 }
 
+const FOLDER_SIZES = "nuget.folderSizes";
+
 let active: BackendSession | undefined;
 
 export async function activate(context: vscode.ExtensionContext): Promise<ExtensionApi | undefined> {
@@ -107,6 +109,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         await vscode.commands.executeCommand(command);
       },
       notifyWarnings: (title, messages) => void notifyWarnings(log, title, messages),
+      // Global, not of the workspace: the NuGet folders are the same whichever solution is open.
+      readFolderSizes: () => context.globalState.get(FOLDER_SIZES),
+      writeFolderSizes: async (sizes) => {
+        await context.globalState.update(FOLDER_SIZES, sizes);
+      },
+      now: () => Date.now(),
       notify: (kind, messages) => {
         for (const message of messages) {
           log.host(kind, message);

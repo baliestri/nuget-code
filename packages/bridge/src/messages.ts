@@ -33,6 +33,18 @@ export interface HostRequests {
    * sentence; they are also written to the log. Answers without waiting for the user.
    */
   notify: { params: { kind: "info" | "warning"; messages: readonly string[] }; result: Empty };
+  /** The folder sizes measured before, on this machine, that are not too old to be shown; by path. */
+  folderSizes: { params: Empty; result: { sizes: Readonly<Record<string, MeasuredSize>> } };
+  /** Remembers the size just measured of one of the NuGet folders, and answers with what was stored. */
+  saveFolderSize: { params: { path: string; exists: boolean; bytes: number }; result: { size: MeasuredSize } };
+}
+
+/** The size a folder had when it was last measured. */
+export interface MeasuredSize {
+  exists: boolean;
+  bytes: number;
+  /** When it was measured, in milliseconds since the epoch. */
+  at: number;
 }
 
 export type HostRequest = keyof HostRequests;
@@ -47,7 +59,9 @@ const hostRequests: { readonly [M in HostRequest]: true } = {
   showLog: true,
   restartBackend: true,
   notifyWarnings: true,
-  notify: true
+  notify: true,
+  folderSizes: true,
+  saveFolderSize: true
 };
 
 export function isHostRequest(name: unknown): name is HostRequest {

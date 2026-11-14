@@ -11,6 +11,7 @@ import {
   type BackendMethods,
   type BridgeHandlers,
   type HostRequests,
+  type MeasuredSize,
   type SessionState
 } from "@nuget-code/bridge";
 import type { InitializeResult, SolutionOpenResult } from "@nuget-code/protocol";
@@ -93,6 +94,35 @@ export interface HostDeps {
   notifyWarnings(title: string, messages: readonly string[]): void;
   /** Shows the notification; must not wait for the user to answer it. */
   notify(kind: "info" | "warning", messages: readonly string[]): void;
+  /** What the extension stored as folder sizes, for every workspace of this machine; whatever is there. */
+  readFolderSizes(): unknown;
+  writeFolderSizes(sizes: Readonly<Record<string, MeasuredSize>>): Promise<void>;
+  /** The time, in milliseconds since the epoch. */
+  now(): number;
+}
+
+/** A measured folder size is shown for this long; after it the folder counts as not measured. */
+export const FOLDER_SIZE_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** The stored sizes that are well formed and young enough to be shown. */
+export function freshFolderSizes(stored: unknown, now: number): Record<string, MeasuredSize> {
+  const kept: Record<string, MeasuredSize> = {};
+  const entries = typeof stored === "object" && stored !== null && !Array.isArray(stored) ? Object.entries(stored) : [];
+  for (const [path, value] of entries) {
+    const size = value as Partial<MeasuredSize> | null;
+    if (
+      typeof size === "object" &&
+      size !== null &&
+      typeof size.exists === "boolean" &&
+      typeof size.bytes === "number" &&
+      typeof size.at === "number" &&
+      now - size.at < FOLDER_SIZE_LIFETIME_MS
+    ) {
+      kept[path] = { exists: size.exists, bytes: size.bytes, at: size.at };
+    }
+  }
+
+  return kept;
 }
 
 function sentences(value: unknown): string[] {
@@ -177,6 +207,24 @@ const hostCalls: { readonly [M in keyof HostRequests]: HostCall<M> } = {
     }
 
     return Promise.resolve({});
+  },
+  folderSizes: (deps) => Promise.resolve({ sizes: freshFolderSizes(deps.readFolderSizes(), deps.now()) }),
+  saveFolderSize: async (deps, params) => {
+    const path = text(params.path, "path");
+    if (typeof params.exists !== "boolean" || typeof params.bytes !== "number" || !(params.bytes >= 0)) {
+      throw hostError("'exists' must be a boolean and 'bytes' a number that is not negative.");
+    }
+
+    // Only the folders the backend lists have a size worth keeping.
+    if (!(await deps.isKnownFolder(path))) {
+      throw hostError("That folder is not one of the NuGet folders.");
+    }
+
+    const now = deps.now();
+    const size: MeasuredSize = { exists: params.exists, bytes: params.bytes, at: now };
+    // Written with what is still fresh, so the sizes that are too old are dropped on the way.
+    await deps.writeFolderSizes({ ...freshFolderSizes(deps.readFolderSizes(), now), [path]: size });
+    return { size };
   }
 };
 
