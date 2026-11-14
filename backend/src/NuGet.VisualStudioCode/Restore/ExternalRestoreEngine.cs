@@ -128,10 +128,16 @@ internal sealed class ExternalRestoreEngine(
     var obtained = false;
     foreach (var source in PackageSourceProvider.LoadPackageSources(settings.Load())) {
       if (!source.IsEnabled ||
-          !source.IsHttp ||
-          credentials.Known.ContainsKey(source.SourceUri.GetLeftPart(UriPartial.Authority)) ||
+          !source.IsHttp) {
+        continue;
+      }
+
+      // The message names the URL that failed, which is not always the feed's index: the server is what matches.
+      var authority = source.SourceUri.GetLeftPart(UriPartial.Authority);
+      if (credentials.Known.ContainsKey(authority) ||
           !run.Diagnostics.Any(diagnostic
-            => IsFeedUnavailable(diagnostic) && diagnostic.Message.Contains(source.Source, StringComparison.Ordinal))) {
+            => IsFeedUnavailable(diagnostic) &&
+               diagnostic.Message.Contains(authority, StringComparison.OrdinalIgnoreCase))) {
         continue;
       }
 
