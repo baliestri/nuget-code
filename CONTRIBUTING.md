@@ -112,7 +112,15 @@ This publishes the backend with NativeAOT, bundles the extension and writes `rel
 
 Publishing stores no long-lived secret. Both the Visual Studio Marketplace and Open VSX are published with trusted publishing: the job's OIDC token is exchanged for a short-lived publishing token. The trusted publisher configured on each marketplace names this repository and the workflow file, so renaming `release.yml` breaks publishing.
 
-What has been verified so far: everything above was run on Windows x64, including the packaged `win32-x64` VSIX. The workflows were checked with `actionlint` and have not run yet; the other seven targets have never been built.
+To run what the CI runs for the musl targets on a local machine, start the same container with Docker or Podman from the repository root:
+
+```powershell
+podman run --rm -v "${PWD}:/work" -w /work mcr.microsoft.com/dotnet/sdk:10.0-alpine sh scripts/ci/alpine.sh linux-musl-x64
+```
+
+It works on a copy inside the container and leaves only `alpine-out/`, which Git ignores.
+
+Tests that depend on what only one system does are skipped elsewhere with `Assert.SkipUnless` or `Assert.SkipWhen`, with the reason: Windows refuses to delete an open file, Unix refuses to delete from a directory without write permission, and a privileged process, such as the root user of the container, is not held back by permissions at all.
 
 ## Commits
 

@@ -168,7 +168,7 @@ A machine-wide file is never written. The one change accepted for a feed declare
 
 ## How packages are edited
 
-The backend edits project files as text, at the positions it located, and changes nothing else: indentation, quotes, line endings, encoding, byte order mark and comments are kept. A file is replaced in one step, through a temporary file next to it.
+The backend edits project files as text, at the positions it located, and changes nothing else: indentation, quotes, line endings, encoding, byte order mark and comments are kept. A file is replaced in one step, through a temporary file next to it, and keeps its permissions. A read-only file is not replaced, on any system: it is reported in `editErrors`.
 
 ### Update
 
