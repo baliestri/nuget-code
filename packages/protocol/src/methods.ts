@@ -41,5 +41,5 @@ export const Methods = {
   progress: "progress",
 
   credentialsRequest: "credentials/request",
-  credentialsReset: "credentials/reset",
-} as const
+  credentialsReset: "credentials/reset"
+} as const;

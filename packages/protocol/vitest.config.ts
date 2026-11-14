@@ -1,3 +1,3 @@
-import { shared } from "../../vitest.shared"
+import { shared } from "../../vitest.shared";
 
-export default shared
+export default shared;

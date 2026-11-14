@@ -22,7 +22,7 @@ export const ErrorCodes = {
   configNotWritable: 1106,
   feedUnknown: 1107,
   feedDuplicate: 1108,
-  folderNotClearable: 1109,
-} as const
+  folderNotClearable: 1109
+} as const;
 
-export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes]
+export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];

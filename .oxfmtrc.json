@@ -10,9 +10,10 @@
     "apps/extension/bin/**"
   ],
   "printWidth": 120,
-  "semi": false,
+  "semi": true,
   "endOfLine": "lf",
   "singleQuote": false,
+  "trailingComma": "none",
   "insertFinalNewline": true,
   "sortTailwindcss": true,
   "vueIndentScriptAndStyle": true
