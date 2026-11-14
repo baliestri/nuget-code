@@ -2,18 +2,20 @@
   "name": "nuget-code",
   "private": true,
   "scripts": {
-    "compile": "turbo compile",
     "build": "turbo build",
     "dev": "turbo watch dev",
-    "lint": "eslint vitest.shared.ts scripts && turbo lint",
+    "lint": "oxlint",
     "typecheck": "tsc --noEmit -p scripts/tsconfig.json && turbo typecheck",
-    "format": "turbo format",
-    "test": "turbo test"
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "test": "turbo test",
+    "package": "tsx scripts/package.ts"
   },
   "devDependencies": {
     "@types/node": "^25.9.9",
     "oxfmt": "^0.78.0",
     "oxlint": "^1.93.0",
+    "tsx": "^4.23.15",
     "turbo": "^2.11.11",
     "typescript": "^7.0.2",
     "vitest": "^4.1.12"

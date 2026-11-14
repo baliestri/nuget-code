@@ -639,6 +639,8 @@ FodyWeavers.xsd
 # Additional files built by Visual Studio
 
 ### Project related ###
+# The workspace's own packages, not a NuGet packages folder
+!/packages/*
 .turbo
 media/
 release-artifacts/
