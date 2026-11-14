@@ -73,7 +73,23 @@ describe("Folders", () => {
     expect(most).toBe(1);
   });
 
-  it("a folder that does not exist shows a dash, and one that cannot be measured stays unknown", async () => {
+  it("a folder that could not be opened says why", async () => {
+    const { user } = open((fake) => {
+      fake.host.openFolder = () =>
+        Promise.reject(new BridgeError({ kind: "host", message: "That folder is not one of the NuGet folders." }));
+    });
+    await user.click(await row("HTTP Cache"));
+
+    await user.click(screen.getByRole("button", { name: "Open Folder" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The folder could not be opened. That folder is not one of the NuGet folders."
+    );
+    await user.click(screen.getByRole("button", { name: "Dismiss problems" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("a folder that does not exist shows a dash, and one that cannot be measured says why", async () => {
     const { user } = open((fake) => {
       fake.backend.folderSize = (params) =>
         params.path === HTTP.path
@@ -85,7 +101,8 @@ describe("Folders", () => {
     await user.click(screen.getByRole("button", { name: "Recalculate Folder Sizes" }));
 
     await waitFor(async () => expect(cells(await row("UserSettings"))[1]).toBe("—"));
-    expect(cells(await row("HTTP Cache"))[1]).toBe("?");
+    expect(cells(await row("HTTP Cache"))[1]).toBe("failed");
+    expect(screen.getByRole("alert")).toHaveTextContent("HTTP Cache could not be measured. no");
   });
 
   it("Open Folder opens the selected folder, and needs exactly one", async () => {

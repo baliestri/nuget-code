@@ -11,8 +11,10 @@ import { Button } from "../ui/Button";
 import { Dialog } from "../ui/Dialog";
 import { IconButton } from "../ui/IconButton";
 
-/** What is known about the size of a folder: nothing yet, being measured, or measured. */
-type Size = "measuring" | FolderSizeResult;
+/** What is known about the size of a folder: nothing yet, being measured, measured, or why it could not be. */
+type Size = "measuring" | FolderSizeResult | { failed: string };
+
+const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 const CELL = "border-border border-b px-2 py-0.5";
 const SKIPPED_SHOWN = 5;
@@ -24,6 +26,10 @@ function sizeText(size: Size | undefined): string {
 
   if (size === "measuring") {
     return "…";
+  }
+
+  if ("failed" in size) {
+    return "failed";
   }
 
   return size.exists ? formatBytes(size.bytes) : "—";
@@ -57,6 +63,8 @@ export function FoldersTab(): ReactNode {
   const [confirming, setConfirming] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [outcome, setOutcome] = useState<{ kind: "info" | "error"; lines: readonly string[] }>();
+  /** What went wrong measuring or opening, apart from the outcome of a clear. */
+  const [problems, setProblems] = useState<readonly string[]>([]);
 
   const folders = list.data?.folders ?? [];
   const chosen = folders.filter((folder) => selected.has(folder.path));
@@ -82,19 +90,28 @@ export function FoldersTab(): ReactNode {
     }
 
     setMeasuring(true);
+    const failed: string[] = [];
     try {
       for (const folder of folders) {
         setSize(folder.path, "measuring");
         try {
           setSize(folder.path, await bridge.backend("folderSize", { path: folder.path }));
-        } catch {
-          setSize(folder.path, undefined);
+        } catch (error) {
+          // Said in the row and above the table: a size that silently stays unknown explains nothing.
+          setSize(folder.path, { failed: messageOf(error) });
+          failed.push(`${folder.title} could not be measured. ${messageOf(error)}`);
         }
       }
     } finally {
       setMeasuring(false);
+      setProblems(failed);
     }
   };
+
+  const openFolder = (path: string): void =>
+    void bridge
+      .host("openFolder", { path })
+      .catch((error: unknown) => setProblems([`The folder could not be opened. ${messageOf(error)}`]));
 
   const clear = async (): Promise<void> => {
     setConfirming(false);
@@ -142,7 +159,7 @@ export function FoldersTab(): ReactNode {
           icon="folder-opened"
           label="Open Folder"
           disabled={only === undefined}
-          onClick={() => void bridge.host("openFolder", { path: only!.path }).catch(() => {})}
+          onClick={() => openFolder(only!.path)}
         />
         <IconButton
           icon="trash"
@@ -159,6 +176,18 @@ export function FoldersTab(): ReactNode {
           >
             <ul>
               {outcome.lines.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          </Banner>
+        )}
+        {problems.length === 0 ? null : (
+          <Banner
+            kind="error"
+            actions={<IconButton icon="close" label="Dismiss problems" onClick={() => setProblems([])} />}
+          >
+            <ul>
+              {problems.map((line) => (
                 <li key={line}>{line}</li>
               ))}
             </ul>
@@ -227,7 +256,7 @@ export function FoldersTab(): ReactNode {
               return (
                 <li key={folder.path}>
                   <span className="font-semibold">{folder.title}</span>
-                  {typeof size === "object" && size.exists ? ` (${formatBytes(size.bytes)})` : ""}
+                  {typeof size === "object" && "exists" in size && size.exists ? ` (${formatBytes(size.bytes)})` : ""}
                   <div className="text-muted break-all">{folder.path}</div>
                 </li>
               );
