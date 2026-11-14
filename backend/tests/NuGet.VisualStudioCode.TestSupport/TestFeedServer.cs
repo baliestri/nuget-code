@@ -17,6 +17,7 @@ public sealed class TestFeedServer : IDisposable {
   private const string BINARY = "application/octet-stream";
   private const string JSON = "application/json";
   private const string PACKAGE_SUFFIX = ".nupkg";
+  private const int START_ATTEMPTS = 5;
 
   private readonly string _baseUrl;
   private readonly HttpListener _listener = new();
@@ -30,9 +31,7 @@ public sealed class TestFeedServer : IDisposable {
 
   public TestFeedServer(params TestFeedPackage[] packages) {
     _packages = packages;
-    _baseUrl = string.Create(CultureInfo.InvariantCulture, $"http://localhost:{FreePort()}");
-    _listener.Prefixes.Add(_baseUrl + "/");
-    _listener.Start();
+    _baseUrl = Listen(_listener);
     _loop = Task.Run(ServeAsync);
   }
 
@@ -47,8 +46,16 @@ public sealed class TestFeedServer : IDisposable {
 
   public void Dispose() {
     _stopping.Cancel();
-    _listener.Stop();
-    _listener.Close();
+    try {
+      // Close alone, without Stop before it. Outside Windows, Stop gives the port back and Close then looks
+      // the endpoint up again, which binds the port anew: when something else took it in between, that
+      // fails with "Address already in use".
+      _listener.Close();
+    }
+    catch (HttpListenerException) {
+      // The server is going away either way; a failure to close it must not fail the test that used it.
+    }
+
     try {
       _loop.Wait(TimeSpan.FromSeconds(5));
     }
@@ -62,6 +69,25 @@ public sealed class TestFeedServer : IDisposable {
 
   public void RequireBasicAuthentication(string user, string password)
     => _expectedAuthorization = "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes($"{user}:{password}"));
+
+  /// <summary>
+  ///   Starts the listener on a free port and returns its address. The port is found by a probe that lets go
+  ///   of it before the listener takes it, so another process may take it in between: then another is tried.
+  /// </summary>
+  private static string Listen(HttpListener listener) {
+    for (var attempt = 1;; attempt++) {
+      var baseUrl = string.Create(CultureInfo.InvariantCulture, $"http://localhost:{FreePort()}");
+      listener.Prefixes.Clear();
+      listener.Prefixes.Add(baseUrl + "/");
+      try {
+        listener.Start();
+        return baseUrl;
+      }
+      catch (HttpListenerException) when (attempt < START_ATTEMPTS) {
+        // Taken in between; the next probe finds another.
+      }
+    }
+  }
 
   private static int FreePort() {
     using var probe = new TcpListener(IPAddress.Loopback, 0);
