@@ -10,8 +10,10 @@ import type { BridgeErrorData } from "./errors";
 
 /** What only the extension host can do for the view. */
 export interface HostRequests {
-  /** Shows a folder in the system's file manager. */
+  /** Shows one of the NuGet folders, or the folder of a restored package, in the system's file manager. */
   openFolder: { params: { path: string }; result: Empty };
+  /** Puts a short text, such as a package name, on the clipboard. */
+  copyText: { params: { text: string }; result: Empty };
   /** Opens the editor's settings, filtered by the query. */
   openSettings: { params: { query?: string }; result: Empty };
   /** Lets the user choose a folder; no `path` when they cancel. */
@@ -51,6 +53,7 @@ export type HostRequest = keyof HostRequests;
 
 const hostRequests: { readonly [M in HostRequest]: true } = {
   openFolder: true,
+  copyText: true,
   openSettings: true,
   pickFolder: true,
   openExternal: true,

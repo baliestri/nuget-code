@@ -5,6 +5,7 @@ import {
   createBackendHandler,
   createHostHandler,
   FOLDER_SIZE_LIFETIME_MS,
+  isInside,
   toSessionState,
   warningNotice,
   type HostDeps
@@ -54,6 +55,10 @@ function fakeDeps(overrides: Partial<HostDeps> = {}): { deps: HostDeps; calls: s
     readFolderSizes: () => undefined,
     writeFolderSizes: () => Promise.resolve(),
     now: () => NOW,
+    packagesFolder: () => Promise.resolve("/home/me/.nuget/packages"),
+    folderExists: () => true,
+    copyText: record("copyText", undefined),
+    platform: "linux",
     ...overrides
   };
   return { deps, calls };
@@ -106,6 +111,60 @@ describe("createHostHandler", () => {
     const { deps, calls } = fakeDeps({ isKnownFolder: () => Promise.resolve(false) });
 
     const error = await createHostHandler(deps)("openFolder", { path: "/etc" }).catch((reason: unknown) => reason);
+
+    expect(error).toMatchObject({ kind: "host" });
+    expect(calls).toEqual([]);
+  });
+
+  it("openFolder reveals the folder of a package inside the global packages folder", async () => {
+    const { deps, calls } = fakeDeps({ isKnownFolder: () => Promise.resolve(false) });
+
+    await createHostHandler(deps)("openFolder", { path: "/home/me/.nuget/packages/alpha/1.0.0" });
+
+    expect(calls).toEqual(['revealFolder("/home/me/.nuget/packages/alpha/1.0.0")']);
+  });
+
+  it.each(["/home/me/.nuget/packages/../../.ssh", "/home/me/.nuget/packages-other/x", "alpha/1.0.0"])(
+    "openFolder refuses %s, which is not inside the packages folder",
+    async (path) => {
+      const { deps, calls } = fakeDeps({ isKnownFolder: () => Promise.resolve(false) });
+
+      const error = await createHostHandler(deps)("openFolder", { path }).catch((reason: unknown) => reason);
+
+      expect(error).toMatchObject({ kind: "host" });
+      expect(calls).toEqual([]);
+    }
+  );
+
+  it("openFolder says so when the folder does not exist", async () => {
+    const { deps, calls } = fakeDeps({ folderExists: () => false });
+
+    const error = await createHostHandler(deps)("openFolder", { path: "/cache" }).catch((reason: unknown) => reason);
+
+    expect((error as Error).message).toContain("does not exist");
+    expect(calls).toEqual(['isKnownFolder("/cache")']);
+  });
+
+  it("isInside compares Windows paths without regard to case or separator", () => {
+    expect(isInside("C:\\Users\\me\\.nuget\\packages\\", "c:/users/me/.nuget/packages/alpha", "win32")).toBe(true);
+    expect(isInside("C:\\packages", "C:\\packages", "win32")).toBe(false);
+    expect(isInside("C:\\packages", "D:\\packages\\alpha", "win32")).toBe(false);
+  });
+
+  it("copyText puts a short text on the clipboard", async () => {
+    const { deps, calls } = fakeDeps();
+
+    await createHostHandler(deps)("copyText", { text: "Newtonsoft.Json" });
+
+    expect(calls).toEqual(['copyText("Newtonsoft.Json")']);
+  });
+
+  it.each([{ text: "" }, { text: "x".repeat(501) }, { text: 5 }])("copyText refuses %j", async (params) => {
+    const { deps, calls } = fakeDeps();
+
+    const error = await Promise.resolve()
+      .then(() => createHostHandler(deps)("copyText", params))
+      .catch((reason: unknown) => reason);
 
     expect(error).toMatchObject({ kind: "host" });
     expect(calls).toEqual([]);

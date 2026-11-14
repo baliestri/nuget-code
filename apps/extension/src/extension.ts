@@ -115,6 +115,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         await context.globalState.update(FOLDER_SIZES, sizes);
       },
       now: () => Date.now(),
+      packagesFolder: async () => (await session.api.listSources()).globalPackagesFolder,
+      folderExists: (path) => existsSync(path),
+      copyText: async (text) => {
+        await vscode.env.clipboard.writeText(text);
+      },
+      platform: process.platform,
       notify: (kind, messages) => {
         for (const message of messages) {
           log.host(kind, message);

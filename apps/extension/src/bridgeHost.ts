@@ -1,3 +1,4 @@
+import { posix, win32 } from "node:path";
 import {
   BackendRestartedError,
   BackendStoppedError,
@@ -99,7 +100,28 @@ export interface HostDeps {
   writeFolderSizes(sizes: Readonly<Record<string, MeasuredSize>>): Promise<void>;
   /** The time, in milliseconds since the epoch. */
   now(): number;
+  /** The global packages folder, where restored packages are kept; undefined when it is not known. */
+  packagesFolder(): Promise<string | undefined>;
+  folderExists(path: string): boolean;
+  copyText(text: string): Promise<void>;
+  /** `process.platform`: decides how paths are compared. */
+  platform: string;
 }
+
+/** Whether `child` is a folder somewhere under `parent`, and not `parent` itself. Both are absolute paths. */
+export function isInside(parent: string, child: string, platform: string): boolean {
+  const paths = platform === "win32" ? win32 : posix;
+  if (!paths.isAbsolute(parent) || !paths.isAbsolute(child)) {
+    return false;
+  }
+
+  // Resolving first takes any `..` out of the way, so a path cannot climb back out of the parent.
+  const relative = paths.relative(paths.resolve(parent), paths.resolve(child));
+  return relative !== "" && !relative.startsWith("..") && !paths.isAbsolute(relative);
+}
+
+/** The longest text the view may put on the clipboard: a package name, with room to spare. */
+const CLIPBOARD_LIMIT = 500;
 
 /** A measured folder size is shown for this long; after it the folder counts as not measured. */
 export const FOLDER_SIZE_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
@@ -145,11 +167,28 @@ type HostCall<M extends keyof HostRequests> = (
 const hostCalls: { readonly [M in keyof HostRequests]: HostCall<M> } = {
   openFolder: async (deps, params) => {
     const path = text(params.path, "path");
+    // One of the folders the backend lists, or the folder of a package inside the global packages folder.
     if (!(await deps.isKnownFolder(path))) {
-      throw hostError("That folder is not one of the NuGet folders.");
+      const packages = await deps.packagesFolder();
+      if (packages === undefined || !isInside(packages, path, deps.platform)) {
+        throw hostError("That folder is not one of the NuGet folders.");
+      }
+    }
+
+    if (!deps.folderExists(path)) {
+      throw hostError(`The folder does not exist: ${path}. A package has no folder until it is restored.`);
     }
 
     await deps.revealFolder(path);
+    return {};
+  },
+  copyText: async (deps, params) => {
+    const value = text(params.text, "text");
+    if (value.length > CLIPBOARD_LIMIT) {
+      throw hostError("The text is too long to copy.");
+    }
+
+    await deps.copyText(value);
     return {};
   },
   openSettings: async (deps, params) => {
