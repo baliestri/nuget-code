@@ -41,11 +41,21 @@ if (clicks.length > 0) {
       return;
     }
 
-    const controls = [...document.querySelectorAll<HTMLElement>("button, input, [role=tab]")];
+    // A name that starts with @ is pressed with the other mouse button, for a context menu.
+    const context = name.startsWith("@");
+    const wanted = context ? name.slice(1) : name;
+    const controls = [...document.querySelectorAll<HTMLElement>("button, input, [role=tab], [role=menuitem]")];
     const control = controls.find((element) =>
-      (element.getAttribute("aria-label") ?? element.textContent ?? "").trim().startsWith(name)
+      (element.getAttribute("aria-label") ?? element.textContent ?? "").trim().startsWith(wanted)
     );
-    control?.click();
+    if (context && control !== undefined) {
+      const box = control.getBoundingClientRect();
+      control.dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: box.left + 60, clientY: box.bottom })
+      );
+    } else {
+      control?.click();
+    }
     setTimeout(() => press(index + 1), 250);
   };
   setTimeout(() => press(0), 600);

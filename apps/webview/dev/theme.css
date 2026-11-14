@@ -33,6 +33,12 @@
   --vscode-badge-foreground: #f8f8f8;
   --vscode-inputValidation-infoBackground: #063b49;
   --vscode-inputValidation-infoBorder: #007acc;
+  --vscode-menu-background: #1f1f1f;
+  --vscode-menu-foreground: #cccccc;
+  --vscode-menu-selectionBackground: #0078d4;
+  --vscode-menu-selectionForeground: #ffffff;
+  --vscode-menu-border: #454545;
+  --vscode-menu-separatorBackground: #454545;
 }
 
 :root[data-theme="light"] {
@@ -49,6 +55,12 @@
   --vscode-textLink-foreground: #005fb8;
   --vscode-list-activeSelectionBackground: #e8e8e8;
   --vscode-list-activeSelectionForeground: #000000;
+  --vscode-menu-background: #ffffff;
+  --vscode-menu-foreground: #3b3b3b;
+  --vscode-menu-selectionBackground: #005fb8;
+  --vscode-menu-selectionForeground: #ffffff;
+  --vscode-menu-border: #cecece;
+  --vscode-menu-separatorBackground: #d4d4d4;
   --vscode-list-hoverBackground: #f2f2f2;
   --vscode-toolbar-hoverBackground: rgba(184, 184, 184, 0.31);
   --vscode-input-background: #ffffff;

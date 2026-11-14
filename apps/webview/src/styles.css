@@ -29,6 +29,12 @@
   --color-info: var(--vscode-editorInfo-foreground);
   --color-badge: var(--vscode-badge-background);
   --color-badge-fg: var(--vscode-badge-foreground);
+  --color-menu: var(--vscode-menu-background, var(--vscode-dropdown-background));
+  --color-menu-fg: var(--vscode-menu-foreground, var(--vscode-dropdown-foreground));
+  --color-menu-selection: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground));
+  --color-menu-selection-fg: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground));
+  --color-menu-border: var(--vscode-menu-border, var(--vscode-widget-border, transparent));
+  --color-menu-separator: var(--vscode-menu-separatorBackground, var(--vscode-widget-border));
   --color-notice: var(--vscode-inputValidation-infoBackground);
   --color-notice-border: var(--vscode-inputValidation-infoBorder);
   --font-sans: var(--vscode-font-family);

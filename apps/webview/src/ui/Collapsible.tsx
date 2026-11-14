@@ -6,12 +6,17 @@ interface CollapsibleProps {
   /** Shown on the header's line, after the title. Not part of the button. */
   summary?: ReactNode;
   defaultOpen?: boolean;
+  /** When given, whoever uses the section decides whether it is open, and hears when the header is clicked. */
+  open?: boolean | undefined;
+  onToggle?: ((open: boolean) => void) | undefined;
   children: ReactNode;
 }
 
 /** A section whose content can be hidden. */
-export function Collapsible({ title, summary, defaultOpen = true, children }: CollapsibleProps): ReactNode {
-  const [open, setOpen] = useState(defaultOpen);
+export function Collapsible(props: CollapsibleProps): ReactNode {
+  const { title, summary, defaultOpen = true, children } = props;
+  const [own, setOwn] = useState(defaultOpen);
+  const open = props.open ?? own;
   const id = useId();
   return (
     <section>
@@ -20,7 +25,10 @@ export function Collapsible({ title, summary, defaultOpen = true, children }: Co
           type="button"
           aria-expanded={open}
           aria-controls={id}
-          onClick={() => setOpen(!open)}
+          onClick={() => {
+            setOwn(!open);
+            props.onToggle?.(!open);
+          }}
           className="flex shrink-0 items-center gap-1 font-semibold"
         >
           <i className={`codicon codicon-chevron-${open ? "down" : "right"}`} aria-hidden="true" />
