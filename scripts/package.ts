@@ -74,7 +74,18 @@ if (process.platform !== "win32") {
   chmodSync(packaged, 0o755);
 }
 
-run("pnpm", ["exec", "rolldown", "-c"], extension, { ...process.env, NODE_ENV: "production" });
+const production = { ...process.env, NODE_ENV: "production" };
+// Removed first, so the view in the VSIX is the one built now and never one left by an earlier build.
+const view = join(extension, "dist", "webview");
+rmSync(view, { recursive: true, force: true });
+run("pnpm", ["--filter", "@nuget-code/webview", "build"], repository, production);
+for (const file of ["main.js", "main.css", "codicon.ttf"]) {
+  if (!existsSync(join(view, file))) {
+    fail(`The view was not built: ${join(view, file)} is missing.`);
+  }
+}
+
+run("pnpm", ["exec", "rolldown", "-c"], extension, production);
 
 const version = (JSON.parse(readFileSync(join(extension, "package.json"), "utf8")) as { version: string }).version;
 mkdirSync(out, { recursive: true });
