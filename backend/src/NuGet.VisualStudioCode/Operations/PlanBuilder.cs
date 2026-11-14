@@ -17,6 +17,7 @@ internal sealed class PlanBuilder(ProjectFileSet files) {
       : StringComparer.Ordinal;
 
   private readonly List<PlannedEdit> _edits = [];
+  private readonly HashSet<string> _removed = new(StringComparer.Ordinal);
   private readonly List<PlanWarning> _warnings = [];
 
   public bool Replace(string file, int start, int length, string newText) {
@@ -26,7 +27,12 @@ internal sealed class PlanBuilder(ProjectFileSet files) {
       return false;
     }
 
-    if (_edits.Exists(edit => edit.Start == start && edit.Length == length && PathComparer.Equals(edit.File, file))) {
+    var known = _edits.Exists(edit
+      => edit.Start == start &&
+         edit.Length == length &&
+         string.Equals(edit.NewText, newText, StringComparison.Ordinal) &&
+         PathComparer.Equals(edit.File, file));
+    if (known) {
       return true;
     }
 
@@ -44,6 +50,15 @@ internal sealed class PlanBuilder(ProjectFileSet files) {
       _warnings.Add(new PlanWarning(kind, packageId, file, projects ?? [], packages ?? [], detail));
     }
   }
+
+  public void MarkRemoved(string packageId, string projectPath)
+    => _removed.Add(RemovalKey(packageId, projectPath));
+
+  public bool IsRemoved(string packageId, string projectPath)
+    => _removed.Contains(RemovalKey(packageId, projectPath));
+
+  private static string RemovalKey(string packageId, string projectPath)
+    => $"{packageId.ToUpperInvariant()}|{projectPath.ToUpperInvariant()}";
 
   public ChangePlan Build()
     => new(_edits.OrderBy(edit => edit.File, PathComparer).ThenBy(edit => edit.Start).ToList(), _warnings);

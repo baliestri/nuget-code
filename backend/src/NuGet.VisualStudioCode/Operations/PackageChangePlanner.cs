@@ -39,12 +39,19 @@ internal sealed class PackageChangePlanner(IReadOnlyList<EvaluatedProject> proje
   }
 
   private void PlanChange(PlanBuilder plan, EvaluatedProject project, PackageChange change) {
-    if (string.Equals(change.Kind, PackageChangeKinds.UPDATE, StringComparison.Ordinal)) {
-      PlanUpdate(plan, project, change.Id, RequireVersion(change));
-      return;
+    switch (change.Kind) {
+      case PackageChangeKinds.UPDATE:
+        PlanUpdate(plan, project, change.Id, RequireVersion(change));
+        break;
+      case PackageChangeKinds.INSTALL:
+        PlanInstall(plan, project, change.Id, RequireVersion(change));
+        break;
+      case PackageChangeKinds.REMOVE:
+        PlanRemove(plan, project, change.Id);
+        break;
+      default:
+        throw new RpcException(RpcErrorCodes.INVALID_PARAMS, $"Unknown package change '{change.Kind}'.");
     }
-
-    throw new RpcException(RpcErrorCodes.INVALID_PARAMS, $"Unknown package change '{change.Kind}'.");
   }
 
   private static string RequireVersion(PackageChange change)
@@ -240,10 +247,11 @@ internal sealed class PackageChangePlanner(IReadOnlyList<EvaluatedProject> proje
          string.Equals(text[child.StartTagEnd..child.EndTagStart].Trim(), value, StringComparison.Ordinal));
   }
 
-  private void WarnShared(PlanBuilder plan, string kind, string file, string id) {
+  private void WarnShared(PlanBuilder plan, string kind, string file, string id, string? joiningProject = null) {
     if (string.Equals(kind, VersionOriginKinds.CENTRAL, StringComparison.Ordinal)) {
       var users = projects
-        .Where(project => project.Info.CentralPackageManagement && Declares(project, id))
+        .Where(project => project.Info.CentralPackageManagement &&
+                          (Declares(project, id) || PathComparer.Equals(project.Info.Path, joiningProject)))
         .Select(project => project.Info.Path)
         .ToList();
       plan.Warn(PlanWarningKinds.CENTRAL_SHARED, id, file, users);
@@ -266,4 +274,104 @@ internal sealed class PackageChangePlanner(IReadOnlyList<EvaluatedProject> proje
   private static bool Declares(EvaluatedProject project, string id)
     => project.Packages.Any(package
       => !package.Implicit && string.Equals(package.Id, id, StringComparison.OrdinalIgnoreCase));
+
+  private void PlanInstall(PlanBuilder plan, EvaluatedProject project, string id, string version) {
+    if (Declares(project, id)) {
+      PlanUpdate(plan, project, id, version);
+      return;
+    }
+
+    var path = project.Info.Path;
+    if (!project.Info.CentralPackageManagement) {
+      Insert(plan, path, PackageDeclarationFinder.PACKAGE_REFERENCE, [("Include", id), ("Version", version)]);
+      return;
+    }
+
+    var central = PackageDeclarationFinder.CentralFile(path) ??
+                  throw new RpcException(RpcErrorCodes.EDIT_NOT_POSSIBLE,
+                    $"'{project.Info.Name}' uses central package versions but no Directory.Packages.props was found.");
+    var existing = _finder.FindVersions(central, PackageDeclarationFinder.PACKAGE_VERSION, id,
+      PackageDeclarationFinder.VERSION);
+    if (existing.Count == 0) {
+      Insert(plan, central, PackageDeclarationFinder.PACKAGE_VERSION, [("Include", id), ("Version", version)]);
+    }
+    else {
+      var edited = false;
+      foreach (var slot in existing) edited |= PlanSlot(plan, project, slot, id, version);
+
+      if (edited) {
+        WarnShared(plan, VersionOriginKinds.CENTRAL, central, id, path);
+      }
+    }
+
+    Insert(plan, path, PackageDeclarationFinder.PACKAGE_REFERENCE, [("Include", id)]);
+  }
+
+  private void Insert(PlanBuilder plan, string file, string elementName,
+    IReadOnlyList<(string Name, string Value)> attributes) {
+    var document = files.Document(file);
+    var root = files.Root(file);
+    var edit = document is null || root is null ? null : ItemInserter.Plan(document, root, elementName, attributes);
+    if (edit is null) {
+      throw new RpcException(RpcErrorCodes.EDIT_NOT_POSSIBLE, $"'{file}' cannot take a new {elementName} item.");
+    }
+
+    plan.Replace(file, edit.Start, edit.Length, edit.Replacement);
+  }
+
+  private void PlanRemove(PlanBuilder plan, EvaluatedProject project, string id) {
+    RequireDeclared(project, id);
+    var path = project.Info.Path;
+    var items = _finder.FindItems(path, PackageDeclarationFinder.PACKAGE_REFERENCE, id);
+    if (items.Count > 0) {
+      RemoveItems(plan, path, items);
+    }
+    else {
+      // Declared in an imported file: the declaration stays for the other projects and this one opts out.
+      Insert(plan, path, PackageDeclarationFinder.PACKAGE_REFERENCE, [("Remove", id)]);
+      plan.Warn(PlanWarningKinds.REMOVE_ITEM, id, path);
+    }
+
+    plan.MarkRemoved(id, path);
+    if (project.Info.CentralPackageManagement) {
+      RemoveUnusedCentralVersion(plan, path, id);
+    }
+  }
+
+  private void RemoveUnusedCentralVersion(PlanBuilder plan, string projectPath, string id) {
+    var stillUsed = projects.Any(project
+      => project.Info.CentralPackageManagement && Declares(project, id) && !plan.IsRemoved(id, project.Info.Path));
+    var central = PackageDeclarationFinder.CentralFile(projectPath);
+    if (stillUsed || central is null) {
+      return;
+    }
+
+    var versions = _finder.FindItems(central, PackageDeclarationFinder.PACKAGE_VERSION, id);
+    if (versions.Count > 0) {
+      RemoveItems(plan, central, versions);
+      plan.Warn(PlanWarningKinds.CENTRAL_REMOVED, id, central);
+    }
+  }
+
+  private void RemoveItems(PlanBuilder plan, string file, IReadOnlyList<XmlElementSpan> items) {
+    var document = files.Document(file);
+    if (document is null) {
+      return;
+    }
+
+    foreach (var target in items.Select(item => RemovalTarget(item, items)).Distinct()) {
+      var edit = ItemRemover.Plan(document, target);
+      plan.Replace(file, edit.Start, edit.Length, edit.Replacement);
+    }
+  }
+
+  // A group that would be left with no items goes instead of its items.
+  private static XmlElementSpan RemovalTarget(XmlElementSpan item, IReadOnlyList<XmlElementSpan> removed) {
+    var group = item.Parent;
+    return group is not null &&
+           string.Equals(group.Name, "ItemGroup", StringComparison.Ordinal) &&
+           group.Children.All(removed.Contains)
+      ? group
+      : item;
+  }
 }

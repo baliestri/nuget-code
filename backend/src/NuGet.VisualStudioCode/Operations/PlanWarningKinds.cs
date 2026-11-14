@@ -10,4 +10,6 @@ internal static class PlanWarningKinds {
   public const string LITERAL_WRITE = "literalWrite";
   public const string DOWNGRADE = "downgrade";
   public const string RANGE_REPLACED = "rangeReplaced";
+  public const string CENTRAL_REMOVED = "centralRemoved";
+  public const string REMOVE_ITEM = "removeItem";
 }
