@@ -256,5 +256,25 @@ export function installSampleData(fake: FakeBridge): void {
     return Promise.resolve({});
   };
   fake.backend.setSourceProperty = () => Promise.resolve({});
+  const folders = [
+    { title: "Local Packages", path: `${ROOT}\\packages`, clearable: false },
+    { title: "Global Packages", path: "C:\\Users\\sample\\.nuget\\packages", clearable: true },
+    { title: "HTTP Cache", path: "C:\\Users\\sample\\AppData\\Local\\NuGet\\v3-cache", clearable: true },
+    { title: "Temp", path: "C:\\Users\\sample\\AppData\\Local\\Temp\\NuGetScratch", clearable: true },
+    { title: "UserSettings", path: "C:\\Users\\sample\\AppData\\Roaming\\NuGet", clearable: false },
+    {
+      title: "Fallback #0",
+      path: "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages",
+      clearable: false
+    }
+  ];
+  fake.backend.listFolders = () => Promise.resolve({ folders });
+  fake.backend.folderSize = async (params) => {
+    await wait(150);
+    const index = folders.findIndex((folder) => folder.path === params.path);
+    return index === 0 ? { exists: false, bytes: 0 } : { exists: true, bytes: 7 ** (index + 5) };
+  };
+  fake.backend.clearFolders = (params) =>
+    Promise.resolve({ folders: params.paths.map((path) => ({ path, bytesFreed: 123_456_789, skipped: [] })) });
   fake.host.pickFolder = () => Promise.resolve({ path: `${ROOT}\\packages` });
 }
