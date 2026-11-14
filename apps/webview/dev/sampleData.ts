@@ -119,7 +119,15 @@ const LATEST: Record<string, string> = {
   "Meziantou.Analyzer": "3.0.339",
   "Microsoft.Extensions.DependencyInjection": "11.0.0",
   "Microsoft.Extensions.DependencyInjection.Abstractions": "11.0.0",
-  "Microsoft.Extensions.Logging.Abstractions": "11.0.0"
+  "Microsoft.Extensions.Logging.Abstractions": "11.0.0",
+  "Castle.Core": "5.2.1",
+  "Microsoft.ApplicationInsights": "3.2.0",
+  "Microsoft.Bcl.AsyncInterfaces": "11.0.0",
+  "Microsoft.CodeCoverage": "18.12.0",
+  "Microsoft.CodeAnalysis.Analyzers": "5.9.0",
+  "Microsoft.CodeAnalysis.Common": "5.9.0",
+  "Microsoft.Testing.Platform": "2.5.3",
+  "System.Text.Json": "11.0.0"
 };
 
 const AVAILABLE: readonly [id: string, version: string, description: string][] = [
@@ -197,14 +205,18 @@ export function installSampleData(fake: FakeBridge): void {
   };
 
   fake.backend.installedPackages = () => Promise.resolve(INSTALLED);
-  fake.backend.packageUpdates = () =>
+  fake.backend.packageUpdates = (params) =>
     Promise.resolve({
-      packages: [...new Set(INSTALLED.projects.flatMap((item) => item.packages.map((entry) => entry.id)))].map(
-        (id) => ({
-          id,
-          versions: LATEST[id] === undefined ? [] : [{ feed: "nuget.org", version: LATEST[id] }]
-        })
-      ),
+      packages: [
+        ...new Set(
+          params.transitive === true
+            ? TRANSITIVE.map((entry) => entry.id)
+            : INSTALLED.projects.flatMap((item) => item.packages.map((entry) => entry.id))
+        )
+      ].map((id) => ({
+        id,
+        versions: LATEST[id] === undefined ? [] : [{ feed: "nuget.org", version: LATEST[id] }]
+      })),
       failures: []
     });
   fake.backend.searchPackages = (params) =>

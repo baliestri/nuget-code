@@ -97,6 +97,8 @@ function succeeded(projects: readonly string[]): OperationResult {
 interface Setup {
   installed?: PackagesInstalledResult;
   updates?: PackagesUpdatesResult | Promise<PackagesUpdatesResult>;
+  /** What the backend answers about the transitive packages. */
+  transitiveUpdates?: PackagesUpdatesResult;
   session?: SessionState;
   stored?: unknown;
   configure?(fake: FakeBridge): void;
@@ -105,7 +107,12 @@ interface Setup {
 function open(setup: Setup = {}) {
   const fake = createFakeBridge(setup.session ?? SESSION);
   fake.backend.installedPackages = () => Promise.resolve(setup.installed ?? INSTALLED);
-  fake.backend.packageUpdates = () => Promise.resolve(setup.updates ?? UPDATES);
+  fake.backend.packageUpdates = (params) =>
+    Promise.resolve(
+      params.transitive === true
+        ? (setup.transitiveUpdates ?? { packages: [], failures: [] })
+        : (setup.updates ?? UPDATES)
+    );
   fake.backend.listSources = () =>
     Promise.resolve({ files: [], effective: [FEED], fallbackFolders: [], globalPackagesFolder: "/packages" });
   fake.backend.packageDetails = (params) => Promise.resolve(details(params.id, ["9.0.0", "1.5.0", "1.0.0"]));
@@ -705,6 +712,147 @@ describe("operations", () => {
       "Update could not run. The project is not part of the open solution."
     );
     expect(screen.getByRole("checkbox", { name: "Select Alpha" })).toBeEnabled();
+  });
+});
+
+describe("transitive packages", () => {
+  const inner = (version: string, via: string[]) => ({
+    id: "Inner",
+    resolvedVersion: version,
+    frameworks: ["net10.0"],
+    via
+  });
+  const WITH_TRANSITIVE: PackagesInstalledResult = {
+    projects: [
+      {
+        projectPath: APP,
+        packages: [pkg("Alpha", "1.0.0")],
+        transitive: [
+          inner("1.0.0", ["Alpha"]),
+          { id: "Deep", resolvedVersion: "4.0.0", frameworks: ["net10.0"], via: [] }
+        ]
+      },
+      { projectPath: LIB, packages: [pkg("Alpha", "1.0.0")], transitive: [inner("1.2.0", ["Alpha"])] }
+    ]
+  };
+  const TRANSITIVE_UPDATES: PackagesUpdatesResult = {
+    packages: [
+      { id: "Inner", versions: [{ feed: "nuget.org", version: "2.0.0" }] },
+      { id: "Deep", versions: [{ feed: "nuget.org", version: "4.0.0" }] }
+    ],
+    failures: []
+  };
+  const group = (): Promise<HTMLElement> => screen.findByRole("heading", { name: /^Implicitly Installed Packages/ });
+  const openTransitive = (setup: Setup = {}) =>
+    open({ installed: WITH_TRANSITIVE, transitiveUpdates: TRANSITIVE_UPDATES, ...setup });
+
+  it("the group is titled after Rider, with its count", async () => {
+    openTransitive();
+
+    expect((await group()).textContent).toBe("Implicitly Installed Packages in Solution: 2");
+  });
+
+  it("there is no group when nothing is transitive", async () => {
+    const { fake } = open();
+    await updateGroup();
+
+    expect(screen.queryByRole("heading", { name: /^Implicitly Installed/ })).not.toBeInTheDocument();
+    expect(fake.callsOf("packageUpdates")).not.toContainEqual(expect.objectContaining({ transitive: true }));
+  });
+
+  it("a line shows the versions in parentheses and the newest version on the right", async () => {
+    openTransitive();
+    const section = (await group()).closest("section")!;
+
+    const line = (await within(section).findByRole("button", { name: "Inner • (1.0.0, 1.2.0)" })).closest("li")!;
+    await waitFor(() => expect(within(line).getByText("2.0.0")).toBeInTheDocument());
+    expect(within(section).getByRole("button", { name: "Deep • (4.0.0)" })).toBeInTheDocument();
+  });
+
+  it("the newest versions of transitive packages are asked for apart from the referenced ones", async () => {
+    const { fake } = openTransitive();
+    await group();
+
+    await waitFor(() =>
+      expect(fake.callsOf("packageUpdates")).toEqual(
+        expect.arrayContaining([
+          { prerelease: false, noCache: false },
+          { prerelease: false, noCache: false, transitive: true }
+        ])
+      )
+    );
+  });
+
+  it("a project target narrows the group to what that project has", async () => {
+    const { user } = openTransitive();
+    await group();
+
+    await user.click(screen.getByRole("combobox", { name: "Target" }));
+    await user.click(screen.getByRole("option", { name: /^Lib/ }));
+
+    expect((await group()).textContent).toBe("Implicitly Installed Packages in Lib: 1");
+    expect(screen.getByRole("button", { name: "Inner • (1.2.0)" })).toBeInTheDocument();
+  });
+
+  it("the search filters the group too", async () => {
+    const { user } = openTransitive();
+    await group();
+
+    await user.type(screen.getByRole("searchbox", { name: "Search packages" }), "dee");
+
+    await waitFor(() => expect(screen.queryByRole("button", { name: /^Inner/ })).not.toBeInTheDocument(), {
+      timeout: 2000
+    });
+    expect(screen.getByRole("button", { name: /^Deep/ })).toBeInTheDocument();
+  });
+
+  it("a project that has it transitively shows the version, via which package, and offers only Install", async () => {
+    const { user } = openTransitive();
+    await group();
+
+    await user.click(screen.getByRole("button", { name: /^Inner/ }));
+
+    const projects = await screen.findByRole("list", { name: "Projects" });
+    const app = within(projects).getAllByRole("listitem")[0]!;
+    expect(app).toHaveTextContent("App via Alpha");
+    expect(app).toHaveTextContent("(1.0.0)");
+    expect(within(app).getByRole("button", { name: "Install in App" })).toBeEnabled();
+    expect(within(app).queryByRole("button", { name: /^(Change|Remove)/ })).not.toBeInTheDocument();
+  });
+
+  it("installing a transitive package makes it a reference of the project", async () => {
+    const { fake, user } = openTransitive();
+    await group();
+    await user.click(screen.getByRole("button", { name: /^Inner/ }));
+
+    await user.click(await screen.findByRole("button", { name: "Install in Lib" }));
+
+    await waitFor(() =>
+      expect(fake.callsOf("installPackage")).toEqual([{ id: "Inner", version: "9.0.0", projects: [LIB] }])
+    );
+  });
+
+  it("the menu of a transitive package has its folders and no update or remove", async () => {
+    const { user } = openTransitive();
+    await group();
+
+    await user.pointer({ keys: "[MouseRight]", target: screen.getByRole("button", { name: /^Inner/ }) });
+
+    const menu = screen.getByRole("menu", { name: "Actions for Inner" });
+    expect(within(menu).queryByRole("menuitem", { name: /^(Update|Remove)/ })).not.toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "Show 1.0.0 in File Explorer" })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "Show 1.2.0 in File Explorer" })).toBeInTheDocument();
+  });
+
+  it("Refresh asks again for the transitive versions too, without the cache", async () => {
+    const { fake, user } = openTransitive();
+    await group();
+
+    await user.click(screen.getByRole("button", { name: "Refresh NuGet Packages and Clear the Caches" }));
+
+    await waitFor(() =>
+      expect(fake.callsOf("packageUpdates")).toContainEqual({ prerelease: false, noCache: true, transitive: true })
+    );
   });
 });
 

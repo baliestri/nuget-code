@@ -8,7 +8,7 @@ import { IconButton } from "../ui/IconButton";
 import { LinkButton } from "../ui/LinkButton";
 import { Select } from "../ui/Select";
 import { Spinner } from "../ui/Spinner";
-import type { PackageRow } from "./model";
+import type { PackageRow, TransitiveRow } from "./model";
 import { PackageIcon } from "./PackageIcon";
 import { projectActions } from "./projectActions";
 import { useDetails } from "./queries";
@@ -17,6 +17,8 @@ interface DetailsPanelProps {
   id: string;
   /** The package as installed in the target; absent when no project of the target has it. */
   row: PackageRow | undefined;
+  /** The package as the projects of the target have it without referencing it; absent when none does. */
+  transitive?: TransitiveRow | undefined;
   /** The projects of the target. */
   projects: readonly ProjectInfo[];
   feed: string | null;
@@ -39,7 +41,7 @@ export function DetailsPanel(props: DetailsPanelProps): ReactNode {
   const versions = details.data?.versions ?? [];
   // The newest version, until the user picks another one.
   const version = chosen !== undefined && versions.includes(chosen) ? chosen : versions[0];
-  const actions = projectActions(props.row, props.projects, version);
+  const actions = projectActions(props.row, props.projects, version, props.transitive);
   const open = (url: string): void => void bridge.host("openExternal", { url }).catch(() => {});
 
   const toInstall = actions.filter((action) => action.canInstall).map((action) => action.path);
@@ -187,8 +189,17 @@ export function DetailsPanel(props: DetailsPanelProps): ReactNode {
               ) : (
                 <img src={icon} alt="" width={16} height={16} className="h-4 w-4 shrink-0" />
               )}
-              <span className="min-w-0 flex-1 truncate">{action.name}</span>
+              <span className="min-w-0 flex-1 truncate">
+                {action.name}
+                {action.transitive === undefined || action.transitive.via.length === 0 ? null : (
+                  <span className="text-muted"> via {action.transitive.via.join(", ")}</span>
+                )}
+              </span>
               {action.installed === undefined ? null : <span className="text-muted shrink-0">{action.installed}</span>}
+              {action.transitive === undefined ? null : (
+                // In parentheses, as in the list: the project has it, but does not reference it.
+                <span className="text-muted shrink-0">({action.transitive.version})</span>
+              )}
               {action.installed === undefined ? (
                 <IconButton
                   icon="add"

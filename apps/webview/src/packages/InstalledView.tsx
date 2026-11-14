@@ -1,12 +1,16 @@
 import type { ReactNode } from "react";
 import { Placeholder } from "../app/Placeholder";
 import { Button } from "../ui/Button";
-import type { PackageRow } from "./model";
+import type { PackageRow, TransitiveRow } from "./model";
 import { PackageGroup, PackageLine } from "./PackageList";
 
 interface InstalledViewProps {
   /** The installed packages of the target, already filtered and ordered. */
   rows: readonly PackageRow[];
+  /** The packages the target has without referencing them, already filtered and ordered. */
+  transitive: readonly TransitiveRow[];
+  /** The newest versions of the transitive packages are still being asked for. */
+  transitiveLoading: boolean;
   /** The name of the target, as the group titles say it: "Solution" or a project. */
   targetName: string;
   loading: boolean;
@@ -36,6 +40,8 @@ export function InstalledView(props: InstalledViewProps): ReactNode {
     return <Placeholder title="Loading the installed packages…" />;
   }
 
+  // The selection is a package id as some list wrote it; ids differ in case from one list to another.
+  const isSelected = (id: string): boolean => props.selectedId?.toLowerCase() === id.toLowerCase();
   const outdated = rows.filter((row) => row.hasUpdate);
   const tickedCount = outdated.filter((row) => checked.has(row.id)).length;
   const toggle = (id: string, on: boolean): void => {
@@ -74,7 +80,7 @@ export function InstalledView(props: InstalledViewProps): ReactNode {
               versions={row.versions.join(", ")}
               latest={row.latest}
               iconUrl={props.iconOf(row.id)}
-              selected={props.selectedId === row.id}
+              selected={isSelected(row.id)}
               onSelect={() => props.onSelect(row.id)}
               onMenu={(at) => props.onMenu(row.id, at)}
               check={{ checked: checked.has(row.id), disabled: props.busy, onChange: (on) => toggle(row.id, on) }}
@@ -90,7 +96,7 @@ export function InstalledView(props: InstalledViewProps): ReactNode {
             versions={row.versions.join(", ")}
             latest={row.hasUpdate ? row.latest : undefined}
             iconUrl={props.iconOf(row.id)}
-            selected={props.selectedId === row.id}
+            selected={isSelected(row.id)}
             onSelect={() => props.onSelect(row.id)}
             onMenu={(at) => props.onMenu(row.id, at)}
             dimmed={row.implicit}
@@ -98,6 +104,25 @@ export function InstalledView(props: InstalledViewProps): ReactNode {
           />
         ))}
       </PackageGroup>
+      {props.transitive.length === 0 ? null : (
+        <PackageGroup
+          title={`Implicitly Installed Packages in ${props.targetName}: ${props.transitive.length}`}
+          loading={props.transitiveLoading}
+        >
+          {props.transitive.map((row) => (
+            <PackageLine
+              key={row.id}
+              id={row.id}
+              // In parentheses: the target has the package, but no project references it.
+              versions={`(${row.versions.join(", ")})`}
+              latest={row.latest}
+              selected={isSelected(row.id)}
+              onSelect={() => props.onSelect(row.id)}
+              onMenu={(at) => props.onMenu(row.id, at)}
+            />
+          ))}
+        </PackageGroup>
+      )}
     </div>
   );
 }

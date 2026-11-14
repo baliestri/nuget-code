@@ -14,7 +14,7 @@ export const SEARCH_SIZE = 100;
 
 export const queryKeys = {
   installed: ["installed"] as const,
-  updates: (prerelease: boolean) => ["updates", prerelease] as const,
+  updates: (prerelease: boolean, transitive = false) => ["updates", prerelease, transitive] as const,
   sources: ["sources"] as const,
   folders: ["folders"] as const,
   search: (query: string, feed: string | null, prerelease: boolean) => ["search", query, feed, prerelease] as const,
@@ -32,6 +32,19 @@ export function useUpdates(prerelease: boolean): UseQueryResult<PackagesUpdatesR
   return useQuery({
     queryKey: queryKeys.updates(prerelease),
     queryFn: () => bridge.backend("packageUpdates", { prerelease, noCache: false })
+  });
+}
+
+/**
+ * The newest versions of the transitive packages. Asked for apart from the referenced ones, which are few
+ * and should not wait for these, and only when the solution has any.
+ */
+export function useTransitiveUpdates(prerelease: boolean, enabled: boolean): UseQueryResult<PackagesUpdatesResult> {
+  const bridge = useBridge();
+  return useQuery({
+    queryKey: queryKeys.updates(prerelease, true),
+    queryFn: () => bridge.backend("packageUpdates", { prerelease, noCache: false, transitive: true }),
+    enabled
   });
 }
 
@@ -94,7 +107,7 @@ export function useSolutionSync(): void {
 }
 
 /** Fetches everything about packages again, asking the backend to skip its caches. */
-export function useRefresh(prerelease: boolean): () => void {
+export function useRefresh(prerelease: boolean, transitive: boolean): () => void {
   const bridge = useBridge();
   const queries = useQueryClient();
   return useCallback(() => {
@@ -108,5 +121,14 @@ export function useRefresh(prerelease: boolean): () => void {
         staleTime: 0
       })
       .catch(() => {});
-  }, [bridge, queries, prerelease]);
+    if (transitive) {
+      void queries
+        .fetchQuery({
+          queryKey: queryKeys.updates(prerelease, true),
+          queryFn: () => bridge.backend("packageUpdates", { prerelease, noCache: true, transitive: true }),
+          staleTime: 0
+        })
+        .catch(() => {});
+    }
+  }, [bridge, queries, prerelease, transitive]);
 }

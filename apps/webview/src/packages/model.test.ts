@@ -5,7 +5,15 @@ import type {
   ProjectInfo
 } from "@nuget-code/protocol";
 import { describe, expect, it } from "vitest";
-import { buildRows, filterRows, sortRows, targetOptions, updateChanges, type RowsInput } from "./model";
+import {
+  buildRows,
+  buildTransitiveRows,
+  filterRows,
+  sortRows,
+  targetOptions,
+  updateChanges,
+  type RowsInput
+} from "./model";
 
 const APP = "/work/App/App.csproj";
 const LIB = "/work/Lib/Lib.csproj";
@@ -255,5 +263,75 @@ describe("targetOptions", () => {
     const broken: ProjectInfo = { ...PROJECTS[0]!, error: "MSB4025" };
 
     expect(targetOptions([broken], undefined)[1]).toEqual({ value: APP, label: "App", count: 0, error: "MSB4025" });
+  });
+});
+
+describe("buildTransitiveRows", () => {
+  const through = (id: string, version: string, via: string[] = ["Alpha"]) => ({
+    id,
+    resolvedVersion: version,
+    frameworks: ["net10.0"],
+    via
+  });
+  const INSTALLED: PackagesInstalledResult = {
+    projects: [
+      { projectPath: APP, packages: [pkg("Alpha", "1.0.0", "1.0.0")], transitive: [through("Inner", "1.0.0")] },
+      {
+        projectPath: LIB,
+        packages: [pkg("Inner", "1.5.0", "1.5.0")],
+        transitive: [through("inner", "1.2.0", ["Beta"]), through("Deep", "4.0.0", [])]
+      }
+    ]
+  };
+  const input = (extra: Partial<RowsInput> = {}): RowsInput => ({
+    installed: INSTALLED,
+    projects: PROJECTS,
+    target: null,
+    feed: null,
+    prerelease: false,
+    ...extra
+  });
+
+  it("gathers the projects and the versions of the target, one row for each package id", () => {
+    const rows = buildTransitiveRows(input());
+
+    expect(rows.map((row) => row.id)).toEqual(["Inner", "Deep"]);
+    expect(rows[0]).toMatchObject({
+      versions: ["1.0.0", "1.2.0"],
+      projects: [
+        { path: APP, name: "App", version: "1.0.0", via: ["Alpha"] },
+        { path: LIB, name: "Lib", version: "1.2.0", via: ["Beta"] }
+      ],
+      hasUpdate: false
+    });
+  });
+
+  it("a package that one project references and another has transitively is in both lists", () => {
+    const direct = buildRows(input()).map((row) => row.id);
+    const transitive = buildTransitiveRows(input({ target: APP })).map((row) => row.id);
+
+    expect(direct).toContain("Inner");
+    expect(transitive).toEqual(["Inner"]);
+  });
+
+  it("a project target leaves out what the other projects have", () => {
+    expect(buildTransitiveRows(input({ target: LIB })).map((row) => row.id)).toEqual(["inner", "Deep"]);
+  });
+
+  it("the newest version comes from the answer about transitive packages", () => {
+    const rows = buildTransitiveRows(
+      input({ updates: updates(["Inner", ["nuget.org", "2.0.0"]], ["Deep", ["nuget.org", "4.0.0"]]) })
+    );
+
+    expect(rows[0]).toMatchObject({ latest: "2.0.0", hasUpdate: true });
+    expect(rows[1]).toMatchObject({ latest: "4.0.0", hasUpdate: false });
+  });
+
+  it("sorting and filtering treat them as the other rows", () => {
+    const rows = buildTransitiveRows(input({ updates: updates(["Inner", ["nuget.org", "2.0.0"]]) }));
+
+    expect(sortRows(rows, "alphabetical").map((row) => row.id)).toEqual(["Deep", "Inner"]);
+    expect(sortRows(rows, "smart").map((row) => row.id)).toEqual(["Inner", "Deep"]);
+    expect(filterRows(rows, "dee").map((row) => row.id)).toEqual(["Deep"]);
   });
 });

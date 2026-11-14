@@ -130,20 +130,79 @@ function baseName(path: string): string {
   return file.replace(/\.[^.]+$/, "");
 }
 
-const byId = (left: PackageRow, right: PackageRow): number => {
+/** One project's having of a package it does not reference. */
+export interface TransitiveUse {
+  path: string;
+  name: string;
+  version: string;
+  /** The packages the project references through which this one arrives. */
+  via: readonly string[];
+}
+
+/** One line of the list of transitive packages: a package, across the projects of the target that have it. */
+export interface TransitiveRow {
+  id: string;
+  /** The versions resolved, oldest first, without repetition. */
+  versions: readonly string[];
+  projects: readonly TransitiveUse[];
+  /** The newest version on the feeds considered. */
+  latest?: string;
+  hasUpdate: boolean;
+}
+
+/**
+ * The packages the projects of the target have without referencing them, one row per package id. `updates`
+ * is the answer about the transitive packages, which is asked for apart from the one about the referenced.
+ */
+export function buildTransitiveRows(input: RowsInput): TransitiveRow[] {
+  const found = new Map<string, { id: string; uses: TransitiveUse[] }>();
+  for (const project of input.installed.projects) {
+    if (input.target !== null && !sameText(project.projectPath, input.target)) {
+      continue;
+    }
+
+    const name =
+      input.projects.find((item) => sameText(item.path, project.projectPath))?.name ?? baseName(project.projectPath);
+    for (const item of project.transitive) {
+      const key = item.id.toLowerCase();
+      const entry = found.get(key) ?? { id: item.id, uses: [] };
+      found.set(key, entry);
+      entry.uses.push({ path: project.projectPath, name, version: item.resolvedVersion, via: item.via });
+    }
+  }
+
+  return [...found.values()].map(({ id, uses }) => {
+    const latest = latestOf(id, input);
+    return {
+      id,
+      versions: [...new Set(uses.map((use) => use.version))].sort(compareVersionTexts),
+      projects: uses,
+      ...(latest === undefined ? {} : { latest }),
+      hasUpdate: latest !== undefined && uses.some((use) => isNewer(latest, use.version))
+    };
+  });
+}
+
+/** What the lists are ordered and filtered by; both kinds of row have it. */
+interface Listed {
+  id: string;
+  hasUpdate: boolean;
+}
+
+const byId = (left: Listed, right: Listed): number => {
   const a = left.id.toLowerCase();
   const b = right.id.toLowerCase();
   return a < b ? -1 : a > b ? 1 : 0;
 };
 
 /** Smart puts the packages that have an update first; both orders are alphabetical within that. */
-export function sortRows(rows: readonly PackageRow[], mode: "smart" | "alphabetical"): PackageRow[] {
+export function sortRows<T extends Listed>(rows: readonly T[], mode: "smart" | "alphabetical"): T[] {
   return [...rows].sort((left, right) =>
     mode === "smart" && left.hasUpdate !== right.hasUpdate ? (left.hasUpdate ? -1 : 1) : byId(left, right)
   );
 }
 
-export function filterRows(rows: readonly PackageRow[], query: string): PackageRow[] {
+export function filterRows<T extends Listed>(rows: readonly T[], query: string): T[] {
   const text = query.trim().toLowerCase();
   return text === "" ? [...rows] : rows.filter((row) => row.id.toLowerCase().includes(text));
 }

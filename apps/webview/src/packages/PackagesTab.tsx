@@ -13,7 +13,7 @@ import { packageMenu, Shortcuts, type PackageMenuAction } from "./contextMenu";
 import { DetailsPanel, NoSelection } from "./DetailsPanel";
 import { DiscoverView } from "./DiscoverView";
 import { InstalledView } from "./InstalledView";
-import { buildRows, filterRows, sortRows, targetOptions, updateChanges } from "./model";
+import { buildRows, buildTransitiveRows, filterRows, sortRows, targetOptions, updateChanges } from "./model";
 import { OperationBar, ResultBanner } from "./OperationStatus";
 import {
   queryKeys,
@@ -23,6 +23,7 @@ import {
   useSearch,
   useSolutionSync,
   useSources,
+  useTransitiveUpdates,
   useUpdates
 } from "./queries";
 import { Toolbar } from "./Toolbar";
@@ -59,7 +60,9 @@ export function PackagesTab(): ReactNode {
   const sources = useSources();
   const discovering = preferences.packagesView === "discover";
   const found = useSearch(query, feed, prerelease, discovering);
-  const refresh = useRefresh(prerelease);
+  const hasTransitive = installed.data?.projects.some((project) => project.transitive.length > 0) === true;
+  const transitiveUpdates = useTransitiveUpdates(prerelease, hasTransitive);
+  const refresh = useRefresh(prerelease, hasTransitive);
   // The pages of a package, for its menu, come with its details; asked for when the menu opens.
   const menuDetails = useDetails(menu?.id, feed, prerelease);
 
@@ -75,6 +78,24 @@ export function PackagesTab(): ReactNode {
     [allRows, query, preferences.sort]
   );
   const updateCount = allRows.filter((row) => row.hasUpdate).length;
+  const allTransitive = useMemo(
+    () =>
+      installed.data === undefined
+        ? []
+        : buildTransitiveRows({
+            installed: installed.data,
+            projects,
+            target,
+            updates: transitiveUpdates.data,
+            feed,
+            prerelease
+          }),
+    [installed.data, projects, target, transitiveUpdates.data, feed, prerelease]
+  );
+  const transitiveRows = useMemo(
+    () => sortRows(filterRows(allTransitive, query), preferences.sort),
+    [allTransitive, query, preferences.sort]
+  );
 
   // The icons of the installed packages come with their details, which are asked for once and kept.
   const iconIds = allRows.slice(0, ICON_LIMIT).map((row) => row.id);
@@ -93,6 +114,7 @@ export function PackagesTab(): ReactNode {
   const targetProjects = target === null ? projects : projects.filter((project) => project.path === target);
   const targetName = target === null ? "Solution" : (targetProjects[0]?.name ?? "Solution");
   const selectedRow = allRows.find((row) => row.id.toLowerCase() === selectedId?.toLowerCase());
+  const selectedTransitive = allTransitive.find((row) => row.id.toLowerCase() === selectedId?.toLowerCase());
 
   const change = (
     title: string,
@@ -129,6 +151,7 @@ export function PackagesTab(): ReactNode {
       : packageMenu({
           id: menu.id,
           row: allRows.find((row) => row.id.toLowerCase() === menu.id.toLowerCase()),
+          transitive: allTransitive.find((row) => row.id.toLowerCase() === menu.id.toLowerCase()),
           targetName,
           details: menuDetails.data,
           feeds: sources.data?.effective ?? [],
@@ -301,7 +324,9 @@ export function PackagesTab(): ReactNode {
               targetName={targetName}
               loading={installed.isPending && !installed.isError}
               updatesLoading={updates.isFetching}
-              selectedId={selectedRow?.id}
+              transitive={transitiveRows}
+              transitiveLoading={transitiveUpdates.isFetching}
+              selectedId={selectedId}
               onSelect={setSelectedId}
               onMenu={openMenu}
               checked={checked}
@@ -325,6 +350,7 @@ export function PackagesTab(): ReactNode {
               key={selectedId.toLowerCase()}
               id={selectedId}
               row={selectedRow}
+              transitive={selectedTransitive}
               projects={targetProjects}
               feed={feed}
               prerelease={prerelease}

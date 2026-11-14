@@ -1,6 +1,6 @@
 import type { FeedInfo, PackageDetailsResult } from "@nuget-code/protocol";
 import type { MenuEntry } from "../ui/Menu";
-import type { PackageRow } from "./model";
+import type { PackageRow, TransitiveRow } from "./model";
 
 /** What an item of the package menu does. */
 export type PackageMenuAction =
@@ -16,6 +16,8 @@ export interface PackageMenuInput {
   id: string;
   /** The package as installed in the target; absent when no project of the target has it. */
   row: PackageRow | undefined;
+  /** The package as the target has it without referencing it; absent when no project does. */
+  transitive?: TransitiveRow | undefined;
   /** The name of the target, as the lists say it: "Solution" or a project. */
   targetName: string;
   /** What is known about the package; absent while it is being fetched. */
@@ -94,9 +96,11 @@ export function packageMenu(input: PackageMenuInput): MenuEntry<PackageMenuActio
   const folders: MenuEntry<PackageMenuAction>[] = [];
   if (input.globalPackagesFolder !== undefined) {
     const root = input.globalPackagesFolder;
-    const restored = new Set(
-      (row?.projects ?? []).flatMap((use) => (use.restored && use.resolved !== undefined ? [use.resolved] : []))
-    );
+    // What is on disk: the versions the restore resolved, for a referenced package and for a transitive one.
+    const restored = new Set([
+      ...(row?.projects ?? []).flatMap((use) => (use.restored && use.resolved !== undefined ? [use.resolved] : [])),
+      ...(input.transitive?.versions ?? [])
+    ]);
     for (const version of restored) {
       folders.push({
         kind: "item",
