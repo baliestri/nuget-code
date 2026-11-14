@@ -10,6 +10,7 @@ using NuGet.VisualStudioCode.Methods;
 using NuGet.VisualStudioCode.Operations;
 using NuGet.VisualStudioCode.Projects;
 using NuGet.VisualStudioCode.Protocol;
+using NuGet.VisualStudioCode.Restore;
 using NuGet.VisualStudioCode.Rpc;
 using NuGet.VisualStudioCode.Sdk;
 using NuGet.VisualStudioCode.Sessions;
@@ -47,6 +48,13 @@ SolutionMethods.Register(connection, sessions, evaluator);
 PackagesMethods.Register(connection, sessions, search, details, updates);
 WorkspaceMethods.Register(connection, refresher, ResetFeeds);
 OperationMethods.Register(connection, sessions, advisor);
+
+using var queue = new OperationQueue();
+var engines = new Dictionary<string, IRestoreEngine>(StringComparer.Ordinal) {
+  [RestoreEngineNames.EMBEDDED] = new EmbeddedRestoreEngine(nugetLogger)
+};
+var restore = new RestoreService(engines, options, log);
+RestoreMethods.Register(connection, sessions, queue, restore, refresher, options);
 
 var credentials = new HostCredentialProvider((request, ct) => connection.RequestAsync(MethodNames.CREDENTIALS_REQUEST,
   request, ProtocolJsonContext.Default.CredentialsRequestParams, ProtocolJsonContext.Default.CredentialsRequestResult,

@@ -18,6 +18,9 @@ internal static class MethodNames {
   public const string PACKAGES_SEARCH = "packages/search";
   public const string PACKAGES_DETAILS = "packages/details";
 
+  public const string RESTORE_RUN = "restore/run";
+  public const string CONFIGURATION_DID_CHANGE = "configuration/didChange";
+
   public const string SOURCES_LIST = "sources/list";
   public const string FOLDERS_LIST = "folders/list";
   public const string FOLDERS_SIZE = "folders/size";

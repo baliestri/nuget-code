@@ -11,7 +11,7 @@ namespace NuGet.VisualStudioCode.Projects;
 internal static class EvaluatedProjectBuilder {
   private const string ASSETS_FILE = "project.assets.json";
 
-  public static EvaluatedProject Build(PackageSpec spec) {
+  public static EvaluatedProject Build(PackageSpec spec, DependencyGraphSpec? graph = null) {
     var metadata = spec.RestoreMetadata;
     var frameworks = SortedFrameworks(spec);
     var packages = spec.TargetFrameworks
@@ -30,7 +30,7 @@ internal static class EvaluatedProjectBuilder {
       .ToList();
     var info = new ProjectInfo(spec.Name, metadata.ProjectPath, frameworks, metadata.CentralPackageVersionsEnabled,
       null);
-    return new EvaluatedProject(info, packages, Path.Combine(metadata.OutputPath, ASSETS_FILE));
+    return new EvaluatedProject(info, packages, Path.Combine(metadata.OutputPath, ASSETS_FILE), graph);
   }
 
   public static EvaluatedProject Failed(string projectPath, string error)

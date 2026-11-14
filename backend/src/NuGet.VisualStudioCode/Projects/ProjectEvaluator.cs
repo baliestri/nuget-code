@@ -75,6 +75,6 @@ internal sealed class ProjectEvaluator(RestoreGraphGenerator generator, BackendL
     return spec is null
       ? EvaluatedProjectBuilder.Failed(projectPath,
         "The project is not part of the restore graph. It may not use PackageReference.")
-      : EvaluatedProjectBuilder.Build(spec);
+      : EvaluatedProjectBuilder.Build(spec, graph);
   }
 }
