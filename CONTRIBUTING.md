@@ -30,6 +30,8 @@ Tests run on Microsoft.Testing.Platform. Filter with `--filter-class` or `--filt
 | `NUGET_VSCODE_BACKEND_MODE=jit` | Run the backend on the JIT runtime instead of the AOT binary. |
 | `NUGET_VSCODE_ONLINE_TESTS=1` | Also run the tests that reach nuget.org. They are skipped otherwise. |
 
+Tests that restore use `TestWorkspace`, whose `NuGet.config` clears the inherited sources and points `globalPackagesFolder` inside the test's temporary directory, so nothing is read from or written to the machine's package folder. A test that clears a folder must check that the folder is inside its workspace before asking for it to be cleared.
+
 When an AOT test fails, run it again with `NUGET_VSCODE_BACKEND_MODE=jit`. A test that fails in both modes is failing because of the code or the test fixture. A test that passes on the JIT runtime and fails against the AOT binary is failing because of trimming.
 
 ### Rules for backend changes
@@ -37,6 +39,8 @@ When an AOT test fails, run it again with `NUGET_VSCODE_BACKEND_MODE=jit`. A tes
 - Every JSON-RPC method needs a test in `NuGet.VisualStudioCode.AotTests`. NuGet.Client is not fully annotated for trimming, so a code path that is not exercised against the AOT binary is not known to work.
 - Every type that crosses the protocol is registered in `ProtocolJsonContext`. Reflection-based serialization is disabled.
 - Assemblies that must survive trimming are listed in `src/NuGet.VisualStudioCode/Trimming.props`, each group with the reason it is there. `IL2026` is turned off for the native compiler only, because NuGet.Protocol reports its own Newtonsoft.Json call sites; the C# compiler still fails the build on `IL2026` and `IL3050` in this project's code.
+- Methods that change state run through `OperationQueue`. Anything a handler must send after its own answer, such as a notification about work it started, is registered with `RpcConnection.AfterResponse`.
+- A test that waits for log output waits for a line the backend writes at the end of the work, not for a delay: the log is delivered on its own and may arrive after the answer.
 - Package versions live in `Directory.Packages.props`. Editing it by hand keeps its line endings; `dotnet add package` rewrites the file with CRLF.
 - New C# files start with the license header from `backend/.editorconfig`.
 
