@@ -19,16 +19,16 @@ internal static class FoldersReader {
 
     var httpCache = SettingsUtility.GetHttpCacheFolder();
     var cacheRoot = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(httpCache)) ?? httpCache;
-    folders.Add(new FolderInfo("Global Packages", SettingsUtility.GetGlobalPackagesFolder(settings)));
-    folders.Add(new FolderInfo("Package Cache", Path.Combine(cacheRoot, "Cache")));
-    folders.Add(new FolderInfo("HTTP Cache", httpCache));
+    folders.Add(new FolderInfo("Global Packages", SettingsUtility.GetGlobalPackagesFolder(settings), true));
+    folders.Add(new FolderInfo("Package Cache", Path.Combine(cacheRoot, "Cache"), true));
+    folders.Add(new FolderInfo("HTTP Cache", httpCache, true));
     folders.Add(new FolderInfo("NuGetHome", NuGetEnvironment.GetFolderPath(NuGetFolderPath.NuGetHome)));
     folders.Add(new FolderInfo("UserSettings", NuGetEnvironment.GetFolderPath(NuGetFolderPath.UserSettingsDirectory)));
     folders.Add(new FolderInfo("MachineSettingsBase",
       NuGetEnvironment.GetFolderPath(NuGetFolderPath.MachineWideSettingsBaseDirectory)));
     folders.Add(new FolderInfo("MachineConfigDir",
       NuGetEnvironment.GetFolderPath(NuGetFolderPath.MachineWideConfigDirectory)));
-    folders.Add(new FolderInfo("Temp", NuGetEnvironment.GetFolderPath(NuGetFolderPath.Temp)));
+    folders.Add(new FolderInfo("Temp", NuGetEnvironment.GetFolderPath(NuGetFolderPath.Temp), true));
     var fallback = SettingsUtility.GetFallbackPackageFolders(settings);
     for (var index = 0; index < fallback.Count; index++) {
       var title = string.Create(CultureInfo.InvariantCulture, $"Fallback #{index}");

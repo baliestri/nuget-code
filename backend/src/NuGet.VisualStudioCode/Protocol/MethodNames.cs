@@ -34,6 +34,7 @@ internal static class MethodNames {
   public const string SOURCES_SET_PROPERTY = "sources/setProperty";
   public const string FOLDERS_LIST = "folders/list";
   public const string FOLDERS_SIZE = "folders/size";
+  public const string FOLDERS_CLEAR = "folders/clear";
 
   public const string WORKSPACE_DID_CHANGE_FILES = "workspace/didChangeFiles";
 

@@ -69,6 +69,7 @@ var openRestore = new SolutionOpenRestore(sessions, queue, restore, refresher, o
     ProtocolJsonContext.Default.RestoreDidFinishParams));
 SolutionMethods.Register(connection, sessions, evaluator, queue, openRestore);
 
+ConfigurationMethods.RegisterClear(connection, queue, settings, () => sessions.Current is not null);
 ConfigurationMethods.RegisterWrites(connection, queue,
   new SourcesWriter(settings, ConfigFileClassifier.IsMachineWide), refresher, ResetFeeds);
 

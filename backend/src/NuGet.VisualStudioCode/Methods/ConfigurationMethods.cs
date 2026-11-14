@@ -57,6 +57,20 @@ internal static class ConfigurationMethods {
       }, ct));
   }
 
+  /// <summary>
+  ///   <c>folders/clear</c>: every path is checked against the cache folders of <c>folders/list</c> before the
+  ///   first file is deleted.
+  /// </summary>
+  public static void RegisterClear(RpcConnection connection, OperationQueue queue, SettingsProvider settings,
+    Func<bool> hasSolution)
+    => connection.OnRequest(MethodNames.FOLDERS_CLEAR, ProtocolJsonContext.Default.FoldersClearParams,
+      ProtocolJsonContext.Default.FoldersClearResult, (parameters, ct) => queue.RunAsync(token =>
+      {
+        FolderCleaner.RequireClearable(FoldersReader.Read(settings, hasSolution()), parameters.Paths);
+        return Task.Run(() => new FoldersClearResult(
+          parameters.Paths.Select(path => FolderCleaner.Clear(path, token)).ToList()), token);
+      }, ct));
+
   public static void Register(RpcConnection connection, SettingsProvider settings, Func<bool> hasSolution) {
     connection.OnRequest(MethodNames.SOURCES_LIST, ProtocolJsonContext.Default.Empty,
       ProtocolJsonContext.Default.SourcesListResult, (_, _) => Task.FromResult(SourcesReader.Read(settings)));

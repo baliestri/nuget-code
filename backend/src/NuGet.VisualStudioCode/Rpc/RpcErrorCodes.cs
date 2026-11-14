@@ -26,4 +26,5 @@ internal static class RpcErrorCodes {
   public const int CONFIG_NOT_WRITABLE = 1106;
   public const int FEED_UNKNOWN = 1107;
   public const int FEED_DUPLICATE = 1108;
+  public const int FOLDER_NOT_CLEARABLE = 1109;
 }
