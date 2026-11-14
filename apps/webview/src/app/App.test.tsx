@@ -8,7 +8,8 @@ import { Root } from "./Root";
 const OPEN: SessionState = {
   backend: "ready",
   solution: { kind: "open", name: "Sample.slnx", path: "/work/Sample.slnx", projects: [] },
-  hasSdk: true
+  hasSdk: true,
+  audit: true
 };
 
 function open(session: SessionState | null = READY, stored?: unknown) {

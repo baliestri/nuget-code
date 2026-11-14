@@ -26,7 +26,8 @@ describe("readSettings", () => {
         "restore.onOpen": false,
         feedTimeoutSeconds: 12.9,
         "log.level": "debug",
-        "backend.path": "/dev/backend.dll"
+        "backend.path": "/dev/backend.dll",
+        "audit.enabled": false
       })
     ).toEqual({
       dotnetPath: "/opt/dotnet/dotnet",
@@ -34,7 +35,8 @@ describe("readSettings", () => {
       restoreOnOpen: false,
       feedTimeoutSeconds: 12,
       logLevel: "debug",
-      backendPath: "/dev/backend.dll"
+      backendPath: "/dev/backend.dll",
+      audit: false
     });
   });
 
@@ -42,6 +44,7 @@ describe("readSettings", () => {
     ["restore.engine", "nope", "restoreEngine"],
     ["restore.engine", 3, "restoreEngine"],
     ["restore.onOpen", "yes", "restoreOnOpen"],
+    ["audit.enabled", "no", "audit"],
     ["feedTimeoutSeconds", -1, "feedTimeoutSeconds"],
     ["feedTimeoutSeconds", 0, "feedTimeoutSeconds"],
     ["feedTimeoutSeconds", "30", "feedTimeoutSeconds"],
@@ -57,7 +60,8 @@ describe("backend parameters", () => {
     expect(toInitializeParams(DEFAULTS)).toEqual({
       feedTimeoutSeconds: 30,
       restoreEngine: "embedded",
-      restoreOnOpen: true
+      restoreOnOpen: true,
+      audit: true
     });
   });
 
@@ -65,10 +69,13 @@ describe("backend parameters", () => {
     expect(toInitializeParams({ ...DEFAULTS, dotnetPath: "/opt/dotnet" }).dotnetPath).toBe("/opt/dotnet");
   });
 
-  it("configuration params carry the two settings that change without a restart", () => {
-    expect(toConfigurationParams({ ...DEFAULTS, restoreEngine: "msbuild", restoreOnOpen: false })).toEqual({
+  it("configuration params carry the settings that change without a restart", () => {
+    expect(
+      toConfigurationParams({ ...DEFAULTS, restoreEngine: "msbuild", restoreOnOpen: false, audit: false })
+    ).toEqual({
       restoreEngine: "msbuild",
-      restoreOnOpen: false
+      restoreOnOpen: false,
+      audit: false
     });
   });
 });
@@ -80,6 +87,7 @@ describe("what a change requires", () => {
     [{ backendPath: "/x" }, true, false],
     [{ restoreEngine: "console" }, false, true],
     [{ restoreOnOpen: false }, false, true],
+    [{ audit: false }, false, true],
     [{ logLevel: "debug" }, false, false],
     [{}, false, false]
   ] as const)("%j: restart %s, notification %s", (change, restart, notification) => {

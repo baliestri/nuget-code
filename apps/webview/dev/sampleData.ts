@@ -7,7 +7,8 @@ import type {
   PackagesInstalledResult,
   PackageSummary,
   ProjectInfo,
-  TransitivePackage
+  TransitivePackage,
+  VulnerablePackage
 } from "@nuget-code/protocol";
 import type { FakeBridge } from "../test/fakeBridge";
 
@@ -36,7 +37,8 @@ export const PROJECTS: readonly ProjectInfo[] = [
 export const SESSION: SessionState = {
   backend: "ready",
   solution: { kind: "open", name: "SampleLibrary.slnx", path: `${ROOT}\\SampleLibrary.slnx`, projects: PROJECTS },
-  hasSdk: true
+  hasSdk: true,
+  audit: true
 };
 
 function pkg(id: string, version: string, extra: Partial<InstalledPackage> = {}): InstalledPackage {
@@ -70,6 +72,23 @@ const TRANSITIVE: readonly TransitivePackage[] = [
   transitive("Microsoft.CodeAnalysis.Common", "5.12.0", "Microsoft.CodeAnalysis.CSharp"),
   transitive("Microsoft.Testing.Platform", "2.5.2", "xunit.v3.mtp-v2"),
   transitive("System.Text.Json", "8.0.0", "Microsoft.Extensions.DependencyInjection")
+];
+
+/** What the sample feed knows about vulnerabilities: one transitive package and one referenced one. */
+const VULNERABLE: readonly VulnerablePackage[] = [
+  {
+    id: "System.Text.Json",
+    version: "8.0.0",
+    advisories: [
+      { severity: "high", url: "https://github.com/advisories/GHSA-hh2w-p6rv-4g7w" },
+      { severity: "high", url: "https://github.com/advisories/GHSA-8g4q-xg66-9fp4" }
+    ]
+  },
+  {
+    id: "Moq",
+    version: "4.21.0",
+    advisories: [{ severity: "moderate", url: "https://github.com/advisories/GHSA-sample-moq" }]
+  }
 ];
 
 const INSTALLED: PackagesInstalledResult = {
@@ -177,7 +196,11 @@ function details(id: string): PackageDetailsResult {
       { framework: "netstandard2.0", dependencies: [{ id: "System.Memory", range: "[4.6.0, )" }] }
     ],
     feed: "nuget.org",
-    failures: []
+    failures: [],
+    vulnerableVersions: VULNERABLE.filter((item) => item.id === id && versions.includes(item.version)).map((item) => ({
+      version: item.version,
+      severity: item.advisories[0]!.severity
+    }))
   };
 }
 
@@ -233,6 +256,7 @@ export function installSampleData(fake: FakeBridge): void {
       failures: []
     });
   fake.backend.packageDetails = (params) => Promise.resolve(details(params.id));
+  fake.backend.packageVulnerabilities = () => Promise.resolve({ packages: VULNERABLE, failures: [] });
   fake.backend.planPackages = () => Promise.resolve({ edits: [], warnings: [] });
   fake.backend.updatePackages = (params) => operation(params.changes.flatMap((change) => change.projects));
   fake.backend.installPackage = (params) => operation(params.projects);

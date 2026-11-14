@@ -28,6 +28,7 @@ type Call<M extends BackendMethod> = (api: BackendApi, params: BackendMethods[M]
 const calls: { readonly [M in BackendMethod]: Call<M> } = {
   installedPackages: (api) => api.installedPackages(),
   packageUpdates: (api, params) => api.packageUpdates(params),
+  packageVulnerabilities: (api, params) => api.packageVulnerabilities(params),
   searchPackages: (api, params) => api.searchPackages(params),
   packageDetails: (api, params) => api.packageDetails(params),
   planPackages: (api, params) => api.planPackages(params),
@@ -302,6 +303,7 @@ export function toSessionState(input: {
   solution: SolutionState;
   opened: SolutionOpenResult | undefined;
   initialized: InitializeResult | undefined;
+  audit: boolean;
 }): SessionState {
   const solution: SessionState["solution"] =
     input.solution.kind === "open" && input.opened !== undefined
@@ -309,5 +311,5 @@ export function toSessionState(input: {
       : input.solution.kind === "open"
         ? { kind: "opening" }
         : { kind: input.solution.kind };
-  return { backend: input.backend, solution, hasSdk: input.initialized?.sdk !== undefined };
+  return { backend: input.backend, solution, hasSdk: input.initialized?.sdk !== undefined, audit: input.audit };
 }

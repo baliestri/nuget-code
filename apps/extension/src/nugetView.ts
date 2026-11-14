@@ -47,6 +47,7 @@ export class NugetViewProvider implements vscode.WebviewViewProvider {
           backend: this.session.state,
           solution: this.session.solution,
           opened: this.session.openedSolution,
+          audit: this.session.audit,
           initialized: this.session.initializeResult
         })
       );

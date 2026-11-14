@@ -388,26 +388,40 @@ describe("toSessionState", () => {
       backend: "ready",
       solution: { kind: "open", name: "Sample.slnx" },
       opened,
-      initialized: withSdk
+      initialized: withSdk,
+      audit: true
     });
 
     expect(state).toEqual({
       backend: "ready",
       solution: { kind: "open", name: "Sample.slnx", path: opened.path, projects: opened.projects },
-      hasSdk: true
+      hasSdk: true,
+      audit: true
     });
   });
 
   it.each(["none", "opening"] as const)("a solution that is %s has no projects", (kind) => {
-    const state = toSessionState({ backend: "ready", solution: { kind }, opened: undefined, initialized: withSdk });
+    const state = toSessionState({
+      backend: "ready",
+      solution: { kind },
+      opened: undefined,
+      initialized: withSdk,
+      audit: true
+    });
 
     expect(state.solution).toEqual({ kind });
   });
 
   it.each(["starting", "stopped"] as const)("a backend that is %s is reported as such", (backend) => {
-    const state = toSessionState({ backend, solution: { kind: "none" }, opened: undefined, initialized: undefined });
+    const state = toSessionState({
+      backend,
+      solution: { kind: "none" },
+      opened: undefined,
+      initialized: undefined,
+      audit: true
+    });
 
-    expect(state).toEqual({ backend, solution: { kind: "none" }, hasSdk: false });
+    expect(state).toEqual({ backend, solution: { kind: "none" }, hasSdk: false, audit: true });
   });
 
   it("no SDK in the answer of initialize means hasSdk is false", () => {
@@ -415,9 +429,22 @@ describe("toSessionState", () => {
       backend: "ready",
       solution: { kind: "none" },
       opened: undefined,
-      initialized: { protocolVersion: 1, backendVersion: "1.0.0" }
+      initialized: { protocolVersion: 1, backendVersion: "1.0.0" },
+      audit: true
     });
 
     expect(state.hasSdk).toBe(false);
+  });
+
+  it("the audit setting is passed on as it is", () => {
+    const state = toSessionState({
+      backend: "ready",
+      solution: { kind: "none" },
+      opened: undefined,
+      initialized: withSdk,
+      audit: false
+    });
+
+    expect(state.audit).toBe(false);
   });
 });

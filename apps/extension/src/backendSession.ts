@@ -81,7 +81,12 @@ export class BackendSession {
     return this.initialized;
   }
 
-  /** Fires when the state of the backend or of the solution changes. */
+  /** Whether packages are checked for known vulnerabilities: the setting, as it is now. */
+  get audit(): boolean {
+    return this.settings.audit;
+  }
+
+  /** Fires when the state of the backend or of the solution changes, or the audit is turned on or off. */
   onDidChange(listener: () => void): Disposable {
     return this.changed.on(listener);
   }
@@ -135,6 +140,11 @@ export class BackendSession {
       await this.client.restart();
     } else if (requiresNotification(before, settings) && this.client.state === "ready") {
       await this.api.didChangeConfiguration(toConfigurationParams(settings));
+    }
+
+    // The view shows or hides the vulnerability warnings by it, and asks again once the backend knows.
+    if (before.audit !== settings.audit) {
+      this.changed.fire();
     }
   }
 

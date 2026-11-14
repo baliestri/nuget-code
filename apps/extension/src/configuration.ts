@@ -15,6 +15,8 @@ export interface Settings {
   feedTimeoutSeconds: number;
   logLevel: LogLevel;
   backendPath: string;
+  /** Whether packages are checked for known vulnerabilities. */
+  audit: boolean;
 }
 
 export const SECTION = "nuget";
@@ -25,7 +27,8 @@ export const DEFAULTS: Settings = {
   restoreOnOpen: true,
   feedTimeoutSeconds: 30,
   logLevel: LogLevels.info,
-  backendPath: ""
+  backendPath: "",
+  audit: true
 };
 
 /** Reads the settings through `get`, which looks a key up in the `nuget` section. An invalid value is replaced by its default. */
@@ -36,7 +39,8 @@ export function readSettings(get: (key: string) => unknown): Settings {
     restoreOnOpen: flag(get("restore.onOpen"), DEFAULTS.restoreOnOpen),
     feedTimeoutSeconds: positive(get("feedTimeoutSeconds"), DEFAULTS.feedTimeoutSeconds),
     logLevel: oneOf(get("log.level"), Object.values(LogLevels), DEFAULTS.logLevel),
-    backendPath: text(get("backend.path"), DEFAULTS.backendPath)
+    backendPath: text(get("backend.path"), DEFAULTS.backendPath),
+    audit: flag(get("audit.enabled"), DEFAULTS.audit)
   };
 }
 
@@ -45,12 +49,13 @@ export function toInitializeParams(settings: Settings): InitializeParams {
     ...(settings.dotnetPath === "" ? {} : { dotnetPath: settings.dotnetPath }),
     feedTimeoutSeconds: settings.feedTimeoutSeconds,
     restoreEngine: settings.restoreEngine,
-    restoreOnOpen: settings.restoreOnOpen
+    restoreOnOpen: settings.restoreOnOpen,
+    audit: settings.audit
   };
 }
 
 export function toConfigurationParams(settings: Settings): ConfigurationParams {
-  return { restoreEngine: settings.restoreEngine, restoreOnOpen: settings.restoreOnOpen };
+  return { restoreEngine: settings.restoreEngine, restoreOnOpen: settings.restoreOnOpen, audit: settings.audit };
 }
 
 /** The backend reads these only when it starts. */
@@ -64,7 +69,11 @@ export function requiresRestart(before: Settings, after: Settings): boolean {
 
 /** Whether the backend has to be told, short of a restart. */
 export function requiresNotification(before: Settings, after: Settings): boolean {
-  return before.restoreEngine !== after.restoreEngine || before.restoreOnOpen !== after.restoreOnOpen;
+  return (
+    before.restoreEngine !== after.restoreEngine ||
+    before.restoreOnOpen !== after.restoreOnOpen ||
+    before.audit !== after.audit
+  );
 }
 
 function text(value: unknown, fallback: string): string {

@@ -144,6 +144,12 @@
           "scope": "window",
           "description": "The least severe level written to the NuGet output channel."
         },
+        "nuget.audit.enabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "markdownDescription": "Check the packages of the solution, transitive ones included, for known vulnerabilities, as published by the package sources. The sources of `auditSources` in `NuGet.config` are asked when there are any."
+        },
         "nuget.notifications.operationWarnings": {
           "type": "boolean",
           "default": true,

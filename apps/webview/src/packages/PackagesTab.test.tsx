@@ -23,7 +23,8 @@ const PROJECTS: ProjectInfo[] = [
 const SESSION: SessionState = {
   backend: "ready",
   solution: { kind: "open", name: "Sample.slnx", path: "/work/Sample.slnx", projects: PROJECTS },
-  hasSdk: true
+  hasSdk: true,
+  audit: true
 };
 
 function pkg(id: string, version: string, extra: Partial<InstalledPackage> = {}): InstalledPackage {
@@ -76,7 +77,8 @@ function details(id: string, versions: string[]): PackageDetailsResult {
     projectUrl: `https://example.org/${id}`,
     dependencyGroups: [{ framework: "net10.0", dependencies: [{ id: "Delta", range: "[1.0.0, )" }] }],
     feed: "nuget.org",
-    failures: []
+    failures: [],
+    vulnerableVersions: []
   };
 }
 

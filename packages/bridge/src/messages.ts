@@ -82,6 +82,8 @@ export interface SessionState {
   solution: SolutionSession;
   /** Whether the backend found a .NET SDK. Without one no solution can be opened. */
   hasSdk: boolean;
+  /** Whether packages are checked for known vulnerabilities: the `nuget.audit.enabled` setting. */
+  audit: boolean;
 }
 
 /** What the host tells the view without being asked. */

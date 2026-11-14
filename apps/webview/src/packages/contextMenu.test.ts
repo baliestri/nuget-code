@@ -45,7 +45,8 @@ const DETAILS: PackageDetailsResult = {
   projectUrl: "https://example.org/alpha",
   dependencyGroups: [],
   feed: "nuget.org",
-  failures: []
+  failures: [],
+  vulnerableVersions: []
 };
 
 function input(extra: Partial<PackageMenuInput> = {}): PackageMenuInput {
