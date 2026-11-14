@@ -3,4 +3,9 @@
 
 namespace NuGet.VisualStudioCode.Protocol;
 
-internal sealed record InitializeParams(string? DotnetPath, int? FeedTimeoutSeconds);
+internal sealed record InitializeParams(
+  string? DotnetPath,
+  int? FeedTimeoutSeconds,
+  string? RestoreEngine,
+  bool? RestoreOnOpen
+);

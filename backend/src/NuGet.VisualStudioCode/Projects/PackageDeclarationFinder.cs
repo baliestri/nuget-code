@@ -9,9 +9,9 @@ internal sealed class PackageDeclarationFinder(ProjectFileSet files) {
   public const string PACKAGE_REFERENCE = "PackageReference";
   public const string PACKAGE_VERSION = "PackageVersion";
   public const string VERSION = "Version";
-  public const string VERSION_OVERRIDE = "VersionOverride";
 
   private const string CENTRAL_FILE = "Directory.Packages.props";
+  private const string VERSION_OVERRIDE = "VersionOverride";
 
   private readonly static string[] ImportedFiles = ["Directory.Build.props", "Directory.Build.targets"];
 
@@ -103,8 +103,7 @@ internal sealed class PackageDeclarationFinder(ProjectFileSet files) {
   private static VersionSlot? Slot(string file, string text, XmlElementSpan element, string versionName) {
     var attribute = element.Attribute(versionName);
     if (attribute is not null) {
-      return new VersionSlot(file, element, attribute.ValueStart, attribute.ValueLength, attribute.Value,
-        attribute.NameStart);
+      return new VersionSlot(file, attribute.ValueStart, attribute.ValueLength, attribute.Value, attribute.NameStart);
     }
 
     foreach (var child in element.Children) {
@@ -114,7 +113,7 @@ internal sealed class PackageDeclarationFinder(ProjectFileSet files) {
       }
 
       var length = child.EndTagStart - child.StartTagEnd;
-      return new VersionSlot(file, element, child.StartTagEnd, length, text.Substring(child.StartTagEnd, length),
+      return new VersionSlot(file, child.StartTagEnd, length, text.Substring(child.StartTagEnd, length),
         child.Start + 1);
     }
 

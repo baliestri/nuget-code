@@ -12,16 +12,15 @@ internal sealed class TextDocument {
   private const string CARRIAGE_RETURN_LINE_FEED = "\r\n";
 
   private readonly Encoding _encoding;
+  private readonly string _path;
   private readonly byte[] _preamble;
 
   private TextDocument(string path, string text, Encoding encoding, byte[] preamble) {
-    Path = path;
+    _path = path;
     Text = text;
     _encoding = encoding;
     _preamble = preamble;
   }
-
-  public string Path { get; }
 
   public string Text { get; }
 
@@ -53,14 +52,14 @@ internal sealed class TextDocument {
     }
 
     builder.Append(Text, position, Text.Length - position);
-    return new TextDocument(Path, builder.ToString(), _encoding, _preamble);
+    return new TextDocument(_path, builder.ToString(), _encoding, _preamble);
   }
 
   public void Save() {
-    var temporary = $"{Path}.{Guid.NewGuid():N}.tmp";
+    var temporary = $"{_path}.{Guid.NewGuid():N}.tmp";
     try {
       File.WriteAllBytes(temporary, [.. _preamble, .. _encoding.GetBytes(Text)]);
-      File.Move(temporary, Path, true);
+      File.Move(temporary, _path, true);
     }
     catch {
       if (File.Exists(temporary)) {

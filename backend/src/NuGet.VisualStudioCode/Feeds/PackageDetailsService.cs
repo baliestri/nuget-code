@@ -1,7 +1,9 @@
 // Copyright (c) Bruno Sales <me@baliestri.dev>. Licensed under the zlib/libpng License.
 // See the LICENSE file in the repository root for full license text.
 
+using NuGet.Packaging.Core;
 using NuGet.Protocol.Core.Types;
+using NuGet.Versioning;
 using NuGet.VisualStudioCode.Logging;
 using NuGet.VisualStudioCode.Protocol;
 
@@ -16,6 +18,28 @@ internal sealed class PackageDetailsService(
   public Task<PackageDetailsResult> GetAsync(PackagesDetailsParams parameters, CancellationToken ct)
     => cache.GetAsync($"{parameters.Feed}|{parameters.Id}|{parameters.Prerelease}", parameters.NoCache,
       () => LoadAsync(parameters, ct));
+
+  // The frameworks one exact version declares dependency groups for, or null when no feed can tell.
+  public async Task<IReadOnlyList<string>?> FrameworksAsync(string id, string version, CancellationToken ct) {
+    if (!NuGetVersion.TryParse(version, out var parsed)) {
+      return null;
+    }
+
+    var identity = new PackageIdentity(id, parsed);
+    var outcome = await query
+      .RunAsync(feeds.Select(null, id), (repository, token) => FrameworksOfAsync(repository, identity, token), ct)
+      .ConfigureAwait(false);
+    return outcome.Results.Select(result => result.Value).FirstOrDefault(frameworks => frameworks is not null);
+  }
+
+  private async Task<IReadOnlyList<string>?> FrameworksOfAsync(SourceRepository repository, PackageIdentity identity,
+    CancellationToken ct) {
+    var resource = await repository.GetResourceAsync<PackageMetadataResource>(ct).ConfigureAwait(false) ??
+                   throw new InvalidOperationException("The feed does not expose package metadata.");
+    using var context = new SourceCacheContext();
+    var metadata = await resource.GetMetadataAsync(identity, context, logger, ct).ConfigureAwait(false);
+    return metadata?.DependencySets.Select(group => group.TargetFramework.GetShortFolderName()).ToList();
+  }
 
   private async Task<PackageDetailsResult> LoadAsync(PackagesDetailsParams parameters, CancellationToken ct) {
     var repositories = feeds.Select(parameters.Feed, parameters.Id);

@@ -21,6 +21,8 @@ namespace NuGet.VisualStudioCode.Protocol;
 [JsonSerializable(typeof(CredentialsRequestParams))]
 [JsonSerializable(typeof(CredentialsRequestResult))]
 [JsonSerializable(typeof(CredentialsResetParams))]
+[JsonSerializable(typeof(PackagesPlanParams))]
+[JsonSerializable(typeof(PackagesPlanResult))]
 [JsonSerializable(typeof(PackagesUpdatesParams))]
 [JsonSerializable(typeof(PackagesUpdatesResult))]
 [JsonSerializable(typeof(ProgressParams))]

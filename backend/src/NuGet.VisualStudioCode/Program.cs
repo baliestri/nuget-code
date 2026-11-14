@@ -7,6 +7,7 @@ using NuGet.VisualStudioCode.Credentials;
 using NuGet.VisualStudioCode.Feeds;
 using NuGet.VisualStudioCode.Logging;
 using NuGet.VisualStudioCode.Methods;
+using NuGet.VisualStudioCode.Operations;
 using NuGet.VisualStudioCode.Projects;
 using NuGet.VisualStudioCode.Protocol;
 using NuGet.VisualStudioCode.Rpc;
@@ -37,11 +38,15 @@ var details = new PackageDetailsService(feeds, feedQuery, nugetLogger, detailsCa
 var versionsCache = new TimedCache<IReadOnlyList<NuGetVersion>>(TimeSpan.FromMinutes(2), TimeProvider.System);
 var updates = new PackageUpdatesService(feeds, feedQuery, nugetLogger, versionsCache);
 
-LifecycleMethods.Register(connection, sdk, log, feedOptions);
+var options = new BackendOptions();
+var advisor = new PlanAdvisor(details);
+
+LifecycleMethods.Register(connection, sdk, log, feedOptions, options);
 ConfigurationMethods.Register(connection, settings, () => sessions.Current is not null);
 SolutionMethods.Register(connection, sessions, evaluator);
 PackagesMethods.Register(connection, sessions, search, details, updates);
 WorkspaceMethods.Register(connection, refresher, ResetFeeds);
+OperationMethods.Register(connection, sessions, advisor);
 
 var credentials = new HostCredentialProvider((request, ct) => connection.RequestAsync(MethodNames.CREDENTIALS_REQUEST,
   request, ProtocolJsonContext.Default.CredentialsRequestParams, ProtocolJsonContext.Default.CredentialsRequestResult,

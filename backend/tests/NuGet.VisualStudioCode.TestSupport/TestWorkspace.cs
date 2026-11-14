@@ -34,6 +34,9 @@ public sealed class TestWorkspace : IDisposable {
   public void AddPackage(string id, string version, params (string Id, string Range)[] dependencies)
     => TestPackages.Create(FeedPath, id, version, dependencies);
 
+  public void AddPackageFor(string framework, string id, string version)
+    => TestPackages.Create(FeedPath, id, version, framework);
+
   public void WriteConfig(string sectionsXml)
     => Root.WriteFile(
       "NuGet.config",

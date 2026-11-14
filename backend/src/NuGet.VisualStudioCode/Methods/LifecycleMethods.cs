@@ -4,6 +4,7 @@
 using System.Reflection;
 using NuGet.VisualStudioCode.Feeds;
 using NuGet.VisualStudioCode.Logging;
+using NuGet.VisualStudioCode.Operations;
 using NuGet.VisualStudioCode.Protocol;
 using NuGet.VisualStudioCode.Rpc;
 using NuGet.VisualStudioCode.Sdk;
@@ -15,7 +16,8 @@ internal static class LifecycleMethods {
 
   private readonly static Empty Done = new();
 
-  public static void Register(RpcConnection connection, SdkService sdk, BackendLog log, FeedOptions feedOptions) {
+  public static void Register(RpcConnection connection, SdkService sdk, BackendLog log, FeedOptions feedOptions,
+    BackendOptions options) {
     connection.OnRequest(MethodNames.INITIALIZE, ProtocolJsonContext.Default.InitializeParams,
       ProtocolJsonContext.Default.InitializeResult, async (parameters, ct) =>
       {
@@ -23,6 +25,9 @@ internal static class LifecycleMethods {
         if (parameters.FeedTimeoutSeconds is > 0) {
           feedOptions.Timeout = TimeSpan.FromSeconds(parameters.FeedTimeoutSeconds.Value);
         }
+
+        options.RestoreEngine = parameters.RestoreEngine ?? options.RestoreEngine;
+        options.RestoreOnOpen = parameters.RestoreOnOpen ?? options.RestoreOnOpen;
 
         var info = await sdk.DescribeAsync(Environment.CurrentDirectory, ct).ConfigureAwait(false);
         log.Write(LogLevels.INFO, LogContexts.BACKEND,

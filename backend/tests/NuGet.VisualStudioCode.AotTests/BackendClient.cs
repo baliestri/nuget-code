@@ -67,8 +67,11 @@ internal sealed class BackendClient : IAsyncDisposable {
     return new BackendClient(process);
   }
 
-  public Task<InitializeResult> InitializeAsync(CancellationToken ct, string? dotnetPath = null)
-    => Connection.RequestAsync(MethodNames.INITIALIZE, new InitializeParams(dotnetPath, null),
+  // Tests start with the restore on solution open turned off, so only the tests about it see its effects.
+  public Task<InitializeResult> InitializeAsync(CancellationToken ct, string? dotnetPath = null,
+    bool restoreOnOpen = false, string? restoreEngine = null)
+    => Connection.RequestAsync(MethodNames.INITIALIZE,
+      new InitializeParams(dotnetPath, null, restoreEngine, restoreOnOpen),
       ProtocolJsonContext.Default.InitializeParams, ProtocolJsonContext.Default.InitializeResult, ct);
 
   public async Task<int> CloseAsync() {

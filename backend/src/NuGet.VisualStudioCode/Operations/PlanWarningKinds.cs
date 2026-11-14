@@ -12,4 +12,5 @@ internal static class PlanWarningKinds {
   public const string RANGE_REPLACED = "rangeReplaced";
   public const string CENTRAL_REMOVED = "centralRemoved";
   public const string REMOVE_ITEM = "removeItem";
+  public const string FRAMEWORK_MISMATCH = "frameworkMismatch";
 }
