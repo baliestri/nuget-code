@@ -13,6 +13,8 @@ interface InstalledViewProps {
   updatesLoading: boolean;
   selectedId: string | undefined;
   onSelect(id: string): void;
+  /** Asks for the menu of a package, at a place in the window. */
+  onMenu(id: string, at: { x: number; y: number }): void;
   /** The ids ticked in the update group. */
   checked: ReadonlySet<string>;
   onCheck(ids: ReadonlySet<string>): void;
@@ -74,6 +76,7 @@ export function InstalledView(props: InstalledViewProps): ReactNode {
               iconUrl={props.iconOf(row.id)}
               selected={props.selectedId === row.id}
               onSelect={() => props.onSelect(row.id)}
+              onMenu={(at) => props.onMenu(row.id, at)}
               check={{ checked: checked.has(row.id), disabled: props.busy, onChange: (on) => toggle(row.id, on) }}
             />
           ))}
@@ -89,6 +92,7 @@ export function InstalledView(props: InstalledViewProps): ReactNode {
             iconUrl={props.iconOf(row.id)}
             selected={props.selectedId === row.id}
             onSelect={() => props.onSelect(row.id)}
+            onMenu={(at) => props.onMenu(row.id, at)}
             dimmed={row.implicit}
             warning={row.restored || row.implicit ? undefined : reasonNotRestored(row)}
           />

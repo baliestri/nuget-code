@@ -49,6 +49,27 @@ A click applies the change at once; nothing asks for confirmation. Only one chan
 
 When the change is done, the view shows only what went wrong: a restore that failed, a file that could not be written, a cancellation. A change can also do more than was asked, such as changing a version in `Directory.Packages.props` that other projects share. That is said in a notification of the editor, which can be silenced with **Don't Show Again**, and is always written to the output channel. See `nuget.notifications.operationWarnings` in [Settings](extension.md#settings).
 
+### Context menu
+
+A right click on a package, in either list, opens a menu for it and selects it. **Ctrl+.** opens the same menu for the selected package, wherever in the tab the focus is; a hint beside the names of the lists says so while a package is selected. The arrow keys move in the menu, Enter chooses and Escape closes it.
+
+The menu only has what applies to the package:
+
+| Item                                       | Shown for                                         | Description                                                                                                        |
+| ------------------------------------------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Update _package_ in _target_ from … to …   | An installed package with a newer version         | Moves the projects of the target to the newest version.                                                            |
+| Remove _package_ from …                    | An installed package that is not added by the SDK | Removes it from the projects of the target that have it.                                                           |
+| Show _version_ in File Explorer            | Each version that is restored                     | Shows the folder of that version, inside the global packages folder, in the file manager.                          |
+| Show All Package Versions in File Explorer | Every package                                     | Shows the folder of the package. A package that was never downloaded has none, and that is said in a notification. |
+| Show Package on NuGet.Org                  | A package that comes from nuget.org               | Opens its page there.                                                                                              |
+| Show Project Page, Show License Page       | A package that declares them                      | Opens the page in the browser.                                                                                     |
+| Search Package with Google                 | Every package                                     | Searches for the name of the package.                                                                              |
+| Toggle NuGet Info Expander                 | Every package                                     | Opens or closes **Info** in the details. Also **Ctrl+I**.                                                          |
+| Toggle NuGet Dependencies Expander         | Every package                                     | Opens or closes **Frameworks and Dependencies** in the details. Also **Ctrl+D**.                                   |
+| Copy Package Name to Clipboard             | Every package                                     | Also **Ctrl+C**, when no text is selected.                                                                         |
+
+The three keys act on the selected package without the menu being open. On macOS, Cmd takes the place of Ctrl.
+
 ### Side bar controls
 
 | Icon               | Name                                        | Description                                                                                                                       |
@@ -161,6 +182,7 @@ The view is modelled on the NuGet window of JetBrains Rider. Some of what that w
 
 - There is no Package Manager Console tab.
 - There is no button that upgrades every package of the solution at once; ticking every package in **Packages to Update** and pressing **Update** does the same.
-- Packages have no context menu, and nothing warns about packages with known vulnerabilities.
+- The context menu of a package has no documentation popup, no assembly explorer and no search for the code that depends on it.
+- Nothing warns about packages with known vulnerabilities.
 - Restore has no "force" variant in the view.
 - The available packages are shown in the order the feeds return them.

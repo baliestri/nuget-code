@@ -1,6 +1,6 @@
 import { PackageChangeKinds, type PackageChangeParams, type ProjectInfo } from "@nuget-code/protocol";
 import { useQueries } from "@tanstack/react-query";
-import { useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { SideBar } from "../app/SideBar";
 import { useBridge, useSession } from "../bridge/BridgeContext";
 import { useDebounced } from "../lib/useDebounced";
@@ -8,12 +8,23 @@ import { useOperation } from "../state/operation";
 import { usePreferences } from "../state/PreferencesContext";
 import { Banner } from "../ui/Banner";
 import { IconButton } from "../ui/IconButton";
+import { Menu } from "../ui/Menu";
+import { packageMenu, Shortcuts, type PackageMenuAction } from "./contextMenu";
 import { DetailsPanel, NoSelection } from "./DetailsPanel";
 import { DiscoverView } from "./DiscoverView";
 import { InstalledView } from "./InstalledView";
 import { buildRows, filterRows, sortRows, targetOptions, updateChanges } from "./model";
 import { OperationBar, ResultBanner } from "./OperationStatus";
-import { queryKeys, useInstalled, useRefresh, useSearch, useSolutionSync, useSources, useUpdates } from "./queries";
+import {
+  queryKeys,
+  useDetails,
+  useInstalled,
+  useRefresh,
+  useSearch,
+  useSolutionSync,
+  useSources,
+  useUpdates
+} from "./queries";
 import { Toolbar } from "./Toolbar";
 
 const SEARCH_DELAY_MS = 300;
@@ -30,6 +41,11 @@ export function PackagesTab(): ReactNode {
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string>();
   const [checked, setChecked] = useState<ReadonlySet<string>>(new Set());
+  const [expanded, setExpanded] = useState({ info: false, dependencies: false });
+  /** The package whose menu is open, and where. */
+  const [menu, setMenu] = useState<{ id: string; at: { x: number; y: number } }>();
+  const lists = useRef<HTMLElement>(null);
+  const closeMenu = useCallback(() => setMenu(undefined), []);
   const query = useDebounced(search.trim(), SEARCH_DELAY_MS);
 
   const projects = session?.solution.kind === "open" ? session.solution.projects : NO_PROJECTS;
@@ -44,6 +60,8 @@ export function PackagesTab(): ReactNode {
   const discovering = preferences.packagesView === "discover";
   const found = useSearch(query, feed, prerelease, discovering);
   const refresh = useRefresh(prerelease);
+  // The pages of a package, for its menu, come with its details; asked for when the menu opens.
+  const menuDetails = useDetails(menu?.id, feed, prerelease);
 
   const allRows = useMemo(
     () =>
@@ -105,6 +123,93 @@ export function PackagesTab(): ReactNode {
     );
   };
 
+  const menuEntries =
+    menu === undefined
+      ? []
+      : packageMenu({
+          id: menu.id,
+          row: allRows.find((row) => row.id.toLowerCase() === menu.id.toLowerCase()),
+          targetName,
+          details: menuDetails.data,
+          feeds: sources.data?.effective ?? [],
+          globalPackagesFolder: sources.data?.globalPackagesFolder,
+          busy: operation.running
+        });
+
+  const openMenu = (id: string, at: { x: number; y: number }): void => {
+    setSelectedId(id);
+    setMenu({ id, at });
+  };
+  const act = (action: PackageMenuAction): void => {
+    switch (action.kind) {
+      case "update": {
+        const changes = updateChanges(allRows, new Set([action.id]));
+        if (changes.length > 0) {
+          change("Update", changes, () => bridge.backend("updatePackages", { changes }));
+        }
+
+        break;
+      }
+      case "remove":
+        remove(action.id, action.projects);
+        break;
+      case "openFolder":
+        // The one item that can fail for a reason worth telling: the package was never downloaded.
+        void bridge
+          .host("openFolder", { path: action.path })
+          .catch((error: unknown) =>
+            bridge
+              .host("notify", { kind: "warning", messages: [error instanceof Error ? error.message : String(error)] })
+              .catch(() => {})
+          );
+        break;
+      case "openExternal":
+        void bridge.host("openExternal", { url: action.url }).catch(() => {});
+        break;
+      case "toggleInfo":
+        setExpanded((current) => ({ ...current, info: !current.info }));
+        break;
+      case "toggleDependencies":
+        setExpanded((current) => ({ ...current, dependencies: !current.dependencies }));
+        break;
+      case "copy":
+        void bridge.host("copyText", { text: action.text }).catch(() => {});
+        break;
+    }
+  };
+
+  /** The keys of the selected package: the menu itself, and what three of its items do. */
+  const onKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
+    if (selectedId === undefined || menu !== undefined || !(event.ctrlKey || event.metaKey) || event.altKey) {
+      return;
+    }
+
+    const typing = event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement;
+    const key = event.key.toLowerCase();
+    if (key === ".") {
+      // Under the line of the package, when it is in sight; else at the corner of the lists.
+      const line = [...(lists.current?.querySelectorAll<HTMLElement>("[data-package]") ?? [])].find(
+        (item) => item.dataset["package"]?.toLowerCase() === selectedId.toLowerCase()
+      );
+      const box = (line ?? lists.current)?.getBoundingClientRect();
+      event.preventDefault();
+      setMenu({
+        id: selectedId,
+        at: { x: (box?.left ?? 0) + 24, y: line === undefined ? (box?.top ?? 0) : box!.bottom }
+      });
+    } else if (key === "i" && !typing) {
+      event.preventDefault();
+      act({ kind: "toggleInfo" });
+    } else if (key === "d" && !typing) {
+      event.preventDefault();
+      act({ kind: "toggleDependencies" });
+    } else if (key === "c" && !typing && (window.getSelection()?.toString() ?? "") === "") {
+      // With text selected, the keys copy that text, as everywhere else.
+      event.preventDefault();
+      act({ kind: "copy", text: selectedId });
+    }
+  };
+
   const side = preferences.detailsPosition === "side";
   const failures = [...(updates.data?.failures ?? []), ...(discovering ? (found.data?.failures ?? []) : [])];
 
@@ -128,11 +233,14 @@ export function PackagesTab(): ReactNode {
           onClick={() => set({ sort: preferences.sort === "smart" ? "alphabetical" : "smart" })}
         />
       </SideBar>
+      {/* The keys are heard here, around both sides, wherever in them the focus is. */}
+      {/* oxlint-disable-next-line jsx-a11y/no-static-element-interactions */}
       <div
         data-details={preferences.detailsPosition}
+        onKeyDown={onKeyDown}
         className={`flex min-h-0 min-w-0 flex-1 ${side ? "flex-row" : "flex-col"}`}
       >
-        <section aria-label="Packages" className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <section ref={lists} aria-label="Packages" className="flex min-h-0 min-w-0 flex-1 flex-col">
           <Toolbar
             search={search}
             onSearch={setSearch}
@@ -164,6 +272,11 @@ export function PackagesTab(): ReactNode {
             <ListTab selected={discovering} onSelect={() => set({ packagesView: "discover" })}>
               Discover
             </ListTab>
+            {selectedId === undefined ? null : (
+              <span className="text-muted ml-auto self-center truncate opacity-70">
+                {Shortcuts.menu} to show the context menu
+              </span>
+            )}
           </div>
           {failures.map((failure) => (
             <Banner key={`${failure.feed}/${failure.kind}`} kind="warning">
@@ -180,6 +293,7 @@ export function PackagesTab(): ReactNode {
               error={found.isError ? found.error.message : undefined}
               selectedId={selectedId}
               onSelect={setSelectedId}
+              onMenu={openMenu}
             />
           ) : (
             <InstalledView
@@ -189,6 +303,7 @@ export function PackagesTab(): ReactNode {
               updatesLoading={updates.isFetching}
               selectedId={selectedRow?.id}
               onSelect={setSelectedId}
+              onMenu={openMenu}
               checked={checked}
               onCheck={setChecked}
               onUpdate={updateChecked}
@@ -214,6 +329,8 @@ export function PackagesTab(): ReactNode {
               feed={feed}
               prerelease={prerelease}
               busy={operation.running}
+              expanded={expanded}
+              onExpanded={setExpanded}
               onInstall={(paths, version) => install(selectedId, paths, version)}
               onUpdate={(paths, version) => update(selectedId, paths, version)}
               onRemove={(paths) => remove(selectedId, paths)}
@@ -221,6 +338,9 @@ export function PackagesTab(): ReactNode {
           )}
         </section>
       </div>
+      {menu === undefined ? null : (
+        <Menu label={`Actions for ${menu.id}`} entries={menuEntries} at={menu.at} onAction={act} onClose={closeMenu} />
+      )}
     </>
   );
 }

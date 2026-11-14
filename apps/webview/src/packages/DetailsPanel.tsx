@@ -23,6 +23,9 @@ interface DetailsPanelProps {
   prerelease: boolean;
   /** An operation is running: nothing can be started. */
   busy: boolean;
+  /** Which of the two sections are open. Kept by the tab, so it holds from one package to the next. */
+  expanded: { info: boolean; dependencies: boolean };
+  onExpanded(expanded: { info: boolean; dependencies: boolean }): void;
   onInstall(projects: readonly string[], version: string): void;
   onUpdate(projects: readonly string[], version: string): void;
   onRemove(projects: readonly string[]): void;
@@ -93,7 +96,12 @@ export function DetailsPanel(props: DetailsPanelProps): ReactNode {
 
       {details.data === undefined ? null : (
         <>
-          <Collapsible title="Info" summary={details.data.description} defaultOpen={false}>
+          <Collapsible
+            title="Info"
+            summary={details.data.description}
+            open={props.expanded.info}
+            onToggle={(info) => props.onExpanded({ ...props.expanded, info })}
+          >
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
               {details.data.description === undefined ? null : (
                 <>
@@ -140,7 +148,8 @@ export function DetailsPanel(props: DetailsPanelProps): ReactNode {
           <Collapsible
             title="Frameworks and Dependencies"
             summary={details.data.dependencyGroups.map((group) => group.framework).join(", ")}
-            defaultOpen={false}
+            open={props.expanded.dependencies}
+            onToggle={(dependencies) => props.onExpanded({ ...props.expanded, dependencies })}
           >
             {details.data.dependencyGroups.length === 0 ? (
               <p className="text-muted">No dependencies are declared.</p>

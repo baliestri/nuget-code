@@ -705,6 +705,222 @@ describe("operations", () => {
   });
 });
 
+describe("the menu of a package", () => {
+  const alpha = async (): Promise<HTMLElement> => (await screen.findAllByRole("button", { name: /^Alpha/ }))[0]!;
+  const menuItem = (name: RegExp): HTMLElement => screen.getByRole("menuitem", { name });
+
+  it("a right click opens it, selects the package and lists what can be done", async () => {
+    const { user } = open();
+
+    await user.pointer({ keys: "[MouseRight]", target: await alpha() });
+
+    const menu = screen.getByRole("menu", { name: "Actions for Alpha" });
+    expect(
+      within(menu).getByRole("menuitem", { name: "Update Alpha in Solution from 1.0.0 to 1.5.0" })
+    ).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "Remove Alpha from 2 projects" })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "Copy Package Name to Clipboard" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Alpha" })).toBeInTheDocument();
+  });
+
+  it("the update item updates the package in the target", async () => {
+    const { fake, user } = open();
+    await user.pointer({ keys: "[MouseRight]", target: await alpha() });
+
+    await user.click(menuItem(/^Update Alpha/));
+
+    await waitFor(() =>
+      expect(fake.callsOf("updatePackages")).toEqual([
+        { changes: [{ kind: "update", id: "Alpha", version: "1.5.0", projects: [APP, LIB] }] }
+      ])
+    );
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("the remove item removes it from the projects that have it", async () => {
+    const { fake, user } = open();
+    await user.pointer({ keys: "[MouseRight]", target: await alpha() });
+
+    await user.click(menuItem(/^Remove Alpha/));
+
+    await waitFor(() => expect(fake.callsOf("removePackage")).toEqual([{ id: "Alpha", projects: [APP, LIB] }]));
+  });
+
+  it("a package without an update has no update item", async () => {
+    const { user } = open();
+
+    await user.pointer({ keys: "[MouseRight]", target: (await screen.findAllByRole("button", { name: /^Beta/ }))[0]! });
+
+    expect(screen.queryByRole("menuitem", { name: /^Update/ })).not.toBeInTheDocument();
+    expect(menuItem(/^Remove Beta from App/)).toBeInTheDocument();
+  });
+
+  it("the folder items open the folder of the package in the global packages folder", async () => {
+    const { fake, user } = open();
+    await user.pointer({ keys: "[MouseRight]", target: await alpha() });
+
+    await user.click(menuItem(/^Show 1\.0\.0 in File Explorer/));
+
+    await waitFor(() => expect(fake.callsOf("openFolder")).toEqual([{ path: "/packages/alpha/1.0.0" }]));
+  });
+
+  it("a folder that could not be opened is told in a notification", async () => {
+    const { fake, user } = open({
+      configure: (bridge) => {
+        bridge.host.openFolder = () =>
+          Promise.reject(new BridgeError({ kind: "host", message: "The folder does not exist." }));
+      }
+    });
+    await user.pointer({ keys: "[MouseRight]", target: await alpha() });
+
+    await user.click(menuItem(/^Show All Package Versions/));
+
+    await waitFor(() =>
+      expect(fake.callsOf("notify")).toEqual([{ kind: "warning", messages: ["The folder does not exist."] }])
+    );
+  });
+
+  it("the pages of the package open in the browser, and NuGet.Org only for a package from it", async () => {
+    const { fake, user } = open();
+    await user.pointer({ keys: "[MouseRight]", target: await alpha() });
+
+    await user.click(await screen.findByRole("menuitem", { name: "Show Project Page" }));
+    await user.pointer({ keys: "[MouseRight]", target: await alpha() });
+    await user.click(await screen.findByRole("menuitem", { name: "Show Package on NuGet.Org" }));
+
+    await waitFor(() =>
+      expect(fake.callsOf("openExternal")).toEqual([
+        { url: "https://example.org/Alpha" },
+        { url: "https://www.nuget.org/packages/Alpha" }
+      ])
+    );
+  });
+
+  it("a package from another feed has no NuGet.Org item", async () => {
+    const { user } = open({
+      configure: (fake) => {
+        fake.backend.packageDetails = (params) =>
+          Promise.resolve({ ...details(params.id, ["1.0.0"]), feed: "private" });
+      }
+    });
+    await user.pointer({ keys: "[MouseRight]", target: await alpha() });
+
+    expect(await screen.findByRole("menuitem", { name: "Show Project Page" })).toHaveAttribute(
+      "aria-disabled",
+      "false"
+    );
+    expect(screen.queryByRole("menuitem", { name: "Show Package on NuGet.Org" })).not.toBeInTheDocument();
+  });
+
+  it("copying puts the name on the clipboard through the host", async () => {
+    const { fake, user } = open();
+    await user.pointer({ keys: "[MouseRight]", target: await alpha() });
+
+    await user.click(menuItem(/^Copy Package Name/));
+
+    await waitFor(() => expect(fake.callsOf("copyText")).toEqual([{ text: "Alpha" }]));
+  });
+
+  it("the two toggles open and close the sections of the details", async () => {
+    const { user } = open();
+    await user.pointer({ keys: "[MouseRight]", target: await alpha() });
+    await user.click(menuItem(/^Toggle NuGet Info Expander/));
+
+    expect(await screen.findByRole("button", { name: "Info" })).toHaveAttribute("aria-expanded", "true");
+
+    await user.pointer({ keys: "[MouseRight]", target: await alpha() });
+    await user.click(menuItem(/^Toggle NuGet Dependencies Expander/));
+    expect(screen.getByRole("button", { name: "Frameworks and Dependencies" })).toHaveAttribute(
+      "aria-expanded",
+      "true"
+    );
+
+    await user.pointer({ keys: "[MouseRight]", target: await alpha() });
+    await user.click(menuItem(/^Toggle NuGet Info Expander/));
+    expect(screen.getByRole("button", { name: "Info" })).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("Ctrl+. opens it for the selected package, and the hint says so", async () => {
+    const { user } = open();
+    expect(screen.queryByText(/to show the context menu/)).not.toBeInTheDocument();
+    await user.click(await alpha());
+    expect(screen.getByText("Ctrl+. to show the context menu")).toBeInTheDocument();
+
+    await user.keyboard("{Control>}.{/Control}");
+
+    expect(screen.getByRole("menu", { name: "Actions for Alpha" })).toBeInTheDocument();
+  });
+
+  it("Ctrl+. does nothing with no package selected", async () => {
+    const { user } = open();
+    await updateGroup();
+
+    screen.getByRole("searchbox", { name: "Search packages" }).focus();
+    await user.keyboard("{Control>}.{/Control}");
+
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("it works from the keyboard: arrows move, Enter chooses, Escape closes", async () => {
+    const { fake, user } = open();
+    await user.click(await alpha());
+    await user.keyboard("{Control>}.{/Control}");
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+
+    await user.keyboard("{Control>}.{/Control}");
+    await user.keyboard("{End}{Enter}");
+
+    await waitFor(() => expect(fake.callsOf("copyText")).toEqual([{ text: "Alpha" }]));
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("a click elsewhere closes it", async () => {
+    const { user } = open();
+    await user.pointer({ keys: "[MouseRight]", target: await alpha() });
+
+    await user.click(screen.getByRole("searchbox", { name: "Search packages" }));
+
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("the keys of its items work without it: Ctrl+I, Ctrl+D and Ctrl+C", async () => {
+    const { fake, user } = open();
+    await user.click(await alpha());
+    await screen.findByRole("button", { name: "Info" });
+
+    await user.keyboard("{Control>}i{/Control}");
+    expect(screen.getByRole("button", { name: "Info" })).toHaveAttribute("aria-expanded", "true");
+    await user.keyboard("{Control>}d{/Control}");
+    expect(screen.getByRole("button", { name: "Frameworks and Dependencies" })).toHaveAttribute(
+      "aria-expanded",
+      "true"
+    );
+    await user.keyboard("{Control>}c{/Control}");
+
+    await waitFor(() => expect(fake.callsOf("copyText")).toEqual([{ text: "Alpha" }]));
+  });
+
+  it("a package of the Discover list has the menu too", async () => {
+    const { user } = open({
+      configure: (fake) => {
+        fake.backend.searchPackages = () =>
+          Promise.resolve({ packages: [{ id: "Newton", version: "13.0.4", feed: "nuget.org" }], failures: [] });
+      }
+    });
+    await user.click(await screen.findByRole("tab", { name: "Discover" }));
+
+    await user.pointer({ keys: "[MouseRight]", target: await screen.findByRole("button", { name: "Newton" }) });
+
+    const menu = screen.getByRole("menu", { name: "Actions for Newton" });
+    expect(within(menu).queryByRole("menuitem", { name: /^(Update|Remove)/ })).not.toBeInTheDocument();
+    expect(
+      within(menu).getByRole("menuitem", { name: "Show All Package Versions in File Explorer" })
+    ).toBeInTheDocument();
+  });
+});
+
 describe("the side bar of Packages", () => {
   it("Restore runs restore/run", async () => {
     const { fake, user } = open();

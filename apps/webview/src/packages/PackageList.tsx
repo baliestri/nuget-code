@@ -71,6 +71,8 @@ interface LineProps {
   iconUrl?: string | undefined;
   selected: boolean;
   onSelect(): void;
+  /** Asks for the menu of the package, at a place in the window. */
+  onMenu?: ((at: { x: number; y: number }) => void) | undefined;
   /** A selection box before the line. */
   check?: { checked: boolean; onChange(checked: boolean): void; disabled: boolean } | undefined;
   /** Shown dimmed: the package is there, but nothing can be done to it. */
@@ -83,6 +85,14 @@ interface LineProps {
 export function PackageLine(props: LineProps): ReactNode {
   return (
     <li
+      data-package={props.id}
+      onContextMenu={(event) => {
+        if (props.onMenu !== undefined) {
+          // In place of the editor's own menu for a page, which has nothing to say about a package.
+          event.preventDefault();
+          props.onMenu({ x: event.clientX, y: event.clientY });
+        }
+      }}
       className={`flex items-center gap-2 px-2 ${props.selected ? "bg-selection text-selection-fg" : "hover:bg-hover"}`}
     >
       {props.check === undefined ? null : (

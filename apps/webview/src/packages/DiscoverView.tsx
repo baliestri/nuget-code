@@ -11,6 +11,8 @@ interface DiscoverViewProps {
   error: string | undefined;
   selectedId: string | undefined;
   onSelect(id: string): void;
+  /** Asks for the menu of a package, at a place in the window. */
+  onMenu(id: string, at: { x: number; y: number }): void;
 }
 
 /** The Discover list: what the feeds answer to the search. */
@@ -38,6 +40,7 @@ export function DiscoverView(props: DiscoverViewProps): ReactNode {
             iconUrl={item.iconUrl}
             selected={props.selectedId?.toLowerCase() === item.id.toLowerCase()}
             onSelect={() => props.onSelect(item.id)}
+            onMenu={(at) => props.onMenu(item.id, at)}
           />
         ))}
       </PackageGroup>
