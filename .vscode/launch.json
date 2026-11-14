@@ -1,0 +1,38 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // A development window with the extension; open any folder with a solution in it.
+      "name": "Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}/apps/extension", "--disable-extensions"],
+      "outFiles": ["${workspaceFolder}/apps/extension/dist/**/*.js"],
+      "sourceMaps": true,
+      "preLaunchTask": "extension: prepare"
+    },
+    {
+      // The same, opened on the small solution the smoke tests use.
+      "name": "Extension (sample workspace)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/apps/extension",
+        "--disable-extensions",
+        "${workspaceFolder}/apps/extension/.vscode-test/workspace"
+      ],
+      "outFiles": ["${workspaceFolder}/apps/extension/dist/**/*.js"],
+      "sourceMaps": true,
+      "preLaunchTask": "extension: prepare with the sample workspace"
+    },
+    {
+      // Without building first: for relaunching while "js: watch" runs.
+      "name": "Extension (no build)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}/apps/extension", "--disable-extensions"],
+      "outFiles": ["${workspaceFolder}/apps/extension/dist/**/*.js"],
+      "sourceMaps": true
+    }
+  ]
+}

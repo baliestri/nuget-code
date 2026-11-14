@@ -1,0 +1,109 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      // The Debug backend, put where the extension looks for the binary of this platform. The folder name
+      // assumes x64 on Windows and Linux and arm64 on macOS; change it on another architecture.
+      "label": "backend: build for the extension host",
+      "type": "process",
+      "command": "dotnet",
+      "windows": {
+        "args": [
+          "build",
+          "backend/src/NuGet.VisualStudioCode",
+          "-c",
+          "Debug",
+          "-nologo",
+          "-v:q",
+          "-o",
+          "apps/extension/bin/win32-x64"
+        ]
+      },
+      "linux": {
+        "args": [
+          "build",
+          "backend/src/NuGet.VisualStudioCode",
+          "-c",
+          "Debug",
+          "-nologo",
+          "-v:q",
+          "-o",
+          "apps/extension/bin/linux-x64"
+        ]
+      },
+      "osx": {
+        "args": [
+          "build",
+          "backend/src/NuGet.VisualStudioCode",
+          "-c",
+          "Debug",
+          "-nologo",
+          "-v:q",
+          "-o",
+          "apps/extension/bin/darwin-arm64"
+        ]
+      },
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": "$msCompile",
+      "presentation": { "reveal": "silent" }
+    },
+    {
+      "label": "js: build",
+      "type": "shell",
+      "command": "pnpm run build",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "silent" },
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "extension: prepare",
+      "dependsOn": ["backend: build for the extension host", "js: build"],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    },
+    {
+      // The solution the smoke tests use: one project and a folder feed, under apps/extension/.vscode-test.
+      "label": "extension: sample workspace",
+      "type": "shell",
+      "command": "pnpm exec tsx test/integration/prepare.ts",
+      "options": { "cwd": "${workspaceFolder}/apps/extension" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "silent" }
+    },
+    {
+      "label": "extension: prepare with the sample workspace",
+      "dependsOn": ["extension: prepare", "extension: sample workspace"],
+      "dependsOrder": "sequence",
+      "problemMatcher": []
+    },
+    {
+      // Rebuilds the packages, the view and the extension as files change. After a change, reload the
+      // development window (Developer: Reload Window) to pick it up.
+      "label": "js: watch",
+      "type": "shell",
+      "command": "pnpm run dev",
+      "options": { "cwd": "${workspaceFolder}" },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "webview: development page",
+      "type": "shell",
+      "command": "pnpm --filter @nuget-code/webview dev:page",
+      "options": { "cwd": "${workspaceFolder}" },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "test",
+      "type": "shell",
+      "command": "pnpm run test",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": [],
+      "group": { "kind": "test", "isDefault": true }
+    }
+  ]
+}

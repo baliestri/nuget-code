@@ -88,7 +88,7 @@ pnpm --filter nuget-code test:integration
 
 `test:integration` runs a few smoke tests inside a real editor, which it downloads to `apps/extension/.vscode-test/` the first time. It opens a workspace it generates there. With `NUGET_VSCODE_BACKEND_BUNDLED=1` the extension finds the backend under `apps/extension/bin/<target>/`, as an installed package does; otherwise it uses the Debug build or `NUGET_VSCODE_BACKEND_PATH`.
 
-To run the extension by hand, set `nuget.backend.path` to the Debug `NuGet.VisualStudioCode.dll` and start an Extension Development Host on `apps/extension`. The repository has no launch configuration for it yet.
+To run the extension by hand, open the repository in VS Code and start one of the launch configurations of `.vscode/launch.json`: **Extension** builds the Debug backend into `apps/extension/bin/<target>/`, builds the JavaScript and opens an Extension Development Host; **Extension (sample workspace)** opens it on the workspace of the smoke tests. The folder name of the backend task assumes x64 on Windows and Linux and arm64 on macOS. These configurations were tried on Windows x64 only.
 
 ### Rules for extension changes
 
