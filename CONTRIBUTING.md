@@ -62,9 +62,11 @@ The JavaScript side is a pnpm workspace:
 | ------------------------- | ----------------------------------------------------------------------------------- |
 | `packages/protocol`       | The backend contract in TypeScript: types, method names, error codes.               |
 | `packages/backend-client` | Starts the backend, talks JSON-RPC to it and restarts it. Does not import `vscode`. |
+| `packages/bridge`         | The typed requests and events between the view and the extension host.              |
+| `apps/webview`            | The view: React and Tailwind, bundled into `apps/extension/dist/webview`.           |
 | `apps/extension`          | The VS Code extension, bundled by rolldown into `dist/extension.js`.                |
 
-The workspace packages are consumed as TypeScript source and have no build step of their own.
+The workspace packages are consumed as TypeScript source and have no build step of their own. The view has one, because the extension ships its bundle.
 
 ### Prerequisites
 
@@ -90,10 +92,21 @@ pnpm --filter nuget-code test:integration
 
 To run the extension by hand, open the repository in VS Code and start one of the launch configurations of `.vscode/launch.json`: **Extension** builds the Debug backend into `apps/extension/bin/<target>/`, builds the JavaScript and opens an Extension Development Host; **Extension (sample workspace)** opens it on the workspace of the smoke tests. The folder name of the backend task assumes x64 on Windows and Linux and arm64 on macOS. These configurations were tried on Windows x64 only.
 
+The view can be looked at without the editor, over a fake host with sample data:
+
+```powershell
+pnpm --filter @nuget-code/webview dev:page
+```
+
+It serves http://127.0.0.1:5199. `?theme=light` switches the theme, `?state=starting`, `stopped`, `none` or `nosdk` shows the states without a backend or a solution, and `?prefs=<json>` starts from stored preferences, such as `{"tab":"log"}`. The page imitates the editor's theme variables; how the view looks in a real theme is only seen in the editor.
+
 ### Rules for extension changes
 
 - A module that decides something is written without importing `vscode` and has unit tests. The modules that touch the editor API stay thin; the smoke tests cover them.
 - A change to the protocol is made in three places together: the C# records, `packages/protocol`, and the contract test of the method.
+- The view reaches the backend only through the methods listed in `packages/bridge/src/backendMethods.ts`, and the editor only through the requests of `messages.ts`. The host checks the params of every host request: they come from a page.
+- The view's content security policy allows no inline style markup and no `data:` addresses. Icons are files of the bundle or codicons.
+- Components of the view use the colour tokens of `apps/webview/src/styles.css`, which map to the editor's theme, never literal colours. Their tests find elements by role and name.
 - Do not pass an explicit `undefined` cancellation token to `vscode-jsonrpc`'s `sendRequest`: it takes it for a second parameter and sends the params as an array.
 
 ### Packaging
@@ -112,7 +125,7 @@ This publishes the backend with NativeAOT, bundles the extension and writes `rel
 
 Publishing stores no long-lived secret. Both the Visual Studio Marketplace and Open VSX are published with trusted publishing: the job's OIDC token is exchanged for a short-lived publishing token. The trusted publisher configured on each marketplace names this repository and the workflow file, so renaming `release.yml` breaks publishing.
 
-What has been verified so far: the Windows x64 and Windows arm64 jobs pass in CI, and everything was also run locally on Windows x64, including the packaged `win32-x64` VSIX. The musl x64 build and its three test suites pass in a local container. The glibc Linux and macOS jobs publish the backend but have not passed yet, and the editor smoke tests have not run in CI.
+What has been verified so far: before the view was added, the whole workflow passed in CI, the eight targets and the editor smoke tests on Windows, Linux and macOS. The view itself has only been run locally on Windows x64: its tests, the smoke tests in the editor and the packaging of the `win32-x64` VSIX. It has not been through CI yet, and has not been looked at in an editor on Linux or macOS.
 
 To run what the CI runs for the musl targets on a local machine, start the same container with Docker or Podman from the repository root:
 
