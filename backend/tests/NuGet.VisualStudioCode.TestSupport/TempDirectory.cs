@@ -5,8 +5,9 @@ namespace NuGet.VisualStudioCode.TestSupport;
 
 public sealed class TempDirectory : IDisposable {
   public TempDirectory() {
-    Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "nuget-vscode-tests", Guid.NewGuid().ToString("N"));
-    Directory.CreateDirectory(Path);
+    var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "nuget-vscode-tests", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(path);
+    Path = WithoutLinks(path);
   }
 
   public string Path { get; }
@@ -21,6 +22,22 @@ public sealed class TempDirectory : IDisposable {
     catch (UnauthorizedAccessException) {
       // Same as above.
     }
+  }
+
+  // The path with every symbolic link in it followed. On macOS the temporary directory is reached through
+  // one (/var is a link to /private/var), and a process started there reports the path behind the link.
+  private static string WithoutLinks(string path) {
+    if (OperatingSystem.IsWindows()) {
+      return path;
+    }
+
+    var resolved = System.IO.Path.GetPathRoot(path) ?? "/";
+    foreach (var segment in path.Split(System.IO.Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries)) {
+      var next = System.IO.Path.Combine(resolved, segment);
+      resolved = new DirectoryInfo(next).ResolveLinkTarget(true)?.FullName ?? next;
+    }
+
+    return resolved;
   }
 
   public string Combine(params string[] parts)
