@@ -110,7 +110,7 @@ This publishes the backend with NativeAOT, bundles the extension and writes `rel
 
 `.github/workflows/release.yml` runs on a `v<version>` tag that matches the version of `apps/extension/package.json`. It attaches the eight VSIX files to a GitHub release and publishes them. A version with a pre-release suffix, such as `3.0.0-alpha.0`, only gets the GitHub release: neither marketplace accepts such a version.
 
-Publishing uses no long-lived secret where it can. Open VSX is published with trusted publishing: the job's OIDC token is exchanged for a short-lived one, and the trusted publisher configured on open-vsx.org names this repository and the workflow file, so renaming `release.yml` breaks it. The Visual Studio Marketplace is published the same way when the repository variable `VSCE_OIDC` is `true`; otherwise with the `VSCE_PAT` secret when it exists; otherwise it is skipped.
+Publishing stores no long-lived secret. Both the Visual Studio Marketplace and Open VSX are published with trusted publishing: the job's OIDC token is exchanged for a short-lived publishing token. The trusted publisher configured on each marketplace names this repository and the workflow file, so renaming `release.yml` breaks publishing.
 
 What has been verified so far: everything above was run on Windows x64, including the packaged `win32-x64` VSIX. The workflows were checked with `actionlint` and have not run yet; the other seven targets have never been built.
 

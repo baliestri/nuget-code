@@ -4,11 +4,9 @@ name: Release
 # major.minor.patch version is also published; neither marketplace accepts a version with a pre-release
 # suffix such as 3.0.0-alpha.0, so such a tag only gets the GitHub release.
 #
-# Open VSX: trusted publishing. The job's OIDC token is exchanged for a short-lived publishing token; the
-# trusted publisher is configured on open-vsx.org for this repository and this workflow file.
-#
-# Visual Studio Marketplace: trusted publishing when the repository variable VSCE_OIDC is 'true', else the
-# VSCE_PAT secret when it exists, else skipped.
+# Both marketplaces are published with trusted publishing: the job's OIDC token is exchanged for a
+# short-lived publishing token, and no long-lived secret is stored. The trusted publisher is configured on
+# each marketplace for this repository and this workflow file, so renaming the file breaks publishing.
 on:
   push:
     tags: ["v*"]
@@ -43,9 +41,6 @@ jobs:
       contents: write
       # Lets the job ask GitHub for the OIDC token that trusted publishing exchanges.
       id-token: write
-    env:
-      VSCE_OIDC: ${{ vars.VSCE_OIDC }}
-      VSCE_PAT: ${{ secrets.VSCE_PAT }}
     steps:
       - uses: actions/checkout@v7
 
@@ -86,19 +81,9 @@ jobs:
             pnpm --filter nuget-code exec ovsx publish "$vsix" --trusted-publishing
           done
 
-      - name: Publish to the Visual Studio Marketplace (trusted publishing)
-        if: ${{ env.VSCE_OIDC == 'true' && env.PRERELEASE == 'false' }}
-        env:
-          # A token in the environment would be used instead of the OIDC exchange.
-          VSCE_PAT: ""
+      - name: Publish to the Visual Studio Marketplace
+        if: ${{ env.PRERELEASE == 'false' }}
         run: |
           for vsix in "$GITHUB_WORKSPACE"/release-artifacts/*.vsix; do
             pnpm --filter nuget-code exec vsce publish --oidc --packagePath "$vsix"
-          done
-
-      - name: Publish to the Visual Studio Marketplace (token)
-        if: ${{ env.VSCE_OIDC != 'true' && env.VSCE_PAT != '' && env.PRERELEASE == 'false' }}
-        run: |
-          for vsix in "$GITHUB_WORKSPACE"/release-artifacts/*.vsix; do
-            pnpm --filter nuget-code exec vsce publish --packagePath "$vsix"
           done
