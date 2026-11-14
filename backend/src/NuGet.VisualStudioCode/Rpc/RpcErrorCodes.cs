@@ -17,4 +17,9 @@ internal static class RpcErrorCodes {
   public const int EVALUATION_FAILED = 1004;
   public const int FEED_UNREACHABLE = 1005;
   public const int AUTHENTICATION_REFUSED = 1006;
+
+  public const int PROJECT_NOT_IN_SESSION = 1101;
+  public const int PACKAGE_NOT_INSTALLED = 1102;
+  public const int PACKAGE_IMPLICIT = 1103;
+  public const int EDIT_NOT_POSSIBLE = 1104;
 }
