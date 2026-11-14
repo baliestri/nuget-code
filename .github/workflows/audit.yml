@@ -1,0 +1,54 @@
+name: Audit
+
+# Looks for dependencies with known vulnerabilities. Apart from the CI, so that an advisory published today
+# does not fail a pull request that has nothing to do with it.
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - backend/Directory.Packages.props
+      - backend/**/packages.lock.json
+
+permissions:
+  contents: read
+
+jobs:
+  npm:
+    name: npm packages
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+
+      # Reads the lock file; nothing has to be installed.
+      - run: pnpm audit
+
+  nuget:
+    name: NuGet packages
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: backend/global.json
+
+      - name: List vulnerable packages, direct and transitive
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          dotnet restore NuGet.VisualStudioCode.slnx
+          dotnet list NuGet.VisualStudioCode.slnx package --vulnerable --include-transitive | tee "$RUNNER_TEMP/audit.txt"
+          if grep -q 'has the following vulnerable packages' "$RUNNER_TEMP/audit.txt"; then
+            echo '::error::A NuGet package has a known vulnerability.'
+            exit 1
+          fi
