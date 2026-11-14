@@ -162,7 +162,12 @@ public sealed class PackageOperationsTests(PublishedBackend backend) {
     var result = await UpdateAsync(client, ct, (ALPHA, V2, central), (BETA, V2, plain), (GAMMA, V2, plain));
     var inCentral = await InstalledAsync(client, central, ct);
     var inPlain = await InstalledAsync(client, plain, ct);
-    await Task.Delay(500, ct);
+    // The log is delivered on its own. Its lines keep their order, so once the closing line of the restore
+    // is here, every line that started one is here too.
+    using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+    timeout.CancelAfter(TimeSpan.FromSeconds(60));
+    while (!log.Any(message => message.StartsWith("Restore finished", StringComparison.Ordinal)))
+      await Task.Delay(50, timeout.Token);
 
     Assert.Contains("Version=\"2.0.0\"", await File.ReadAllTextAsync(centralVersions, ct), StringComparison.Ordinal);
     Assert.Contains("<BetaVersion>2.0.0</BetaVersion>", await File.ReadAllTextAsync(plain, ct),

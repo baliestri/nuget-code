@@ -48,13 +48,14 @@ describe("the extension in the editor", () => {
     assert.strictEqual(existsSync(assets), false, "The project was restored before the command ran.");
 
     await vscode.commands.executeCommand("nuget.restore");
-    subscription.dispose();
 
     assert.ok(existsSync(assets), "The restore command did not write the assets file.");
-    assert.ok(
-      messages.some((message) => message.startsWith("Restore finished")),
-      "The backend log did not reach the session."
+    // The log is delivered on its own and may arrive after the command has answered.
+    await until(
+      () => messages.some((message) => message.startsWith("Restore finished")),
+      "the closing line of the restore in the backend log"
     );
+    subscription.dispose();
   });
 
   it("the installed packages come back with the restored version", async () => {

@@ -48,6 +48,18 @@ function reaches(client: BackendClient, state: BackendState): Promise<void> {
   });
 }
 
+/** Resolves once the condition holds, and fails the test if it does not within a minute. */
+async function eventually(condition: () => boolean, what: string): Promise<void> {
+  const deadline = Date.now() + 60_000;
+  while (!condition()) {
+    if (Date.now() > deadline) {
+      throw new Error(`Timed out waiting for ${what}.`);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
 /** Kills the process the way a crash would and waits for the client to notice. */
 async function crash(client: BackendClient, then: BackendState): Promise<void> {
   const left = new Promise<void>((resolve) => {
@@ -117,14 +129,13 @@ describe("restart", () => {
     const messages: string[] = [];
     client.api.onLogEntry((entry) => messages.push(entry.message));
     await client.start();
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // The log is delivered on its own, so it is waited for, not expected at a given moment.
+    await eventually(() => messages.length > 0, "a log entry from the first process");
     const beforeCrash = messages.length;
 
     await crash(client, "ready");
-    await new Promise((resolve) => setTimeout(resolve, 500));
 
-    expect(beforeCrash).toBeGreaterThan(0);
-    expect(messages.length).toBeGreaterThan(beforeCrash);
+    await eventually(() => messages.length > beforeCrash, "a log entry from the process that replaced it");
   });
 
   it("three crashes inside the window stop the client", async () => {
