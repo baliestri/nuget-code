@@ -1,5 +1,10 @@
-import { defineConfig, mergeConfig } from "vitest/config";
-import { shared } from "../../vitest.shared";
+import { defineConfig } from "vitest/config";
 
-// Unit tests only: what needs the editor runs under test/integration, with another runner.
-export default mergeConfig(shared, defineConfig({ test: { include: ["src/**/*.test.ts"] } }));
+// Unit tests only. test/integration needs the editor and runs with another runner (vscode-test), so the
+// shared configuration, which also looks under test/, is not used here.
+export default defineConfig({
+  test: {
+    environment: "node",
+    include: ["src/**/*.test.ts"]
+  }
+});
