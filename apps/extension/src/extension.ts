@@ -9,6 +9,7 @@ import { createCredentialStore } from "./credentials";
 import { FileWatcher } from "./fileWatcher";
 import { LogChannel } from "./logChannel";
 import { NugetViewProvider, VIEW_ID } from "./nugetView";
+import { systemPath } from "./paths";
 import { samePath } from "./solutionCandidates";
 import { SolutionSelector } from "./solutionSelector";
 import { Commands, StatusBar } from "./statusBar";
@@ -50,7 +51,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
 
       return located.launch;
     },
-    cwd: folder.uri.fsPath,
+    cwd: systemPath(folder.uri.fsPath, process.platform),
     settings
   });
   active = session;
@@ -90,7 +91,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
           canSelectFolders: true,
           canSelectMany: false
         });
-        return picked?.[0]?.fsPath;
+        const chosen = picked?.[0]?.fsPath;
+        return chosen === undefined ? undefined : systemPath(chosen, process.platform);
       },
       openExternal: async (url) => {
         await vscode.env.openExternal(vscode.Uri.parse(url, true));

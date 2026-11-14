@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import type { BackendSession } from "./backendSession";
 import type { LogChannel } from "./logChannel";
+import { systemPath } from "./paths";
 import { buildCandidates, chooseAutomatically, samePath, toTarget, type SolutionCandidate } from "./solutionCandidates";
 
 const REMEMBERED = "nuget.solution";
@@ -27,13 +28,14 @@ export class SolutionSelector implements vscode.Disposable {
       vscode.workspace.findFiles(SOLUTIONS),
       vscode.workspace.findFiles(PROJECTS)
     ]);
+    const path = (uri: vscode.Uri): string => systemPath(uri.fsPath, process.platform);
     return buildCandidates({
       folders: (vscode.workspace.workspaceFolders ?? []).map((folder) => ({
         name: folder.name,
-        path: folder.uri.fsPath
+        path: path(folder.uri)
       })),
-      solutions: solutions.map((uri) => uri.fsPath),
-      projects: projects.map((uri) => uri.fsPath),
+      solutions: solutions.map(path),
+      projects: projects.map(path),
       platform: process.platform
     });
   }

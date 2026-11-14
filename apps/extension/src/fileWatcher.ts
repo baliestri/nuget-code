@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { ChangeBatcher } from "./changeBatcher";
+import { systemPath } from "./paths";
 
 const BATCH_MS = 200;
 
@@ -27,7 +28,7 @@ export class FileWatcher implements vscode.Disposable {
     this.batcher = new ChangeBatcher(BATCH_MS, report);
     this.watchers = WATCH_PATTERNS.map((pattern) => {
       const watcher = vscode.workspace.createFileSystemWatcher(pattern);
-      const changed = (uri: vscode.Uri): void => this.batcher.add(uri.fsPath);
+      const changed = (uri: vscode.Uri): void => this.batcher.add(systemPath(uri.fsPath, process.platform));
       watcher.onDidCreate(changed);
       watcher.onDidChange(changed);
       watcher.onDidDelete(changed);
