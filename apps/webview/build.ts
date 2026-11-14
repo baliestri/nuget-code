@@ -6,7 +6,7 @@
  *   tsx build.ts --dev      dev/dist: the development page that runs in a browser with sample data
  */
 import { spawnSync } from "node:child_process";
-import { appendFileSync, copyFileSync, mkdirSync, readFileSync, watch as fsWatch } from "node:fs";
+import { appendFileSync, copyFileSync, cpSync, mkdirSync, readFileSync, watch as fsWatch } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -55,11 +55,13 @@ function styles(): void {
   // The editor's icon set: its classes go into the same style sheet, and its font next to it, which is
   // where the classes look for it.
   appendFileSync(join(out, "main.css"), readFileSync(require.resolve("@vscode/codicons/dist/codicon.css"), "utf8"));
+  appendFileSync(join(out, "main.css"), readFileSync(join(here, "src", "assets.css"), "utf8"));
 }
 
 const require = createRequire(import.meta.url);
 mkdirSync(out, { recursive: true });
 copyFileSync(require.resolve("@vscode/codicons/dist/codicon.ttf"), join(out, "codicon.ttf"));
+cpSync(join(here, "assets"), join(out, "assets"), { recursive: true });
 
 async function run(): Promise<void> {
   await build(options);

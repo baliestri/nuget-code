@@ -3,6 +3,7 @@
 !dist/webview/main.js
 !dist/webview/main.css
 !dist/webview/codicon.ttf
+!dist/webview/assets/**
 !bin/**
 !package.json
 !README.md
