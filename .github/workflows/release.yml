@@ -1,9 +1,14 @@
 name: Release
 
-# A tag v<version> builds the eight VSIX files and attaches them to a GitHub release. They are also
-# published to the Visual Studio Marketplace and to Open VSX, each only when its token is configured as a
-# secret (VSCE_PAT, OVSX_PAT) and only for a plain major.minor.patch version: neither marketplace accepts
-# a version with a pre-release suffix such as 3.0.0-alpha.0.
+# A tag v<version> builds the eight VSIX files and attaches them to a GitHub release. A plain
+# major.minor.patch version is also published; neither marketplace accepts a version with a pre-release
+# suffix such as 3.0.0-alpha.0, so such a tag only gets the GitHub release.
+#
+# Open VSX: trusted publishing. The job's OIDC token is exchanged for a short-lived publishing token; the
+# trusted publisher is configured on open-vsx.org for this repository and this workflow file.
+#
+# Visual Studio Marketplace: trusted publishing when the repository variable VSCE_OIDC is 'true', else the
+# VSCE_PAT secret when it exists, else skipped.
 on:
   push:
     tags: ["v*"]
@@ -36,9 +41,11 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      # Lets the job ask GitHub for the OIDC token that trusted publishing exchanges.
+      id-token: write
     env:
+      VSCE_OIDC: ${{ vars.VSCE_OIDC }}
       VSCE_PAT: ${{ secrets.VSCE_PAT }}
-      OVSX_PAT: ${{ secrets.OVSX_PAT }}
     steps:
       - uses: actions/checkout@v7
 
@@ -72,16 +79,26 @@ jobs:
           if [ "$PRERELEASE" = "true" ]; then flags="$flags --prerelease"; fi
           gh release create "$GITHUB_REF_NAME" release-artifacts/*.vsix $flags
 
-      - name: Publish to the Visual Studio Marketplace
-        if: ${{ env.VSCE_PAT != '' && env.PRERELEASE == 'false' }}
+      - name: Publish to Open VSX
+        if: ${{ env.PRERELEASE == 'false' }}
+        run: |
+          for vsix in "$GITHUB_WORKSPACE"/release-artifacts/*.vsix; do
+            pnpm --filter nuget-code exec ovsx publish "$vsix" --trusted-publishing
+          done
+
+      - name: Publish to the Visual Studio Marketplace (trusted publishing)
+        if: ${{ env.VSCE_OIDC == 'true' && env.PRERELEASE == 'false' }}
+        env:
+          # A token in the environment would be used instead of the OIDC exchange.
+          VSCE_PAT: ""
+        run: |
+          for vsix in "$GITHUB_WORKSPACE"/release-artifacts/*.vsix; do
+            pnpm --filter nuget-code exec vsce publish --oidc --packagePath "$vsix"
+          done
+
+      - name: Publish to the Visual Studio Marketplace (token)
+        if: ${{ env.VSCE_OIDC != 'true' && env.VSCE_PAT != '' && env.PRERELEASE == 'false' }}
         run: |
           for vsix in "$GITHUB_WORKSPACE"/release-artifacts/*.vsix; do
             pnpm --filter nuget-code exec vsce publish --packagePath "$vsix"
-          done
-
-      - name: Publish to Open VSX
-        if: ${{ env.OVSX_PAT != '' && env.PRERELEASE == 'false' }}
-        run: |
-          for vsix in "$GITHUB_WORKSPACE"/release-artifacts/*.vsix; do
-            pnpm --filter nuget-code exec ovsx publish "$vsix" --pat "$OVSX_PAT"
           done
