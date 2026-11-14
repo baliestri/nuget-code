@@ -1,20 +1,38 @@
 import type { FolderInfo, FoldersClearResult, FolderSizeResult } from "@nuget-code/protocol";
 import { useQuery } from "@tanstack/react-query";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Placeholder } from "../app/Placeholder";
 import { SideBar } from "../app/SideBar";
 import { useBridge } from "../bridge/BridgeContext";
 import { formatBytes } from "../lib/format";
 import { queryKeys } from "../packages/queries";
+import type { MeasuredSize } from "../state/preferences";
+import { usePreferences } from "../state/PreferencesContext";
 import { Banner } from "../ui/Banner";
 import { Button } from "../ui/Button";
 import { Dialog } from "../ui/Dialog";
 import { IconButton } from "../ui/IconButton";
 
 /** What is known about the size of a folder: nothing yet, being measured, measured, or why it could not be. */
-type Size = "measuring" | FolderSizeResult | { failed: string };
+type Size = "measuring" | FolderSizeResult | MeasuredSize | { failed: string };
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+/** A path cut into its folders, without regard to case or to which separator is used. */
+const parts = (path: string): string[] =>
+  path
+    .toLowerCase()
+    .split(/[\\/]+/)
+    .filter((part) => part !== "");
+
+/** Whether two folders are the same, or one is inside the other. */
+export function overlaps(left: string, right: string): boolean {
+  const [short, long] = [parts(left), parts(right)].sort((a, b) => a.length - b.length) as [string[], string[]];
+  return short.every((part, index) => long[index] === part);
+}
+
+/** When a measurement finished. Read only as an answer arrives, never while rendering. */
+const timestamp = (): number => Date.now();
 
 const CELL = "border-border border-b px-2 py-0.5";
 const SKIPPED_SHOWN = 5;
@@ -57,8 +75,17 @@ export function describeCleared(result: FoldersClearResult, folders: readonly Fo
 export function FoldersTab(): ReactNode {
   const bridge = useBridge();
   const list = useQuery({ queryKey: queryKeys.folders, queryFn: () => bridge.backend("listFolders", {}) });
+  const { preferences, set } = usePreferences();
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
-  const [sizes, setSizes] = useState<ReadonlyMap<string, Size>>(new Map());
+  // A measured size is kept with the preferences, so it is still there when the tab or the view is opened
+  // again. What is only true for now, a measurement under way or one that failed, is kept here.
+  const [passing, setPassing] = useState<ReadonlyMap<string, "measuring" | { failed: string }>>(new Map());
+  // The loop that measures runs across renders: it adds to the newest sizes, not to the ones it started with.
+  const kept = useRef(preferences.folderSizes);
+  useEffect(() => {
+    kept.current = preferences.folderSizes;
+  }, [preferences.folderSizes]);
+  const sizeOf = (path: string): Size | undefined => passing.get(path) ?? preferences.folderSizes[path];
   const [measuring, setMeasuring] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -70,20 +97,28 @@ export function FoldersTab(): ReactNode {
   const only = chosen.length === 1 ? chosen[0] : undefined;
   const canClear = chosen.length > 0 && chosen.every((folder) => folder.clearable) && !clearing;
 
-  const setSize = (path: string, size: Size | undefined): void =>
-    setSizes((current) => {
+  const setSize = (path: string, size: Size): void => {
+    setPassing((current) => {
       const next = new Map(current);
-      if (size === undefined) {
-        next.delete(path);
-      } else {
+      if (size === "measuring" || "failed" in size) {
         next.set(path, size);
+      } else {
+        next.delete(path);
       }
 
       return next;
     });
+    if (size !== "measuring" && !("failed" in size)) {
+      kept.current = { ...kept.current, [path]: { exists: size.exists, bytes: size.bytes, at: timestamp() } };
+      set({ folderSizes: kept.current });
+    }
+  };
 
-  /** Measures the folders one after the other: each one walks a tree on disk. */
-  const recalculate = async (before: readonly string[] = []): Promise<void> => {
+  /**
+   * Measures every folder again, one after the other: each one walks a tree on disk. It runs only when
+   * asked for, or after a clear; otherwise the sizes measured last are shown.
+   */
+  const recalculate = async (before: readonly string[] = [], which: readonly FolderInfo[] = folders): Promise<void> => {
     if (measuring) {
       setProblems(before);
       return;
@@ -93,7 +128,7 @@ export function FoldersTab(): ReactNode {
     // `before` is what already went wrong in the action that asked for the sizes again.
     const failed = [...before];
     try {
-      for (const folder of folders) {
+      for (const folder of which) {
         setSize(folder.path, "measuring");
         try {
           setSize(folder.path, await bridge.backend("folderSize", { path: folder.path }));
@@ -131,7 +166,13 @@ export function FoldersTab(): ReactNode {
       setClearing(false);
     }
 
-    await recalculate(refused);
+    // Only what the clear can have changed is measured again: the cleared folders, and any folder that
+    // holds one of them or is inside one. The other sizes stay as they were measured.
+    const cleared = chosen.map((folder) => folder.path);
+    await recalculate(
+      refused,
+      folders.filter((folder) => cleared.some((path) => overlaps(folder.path, path)))
+    );
   };
 
   const select = (path: string, add: boolean): void => {
@@ -205,6 +246,8 @@ export function FoldersTab(): ReactNode {
               <tbody>
                 {folders.map((folder) => {
                   const on = selected.has(folder.path);
+                  const size = sizeOf(folder.path);
+                  const measuredAt = typeof size === "object" && "at" in size ? size.at : undefined;
                   return (
                     <tr
                       key={folder.path}
@@ -223,8 +266,15 @@ export function FoldersTab(): ReactNode {
                         {folder.title}
                       </th>
                       <td className={`${CELL} break-all`}>{folder.path}</td>
-                      <td className={`${CELL} w-px text-right whitespace-nowrap`}>
-                        {sizeText(sizes.get(folder.path))}
+                      <td
+                        className={`${CELL} w-px text-right whitespace-nowrap`}
+                        title={
+                          measuredAt === undefined
+                            ? undefined
+                            : `Measured on ${new Date(measuredAt).toLocaleString()}. Recalculate to measure again.`
+                        }
+                      >
+                        {sizeText(size)}
                       </td>
                     </tr>
                   );
@@ -239,7 +289,7 @@ export function FoldersTab(): ReactNode {
           <p>Everything in these folders is deleted. Packages are downloaded again when a restore needs them.</p>
           <ul aria-label="Folders to clear" className="flex flex-col gap-1">
             {chosen.map((folder) => {
-              const size = sizes.get(folder.path);
+              const size = sizeOf(folder.path);
               return (
                 <li key={folder.path}>
                   <span className="font-semibold">{folder.title}</span>

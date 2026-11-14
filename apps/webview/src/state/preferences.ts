@@ -12,7 +12,21 @@ export interface LogPreferences {
   levels: readonly LogLevel[];
 }
 
-/** What the user chose in the view. Kept across reloads of the page; never data from the backend. */
+/** The size a folder had when it was last measured. */
+export interface MeasuredSize {
+  exists: boolean;
+  bytes: number;
+  /** When it was measured, in milliseconds since the epoch. */
+  at: number;
+}
+
+/** A measured size is shown for this long; after it the folder counts as not measured. */
+export const SIZE_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * What the view keeps across reloads of the page: what the user chose, and the folder sizes they asked for,
+ * which are slow to measure. Nothing else that comes from the backend is kept.
+ */
 export interface Preferences {
   tab: TabId;
   /** The project the package lists are about; `null` is the whole solution. */
@@ -23,6 +37,8 @@ export interface Preferences {
   packagesView: "installed" | "discover";
   sort: "smart" | "alphabetical";
   detailsPosition: "side" | "bottom";
+  /** The measured sizes of the NuGet folders, by path. */
+  folderSizes: Readonly<Record<string, MeasuredSize>>;
   log: LogPreferences;
 }
 
@@ -34,6 +50,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   packagesView: "installed",
   sort: "smart",
   detailsPosition: "side",
+  folderSizes: {},
   log: { time: true, context: true, level: true, wrap: false, levels: Object.values(LogLevels) }
 };
 
@@ -45,8 +62,11 @@ export function preferencesReducer(state: Preferences, action: PreferencesAction
   return action.type === "set" ? { ...state, ...action.patch } : { ...state, log: { ...state.log, ...action.patch } };
 }
 
-/** Reads stored preferences. Anything missing, of another type or no longer valid falls back to its default. */
-export function loadPreferences(raw: unknown): Preferences {
+/**
+ * Reads stored preferences. Anything missing, of another type or no longer valid falls back to its default.
+ * `now` is what decides which folder sizes are too old to keep.
+ */
+export function loadPreferences(raw: unknown, now: number = Date.now()): Preferences {
   const stored = isRecord(raw) ? raw : {};
   const log = isRecord(stored["log"]) ? stored["log"] : {};
   const defaults = DEFAULT_PREFERENCES;
@@ -58,6 +78,7 @@ export function loadPreferences(raw: unknown): Preferences {
     packagesView: oneOf(stored["packagesView"], ["installed", "discover"] as const, defaults.packagesView),
     sort: oneOf(stored["sort"], ["smart", "alphabetical"] as const, defaults.sort),
     detailsPosition: oneOf(stored["detailsPosition"], ["side", "bottom"] as const, defaults.detailsPosition),
+    folderSizes: sizes(stored["folderSizes"], now),
     log: {
       time: flag(log["time"], defaults.log.time),
       context: flag(log["context"], defaults.log.context),
@@ -82,6 +103,24 @@ function nullableText(value: unknown): string | null {
 
 function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
   return allowed.includes(value as T) ? (value as T) : fallback;
+}
+
+/** The stored sizes that are well formed and still young enough to be shown. */
+function sizes(value: unknown, now: number): Record<string, MeasuredSize> {
+  const kept: Record<string, MeasuredSize> = {};
+  for (const [path, size] of Object.entries(isRecord(value) ? value : {})) {
+    if (
+      isRecord(size) &&
+      typeof size["exists"] === "boolean" &&
+      typeof size["bytes"] === "number" &&
+      typeof size["at"] === "number" &&
+      now - size["at"] < SIZE_LIFETIME_MS
+    ) {
+      kept[path] = { exists: size["exists"], bytes: size["bytes"], at: size["at"] };
+    }
+  }
+
+  return kept;
 }
 
 function levels(value: unknown): readonly LogLevel[] {

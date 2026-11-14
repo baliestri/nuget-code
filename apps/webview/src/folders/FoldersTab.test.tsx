@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { createFakeBridge, createMemoryStorage, type FakeBridge } from "../../test/fakeBridge";
 import { Root } from "../app/Root";
-import { describeCleared } from "./FoldersTab";
+import { describeCleared, overlaps } from "./FoldersTab";
 
 const GLOBAL: FolderInfo = { title: "Global Packages", path: "/home/me/.nuget/packages", clearable: true };
 const HTTP: FolderInfo = { title: "HTTP Cache", path: "/home/me/.local/share/NuGet/v3-cache", clearable: true };
@@ -18,15 +18,16 @@ const SIZES: Record<string, FolderSizeResult> = {
   [SETTINGS.path]: { exists: false, bytes: 0 }
 };
 
-function open(configure?: (fake: FakeBridge) => void) {
+function open(configure?: (fake: FakeBridge) => void, stored: Record<string, unknown> = {}) {
   const fake = createFakeBridge();
   fake.backend.listFolders = () => Promise.resolve({ folders: FOLDERS });
   fake.backend.folderSize = (params) => Promise.resolve(SIZES[params.path]!);
   fake.backend.clearFolders = (params) =>
     Promise.resolve({ folders: params.paths.map((path) => ({ path, bytesFreed: 2048, skipped: [] })) });
   configure?.(fake);
-  render(<Root client={fake.client} storage={createMemoryStorage({ tab: "folders" })} />);
-  return { fake, user: userEvent.setup() };
+  const storage = createMemoryStorage({ tab: "folders", ...stored });
+  render(<Root client={fake.client} storage={storage} />);
+  return { fake, storage, user: userEvent.setup() };
 }
 
 const row = (title: string): Promise<HTMLElement> => screen.findByRole("row", { name: new RegExp(`^${title}`) });
@@ -71,6 +72,51 @@ describe("Folders", () => {
 
     await waitFor(async () => expect(cells(await row("UserSettings"))[1]).toBe("—"));
     expect(most).toBe(1);
+  });
+
+  it("measured sizes are kept: they are there when the tab is opened again, without measuring", async () => {
+    const { fake, user, storage } = open();
+    await row("Global Packages");
+    await user.click(screen.getByRole("button", { name: "Recalculate Folder Sizes" }));
+    await waitFor(async () => expect(cells(await row("UserSettings"))[1]).toBe("—"));
+    const asked = fake.callsOf("folderSize").length;
+
+    await user.click(screen.getByRole("tab", { name: "Log" }));
+    await user.click(screen.getByRole("tab", { name: "Folders" }));
+
+    expect(cells(await row("Global Packages"))[1]).toBe("13.0 MB");
+    expect(cells(await row("HTTP Cache"))[1]).toBe("1.5 KB");
+    expect(fake.callsOf("folderSize")).toHaveLength(asked);
+    expect(storage.get()).toMatchObject({
+      folderSizes: { [GLOBAL.path]: { exists: true, bytes: 13 * 1024 * 1024 }, [SETTINGS.path]: { exists: false } }
+    });
+  });
+
+  it("sizes stored by an earlier session are shown, with when they were measured", async () => {
+    const at = Date.now() - 24 * 60 * 60 * 1000;
+    const { fake } = open(undefined, { folderSizes: { [HTTP.path]: { exists: true, bytes: 2048, at } } });
+
+    const http = await row("HTTP Cache");
+    expect(cells(http)[1]).toBe("2.0 KB");
+    expect(within(http).getAllByRole("cell")[1]?.title).toMatch(/^Measured on /);
+    expect(cells(await row("Global Packages"))[1]).toBe("?");
+    expect(fake.callsOf("folderSize")).toEqual([]);
+  });
+
+  it("a size measured more than a month ago is not shown", async () => {
+    const at = Date.now() - 31 * 24 * 60 * 60 * 1000;
+    open(undefined, { folderSizes: { [HTTP.path]: { exists: true, bytes: 2048, at } } });
+
+    expect(cells(await row("HTTP Cache"))[1]).toBe("?");
+  });
+
+  it("measuring again replaces what was stored", async () => {
+    const { user } = open(undefined, { folderSizes: { [HTTP.path]: { exists: true, bytes: 2048, at: Date.now() } } });
+    await row("HTTP Cache");
+
+    await user.click(screen.getByRole("button", { name: "Recalculate Folder Sizes" }));
+
+    await waitFor(async () => expect(cells(await row("HTTP Cache"))[1]).toBe("1.5 KB"));
   });
 
   it("a folder that could not be opened says why", async () => {
@@ -210,7 +256,8 @@ describe("Folders", () => {
     });
     expect(screen.queryByText(/freed/)).not.toBeInTheDocument();
     expect(fake.callsOf("clearFolders")).toEqual([{ paths: [GLOBAL.path, HTTP.path] }]);
-    await waitFor(() => expect(fake.callsOf("folderSize")).toHaveLength(FOLDERS.length));
+    // Only the cleared folders are measured again; the settings folder is not.
+    await waitFor(() => expect(fake.callsOf("folderSize")).toEqual([{ path: GLOBAL.path }, { path: HTTP.path }]));
   });
 
   it("a refusal from the backend is shown", async () => {
@@ -234,6 +281,22 @@ describe("Folders", () => {
     });
 
     expect(await screen.findByText("The folders could not be listed")).toBeInTheDocument();
+  });
+});
+
+describe("overlaps", () => {
+  it("a folder overlaps itself, whatever the case, the separator or a trailing one", () => {
+    expect(overlaps("C:\\Users\\me\\.nuget\\packages\\", "c:/users/me/.nuget/packages")).toBe(true);
+  });
+
+  it("a folder overlaps the ones that hold it and the ones inside it", () => {
+    expect(overlaps("/home/me/.nuget", "/home/me/.nuget/packages")).toBe(true);
+    expect(overlaps("/home/me/.nuget/packages", "/home/me/.nuget")).toBe(true);
+  });
+
+  it("siblings do not overlap, even when one name starts with the other", () => {
+    expect(overlaps("/home/me/.nuget/packages", "/home/me/.nuget/NuGet")).toBe(false);
+    expect(overlaps("/cache/v3", "/cache/v3-cache")).toBe(false);
   });
 });
 
