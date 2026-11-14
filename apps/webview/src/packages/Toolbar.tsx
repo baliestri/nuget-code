@@ -1,7 +1,8 @@
 import type { FeedInfo } from "@nuget-code/protocol";
 import type { ReactNode } from "react";
+import { assetUrl, projectIconUrl } from "../lib/assets";
 import { Checkbox } from "../ui/Checkbox";
-import { Select } from "../ui/Select";
+import { Dropdown } from "../ui/Dropdown";
 import type { TargetOption } from "./model";
 
 const SOLUTION = "\u0000solution";
@@ -30,6 +31,15 @@ function targetLabel(option: TargetOption): string {
   return `${option.label} (${option.count} ${option.count === 1 ? "package" : "packages"})`;
 }
 
+/** The icon of a solution or project file; a generic one for a kind the bundle has no icon for. */
+function FileIcon({ url }: { url: string | undefined }): ReactNode {
+  return url === undefined ? (
+    <i className="codicon codicon-file-code text-muted shrink-0" aria-hidden="true" />
+  ) : (
+    <img src={url} alt="" width={16} height={16} className="h-4 w-4 shrink-0" />
+  );
+}
+
 /** The line above the package lists: what to search for, in which project, on which feed. */
 export function Toolbar(props: ToolbarProps): ReactNode {
   const enabledFeeds = props.feeds.filter((feed) => feed.enabled);
@@ -45,18 +55,20 @@ export function Toolbar(props: ToolbarProps): ReactNode {
           className="text-input-fg min-w-0 flex-1 bg-transparent py-0.5 outline-none"
         />
       </div>
-      <Select
+      <Dropdown
         label="Target"
         value={props.target ?? SOLUTION}
         onChange={(value) => props.onTarget(value === SOLUTION ? null : value)}
         options={props.targets.map((option) => ({
           value: option.value ?? SOLUTION,
           label: targetLabel(option),
+          short: option.label,
+          icon: <FileIcon url={option.value === null ? assetUrl("sln.svg") : projectIconUrl(option.value)} />,
           ...(option.error === undefined ? {} : { disabled: true, title: option.error })
         }))}
-        className="max-w-48"
+        className="max-w-56"
       />
-      <Select
+      <Dropdown
         label="Feed"
         value={props.feed ?? ALL_FEEDS}
         onChange={(value) => {

@@ -190,7 +190,8 @@ describe("Installed", () => {
     const { user } = open();
     await updateGroup();
 
-    await user.selectOptions(screen.getByRole("combobox", { name: "Target" }), "App (2 packages)");
+    await user.click(screen.getByRole("combobox", { name: "Target" }));
+    await user.click(screen.getByRole("option", { name: "App (2 packages)" }));
 
     expect(await screen.findByRole("heading", { name: "Installed Packages in App: 2" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Packages to Update in App: 1" })).toBeInTheDocument();
@@ -198,11 +199,31 @@ describe("Installed", () => {
   });
 
   it("the toolbar lists the solution and each project with its package count", async () => {
-    open();
+    const { user } = open();
     await updateGroup();
 
-    const options = within(screen.getByRole("combobox", { name: "Target" })).getAllByRole("option");
+    await user.click(screen.getByRole("combobox", { name: "Target" }));
+
+    const options = within(screen.getByRole("listbox", { name: "Target" })).getAllByRole("option");
     expect(options.map((option) => option.textContent)).toEqual(["Solution", "App (2 packages)", "Lib (2 packages)"]);
+    expect(options[0]!.querySelector("img")?.getAttribute("src")).toContain("sln.svg");
+    expect(options[1]!.querySelector("img")?.getAttribute("src")).toContain("csproj.svg");
+  });
+
+  it("the target list works from the keyboard, and closes on Escape", async () => {
+    const { user } = open();
+    await updateGroup();
+    const target = screen.getByRole("combobox", { name: "Target" });
+
+    target.focus();
+    await user.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{Enter}");
+    expect(await screen.findByRole("heading", { name: "Installed Packages in Lib: 2" })).toBeInTheDocument();
+    expect(target).toHaveTextContent("Lib");
+
+    await user.keyboard("{ArrowDown}");
+    expect(target).toHaveAttribute("aria-expanded", "true");
+    await user.keyboard("{Escape}");
+    expect(target).toHaveAttribute("aria-expanded", "false");
   });
 
   it("a project that failed to evaluate is disabled in the target list", async () => {
@@ -210,9 +231,15 @@ describe("Installed", () => {
     open({
       session: { ...SESSION, solution: { kind: "open", name: "Sample.slnx", path: "/work/Sample.slnx", projects } }
     });
+    const user = userEvent.setup();
     await updateGroup();
 
-    expect(screen.getByRole("option", { name: /^Lib/ })).toBeDisabled();
+    await user.click(screen.getByRole("combobox", { name: "Target" }));
+    const lib = screen.getByRole("option", { name: /^Lib/ });
+    expect(lib).toHaveAttribute("aria-disabled", "true");
+    await user.click(lib);
+
+    expect(screen.getByRole("heading", { name: /^Installed Packages in Solution/ })).toBeInTheDocument();
   });
 
   it("the search filters both groups", async () => {
@@ -259,17 +286,27 @@ describe("Installed", () => {
     expect(await screen.findByRole("status", { name: /^Loading: Installed Packages/ })).toBeInTheDocument();
   });
 
-  it("groups collapse and expand", async () => {
+  it("a click on the title of a group collapses it, and another expands it", async () => {
     const { user } = open();
     await updateGroup();
-    const toggle = screen.getByRole("button", { name: /^Collapse: Installed Packages/ });
+    const title = screen.getByRole("button", { name: /^Packages to Update in Solution/ });
+    expect(title).toHaveAttribute("aria-expanded", "true");
 
-    await user.click(toggle);
+    await user.click(title);
+    expect(title).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("checkbox", { name: "Select Alpha" })).not.toBeInTheDocument();
 
-    expect(screen.getByRole("button", { name: /^Expand: Installed Packages/ })).toHaveAttribute(
-      "aria-expanded",
-      "false"
-    );
+    await user.click(title);
+    expect(screen.getByRole("checkbox", { name: "Select Alpha" })).toBeInTheDocument();
+  });
+
+  it("the installed group collapses by its title too", async () => {
+    const { user } = open();
+    await updateGroup();
+
+    await user.click(screen.getByRole("button", { name: /^Installed Packages in Solution/ }));
+
+    expect(screen.queryByRole("button", { name: /^Beta/ })).not.toBeInTheDocument();
   });
 
   it("a feed failure is shown without hiding the list", async () => {
@@ -285,7 +322,8 @@ describe("Installed", () => {
     const { user } = open();
     await updateGroup();
 
-    await user.selectOptions(screen.getByRole("combobox", { name: "Feed" }), "Manage Feeds…");
+    await user.click(screen.getByRole("combobox", { name: "Feed" }));
+    await user.click(screen.getByRole("option", { name: "Manage Feeds…" }));
 
     expect(screen.getByRole("tab", { name: "Sources" })).toHaveAttribute("aria-selected", "true");
   });
@@ -581,8 +619,8 @@ describe("operations", () => {
     await waitFor(() => expect(fake.callsOf("showLog")).toHaveLength(1));
   });
 
-  it("plan warnings are listed after the operation, and can be dismissed", async () => {
-    const { user, pending } = await startUpdate({
+  it("plan warnings go to the editor as a notification, not into the view", async () => {
+    const { fake, pending } = await startUpdate({
       configure: (fake) => {
         fake.backend.planPackages = () =>
           Promise.resolve({
@@ -594,9 +632,13 @@ describe("operations", () => {
 
     pending.resolve(succeeded([LIB]));
 
-    expect(await screen.findByText("Gamma: this is a downgrade from 5.0.0.")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    await waitFor(() =>
+      expect(fake.callsOf("notifyWarnings")).toEqual([
+        { title: "Update", messages: ["Gamma: this is a downgrade from 5.0.0."] }
+      ])
+    );
     expect(screen.queryByText(/downgrade/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("a plan that fails does not affect the operation", async () => {

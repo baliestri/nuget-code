@@ -30,19 +30,29 @@ export function PackageGroup({ title, loading = false, selectAll, action, childr
             onChange={selectAll.onChange}
           />
         )}
-        <h2 className="font-semibold">{title}</h2>
+        {/* The title is the control: it reaches as far as the header's free space, so a click anywhere on it
+            folds the group. The chevron repeats it for the mouse only. */}
+        <h2 className="flex min-w-0 flex-1 font-semibold">
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-controls={id}
+            onClick={() => setOpen(!open)}
+            className="min-w-0 flex-1 truncate text-left"
+          >
+            {title}
+          </button>
+        </h2>
         {loading ? <Spinner label={`Loading: ${title}`} /> : null}
-        <div className="flex-1" />
         {action}
         <button
           type="button"
-          aria-expanded={open}
-          aria-controls={id}
-          aria-label={`${open ? "Collapse" : "Expand"}: ${title}`}
+          tabIndex={-1}
+          aria-hidden="true"
           onClick={() => setOpen(!open)}
           className="hover:bg-toolbar-hover flex h-5 w-5 items-center justify-center rounded"
         >
-          <i className={`codicon codicon-chevron-${open ? "up" : "down"}`} aria-hidden="true" />
+          <i className={`codicon codicon-chevron-${open ? "up" : "down"}`} />
         </button>
       </header>
       <ul id={id} hidden={!open} className="pb-1">
