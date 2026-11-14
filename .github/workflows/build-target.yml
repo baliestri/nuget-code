@@ -5,6 +5,11 @@ name: Build targets
 # own system and architecture. musl is built in an Alpine container started from an Ubuntu runner.
 on:
   workflow_call:
+    inputs:
+      ref:
+        description: The commit to build; the ref of the calling run when empty.
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -30,6 +35,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
 
       - uses: pnpm/action-setup@v6
 
