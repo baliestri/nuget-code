@@ -98,4 +98,4 @@ The screenshots show sample data. This project is not affiliated with JetBrains.
 
 ## License
 
-[zlib/libpng](https://github.com/baliestri/nuget-code/blob/main/LICENSE.md).
+NuGet Manager for VS Code is licensed under the [zlib/libpng License](https://github.com/baliestri/nuget-code/blob/main/LICENSE.md).
