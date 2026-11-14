@@ -3,4 +3,10 @@
 
 namespace NuGet.VisualStudioCode.Protocol;
 
-internal sealed record SourcesListResult(IReadOnlyList<ConfigFileInfo> Files, IReadOnlyList<FeedInfo> Effective);
+internal sealed record SourcesListResult(
+  IReadOnlyList<ConfigFileInfo> Files,
+  IReadOnlyList<FeedInfo> Effective,
+  IReadOnlyList<string> FallbackFolders,
+  string GlobalPackagesFolder,
+  string? LocalPackagesFolder
+);

@@ -28,6 +28,10 @@ internal static class MethodNames {
   public const string CONFIGURATION_DID_CHANGE = "configuration/didChange";
 
   public const string SOURCES_LIST = "sources/list";
+  public const string SOURCES_ADD = "sources/add";
+  public const string SOURCES_UPDATE = "sources/update";
+  public const string SOURCES_REMOVE = "sources/remove";
+  public const string SOURCES_SET_PROPERTY = "sources/setProperty";
   public const string FOLDERS_LIST = "folders/list";
   public const string FOLDERS_SIZE = "folders/size";
 

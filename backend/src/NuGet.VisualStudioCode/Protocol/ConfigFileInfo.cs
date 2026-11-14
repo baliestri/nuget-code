@@ -3,4 +3,15 @@
 
 namespace NuGet.VisualStudioCode.Protocol;
 
-internal sealed record ConfigFileInfo(string Path, IReadOnlyList<FeedInfo> Feeds);
+/// <summary>
+///   One configuration file of the hierarchy. The two folder values are the ones declared in this file, as
+///   written; the resolved folders are on <see cref="SourcesListResult" />.
+/// </summary>
+internal sealed record ConfigFileInfo(
+  string Path,
+  IReadOnlyList<FeedInfo> Feeds,
+  bool Writable,
+  bool IsMachineWide,
+  string? GlobalPackagesFolder,
+  string? RepositoryPath
+);

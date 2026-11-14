@@ -2,8 +2,10 @@
 // See the LICENSE file in the repository root for full license text.
 
 using NuGet.VisualStudioCode.Configuration;
+using NuGet.VisualStudioCode.Operations;
 using NuGet.VisualStudioCode.Protocol;
 using NuGet.VisualStudioCode.Rpc;
+using NuGet.VisualStudioCode.Sessions;
 
 namespace NuGet.VisualStudioCode.Methods;
 
@@ -12,6 +14,48 @@ internal static class ConfigurationMethods {
     OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
       ? StringComparison.OrdinalIgnoreCase
       : StringComparison.Ordinal;
+
+  private readonly static Empty Done = new();
+
+  /// <summary>
+  ///   The methods that write configuration files. They take their turn in the operation queue. A written file
+  ///   is treated as the host reporting the change: feeds are read again and the projects evaluated again.
+  /// </summary>
+  public static void RegisterWrites(RpcConnection connection, OperationQueue queue, SourcesWriter writer,
+    SessionRefresher refresher, Action resetFeeds) {
+    void Written(string file) {
+      resetFeeds();
+      refresher.Report([file]);
+    }
+
+    connection.OnRequest(MethodNames.SOURCES_ADD, ProtocolJsonContext.Default.SourceWriteParams,
+      ProtocolJsonContext.Default.FeedInfo, (parameters, ct) => queue.RunAsync(_ =>
+      {
+        var (file, feed) = writer.Add(parameters);
+        Written(file);
+        return Task.FromResult(feed);
+      }, ct));
+    connection.OnRequest(MethodNames.SOURCES_UPDATE, ProtocolJsonContext.Default.SourceWriteParams,
+      ProtocolJsonContext.Default.FeedInfo, (parameters, ct) => queue.RunAsync(_ =>
+      {
+        var (file, feed) = writer.Update(parameters);
+        Written(file);
+        return Task.FromResult(feed);
+      }, ct));
+    connection.OnRequest(MethodNames.SOURCES_REMOVE, ProtocolJsonContext.Default.SourceRemoveParams,
+      ProtocolJsonContext.Default.Empty, (parameters, ct) => queue.RunAsync(_ =>
+      {
+        Written(writer.Remove(parameters));
+        return Task.FromResult(Done);
+      }, ct));
+    connection.OnRequest(MethodNames.SOURCES_SET_PROPERTY, ProtocolJsonContext.Default.SourceSetPropertyParams,
+      ProtocolJsonContext.Default.Empty, (parameters, ct) => queue.RunAsync(_ =>
+      {
+        writer.SetProperty(parameters);
+        Written(parameters.File);
+        return Task.FromResult(Done);
+      }, ct));
+  }
 
   public static void Register(RpcConnection connection, SettingsProvider settings, Func<bool> hasSolution) {
     connection.OnRequest(MethodNames.SOURCES_LIST, ProtocolJsonContext.Default.Empty,

@@ -23,4 +23,7 @@ internal static class RpcErrorCodes {
   public const int PACKAGE_IMPLICIT = 1103;
   public const int EDIT_NOT_POSSIBLE = 1104;
   public const int UNKNOWN_RESTORE_ENGINE = 1105;
+  public const int CONFIG_NOT_WRITABLE = 1106;
+  public const int FEED_UNKNOWN = 1107;
+  public const int FEED_DUPLICATE = 1108;
 }

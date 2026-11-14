@@ -69,6 +69,9 @@ var openRestore = new SolutionOpenRestore(sessions, queue, restore, refresher, o
     ProtocolJsonContext.Default.RestoreDidFinishParams));
 SolutionMethods.Register(connection, sessions, evaluator, queue, openRestore);
 
+ConfigurationMethods.RegisterWrites(connection, queue,
+  new SourcesWriter(settings, ConfigFileClassifier.IsMachineWide), refresher, ResetFeeds);
+
 var operations = new PackageOperationService(sessions, refresher, restore, log,
   step => connection.NotifyAsync(MethodNames.OPERATION_PROGRESS, step,
     ProtocolJsonContext.Default.OperationProgressParams));

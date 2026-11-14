@@ -9,5 +9,8 @@ internal sealed record FeedInfo(
   bool Enabled,
   bool AllowInsecureConnections,
   int ProtocolVersion,
-  bool IsLocal
+  bool IsLocal,
+  bool DisableTlsCertificateValidation,
+  bool IsMachineWide,
+  string? DeclaredIn
 );
