@@ -49,18 +49,22 @@ PackagesMethods.Register(connection, sessions, search, details, updates);
 WorkspaceMethods.Register(connection, refresher, ResetFeeds);
 OperationMethods.Register(connection, sessions, advisor);
 
-using var queue = new OperationQueue();
-var engines = new Dictionary<string, IRestoreEngine>(StringComparer.Ordinal) {
-  [RestoreEngineNames.EMBEDDED] = new EmbeddedRestoreEngine(nugetLogger)
-};
-var restore = new RestoreService(engines, options, log);
-RestoreMethods.Register(connection, sessions, queue, restore, refresher, options);
-
 var credentials = new HostCredentialProvider((request, ct) => connection.RequestAsync(MethodNames.CREDENTIALS_REQUEST,
   request, ProtocolJsonContext.Default.CredentialsRequestParams, ProtocolJsonContext.Default.CredentialsRequestResult,
   ct));
 CredentialSetup.Install(credentials, nugetLogger, log);
 CredentialsMethods.Register(connection, credentials, ResetFeeds);
+
+using var queue = new OperationQueue();
+var engines = new Dictionary<string, IRestoreEngine>(StringComparer.Ordinal) {
+  [RestoreEngineNames.EMBEDDED] = new EmbeddedRestoreEngine(nugetLogger),
+  [RestoreEngineNames.MSBUILD] =
+    new ExternalRestoreEngine(RestoreEngineNames.MSBUILD, sdk, settings, credentials, log),
+  [RestoreEngineNames.CONSOLE] =
+    new ExternalRestoreEngine(RestoreEngineNames.CONSOLE, sdk, settings, credentials, log)
+};
+var restore = new RestoreService(engines, options, log);
+RestoreMethods.Register(connection, sessions, queue, restore, refresher, options);
 
 try {
   await connection.RunAsync(CancellationToken.None).ConfigureAwait(false);

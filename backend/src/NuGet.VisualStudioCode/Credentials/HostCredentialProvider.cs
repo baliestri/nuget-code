@@ -13,6 +13,13 @@ internal sealed class HostCredentialProvider(
   Func<CredentialsRequestParams, CancellationToken, Task<CredentialsRequestResult>> ask
 ) : ICredentialProvider {
   private readonly ConcurrentDictionary<string, byte> _declined = new(StringComparer.OrdinalIgnoreCase);
+  private readonly ConcurrentDictionary<string, NetworkCredential> _known = new(StringComparer.OrdinalIgnoreCase);
+
+  /// <summary>
+  ///   What the host answered in this session, by <c>scheme://authority</c>. Held in memory only, so the restore
+  ///   engines that start a <c>dotnet</c> process can hand the same credentials over.
+  /// </summary>
+  public IReadOnlyDictionary<string, NetworkCredential> Known => _known;
 
   public string Id => "NuGet.VisualStudioCode.Host";
 
@@ -37,17 +44,26 @@ internal sealed class HostCredentialProvider(
       return new CredentialResponse(CredentialStatus.UserCanceled);
     }
 
-    return new CredentialResponse(new NetworkCredential(answer.Username, answer.Password));
+    var credential = new NetworkCredential(answer.Username, answer.Password);
+    _known[host] = credential;
+    return new CredentialResponse(credential);
   }
 
   public void Reset(string? source) {
     if (source is null) {
       _declined.Clear();
+      _known.Clear();
       return;
     }
 
-    if (Uri.TryCreate(source, UriKind.Absolute, out var uri)) {
-      _declined.TryRemove(KeyValuePair.Create(uri.GetLeftPart(UriPartial.Authority), (byte)0));
+    if (!Uri.TryCreate(source, UriKind.Absolute, out var uri)) {
+      return;
+    }
+
+    var host = uri.GetLeftPart(UriPartial.Authority);
+    _declined.TryRemove(KeyValuePair.Create(host, (byte)0));
+    if (_known.TryGetValue(host, out var credential)) {
+      _known.TryRemove(KeyValuePair.Create(host, credential));
     }
   }
 }

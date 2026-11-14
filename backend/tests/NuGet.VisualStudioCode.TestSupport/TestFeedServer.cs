@@ -14,11 +14,14 @@ namespace NuGet.VisualStudioCode.TestSupport;
 public sealed class TestFeedServer : IDisposable {
   private const string ATOM = "application/atom+xml";
   private const string INDEX_SUFFIX = "/index.json";
+  private const string BINARY = "application/octet-stream";
   private const string JSON = "application/json";
+  private const string PACKAGE_SUFFIX = ".nupkg";
 
   private readonly string _baseUrl;
   private readonly HttpListener _listener = new();
   private readonly Task _loop;
+  private readonly TempDirectory _packageFiles = new();
   private readonly IReadOnlyList<TestFeedPackage> _packages;
   private readonly ConcurrentQueue<string> _requestedPaths = new();
 
@@ -47,6 +50,8 @@ public sealed class TestFeedServer : IDisposable {
     catch (AggregateException) {
       // The loop ends with an error when the listener closes.
     }
+
+    _packageFiles.Dispose();
   }
 
   public void RequireBasicAuthentication(string user, string password)
@@ -88,14 +93,15 @@ public sealed class TestFeedServer : IDisposable {
     }
 
     var query = context.Request.QueryString;
-    var (contentType, body) = Route(path, query["q"], query["id"], query["prerelease"]);
-    if (body is null) {
+    var isPackage = path.EndsWith(PACKAGE_SUFFIX, StringComparison.OrdinalIgnoreCase);
+    var (contentType, body) = isPackage ? (BINARY, null) : Route(path, query["q"], query["id"], query["prerelease"]);
+    var bytes = isPackage ? PackageContent(path) : body is null ? null : Encoding.UTF8.GetBytes(body);
+    if (bytes is null) {
       context.Response.StatusCode = 404;
       context.Response.Close();
       return;
     }
 
-    var bytes = Encoding.UTF8.GetBytes(body);
     context.Response.ContentType = contentType;
     context.Response.ContentLength64 = bytes.Length;
     await context.Response.OutputStream.WriteAsync(bytes).ConfigureAwait(false);
@@ -131,6 +137,28 @@ public sealed class TestFeedServer : IDisposable {
 
   private static string Segment(string path, int index)
     => path.Split('/')[index];
+
+  // /v3/flat/<id>/<version>/<id>.<version>.nupkg: a real package, built the first time it is asked for.
+  private byte[]? PackageContent(string path) {
+    var segments = path.Split('/');
+    if (segments.Length < 6) {
+      return null;
+    }
+
+    var package = _packages.FirstOrDefault(candidate
+      => string.Equals(candidate.Id, segments[3], StringComparison.OrdinalIgnoreCase) &&
+         string.Equals(candidate.Version, segments[4], StringComparison.OrdinalIgnoreCase));
+    if (package is null) {
+      return null;
+    }
+
+    var file = _packageFiles.Combine($"{package.Id}.{package.Version}.nupkg");
+    if (!File.Exists(file)) {
+      TestPackages.Create(_packageFiles.Path, package.Id, package.Version);
+    }
+
+    return File.ReadAllBytes(file);
+  }
 
   private List<TestFeedPackage> Versions(string id)
     => _packages

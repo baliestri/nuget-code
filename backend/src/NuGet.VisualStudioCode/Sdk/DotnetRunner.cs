@@ -12,6 +12,18 @@ internal sealed class DotnetRunner(string dotnetPath) {
 
   public string DotnetPath => dotnetPath;
 
-  public Task<ProcessResult> RunAsync(IReadOnlyList<string> arguments, string workingDirectory, CancellationToken ct)
-    => ProcessRunner.RunAsync(dotnetPath, arguments, workingDirectory, CliEnvironment, ct);
+  public Task<ProcessResult> RunAsync(IReadOnlyList<string> arguments, string workingDirectory, CancellationToken ct,
+    IReadOnlyDictionary<string, string>? environment = null, Action<string>? onLine = null)
+    => ProcessRunner.RunAsync(dotnetPath, arguments, workingDirectory, Merge(environment), ct, onLine);
+
+  private static Dictionary<string, string> Merge(IReadOnlyDictionary<string, string>? environment) {
+    if (environment is null) {
+      return CliEnvironment;
+    }
+
+    var merged = new Dictionary<string, string>(CliEnvironment, StringComparer.Ordinal);
+    foreach (var (name, value) in environment) merged[name] = value;
+
+    return merged;
+  }
 }

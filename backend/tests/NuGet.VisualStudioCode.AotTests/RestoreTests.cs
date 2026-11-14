@@ -262,4 +262,115 @@ public sealed class RestoreTests(PublishedBackend backend) {
 
     Assert.Equal(RpcErrorCodes.UNKNOWN_RESTORE_ENGINE, exception.Code);
   }
+
+  [Theory]
+  [InlineData(RestoreEngineNames.MSBUILD)]
+  [InlineData(RestoreEngineNames.CONSOLE)]
+  public async Task External_engine_restores(string engine) {
+    var ct = TestContext.Current.CancellationToken;
+    using var workspace = new TestWorkspace();
+    workspace.AddPackage(ALPHA, V1);
+    var app = SampleSolution.WriteProject(workspace.Root, "App", Project(ALPHA, V1));
+    var solution = SampleSolution.WriteSlnx(workspace.Root, "Sample", "App");
+    await using var client = BackendClient.Start(backend, workspace.Path);
+    await OpenAsync(client, solution, ct);
+
+    var result = await RestoreAsync(client, ct, engine: engine);
+
+    Assert.Equal(engine, result.Engine);
+    Assert.False(result.FellBack);
+    Assert.Equal(RestoreStates.SUCCEEDED, ResultOf(result, app).Restore);
+    Assert.True(File.Exists(AssetsOf(workspace, "App")));
+  }
+
+  [Theory]
+  [InlineData(RestoreEngineNames.MSBUILD)]
+  [InlineData(RestoreEngineNames.CONSOLE)]
+  public async Task External_engine_reports_a_missing_package_per_project(string engine) {
+    var ct = TestContext.Current.CancellationToken;
+    using var workspace = new TestWorkspace();
+    workspace.AddPackage(ALPHA, V1);
+    var a = SampleSolution.WriteProject(workspace.Root, "A", Project(ALPHA, V1));
+    var b = SampleSolution.WriteProject(workspace.Root, "B", Project("Ghost", V1));
+    var solution = SampleSolution.WriteSlnx(workspace.Root, "Sample", "A", "B");
+    await using var client = BackendClient.Start(backend, workspace.Path);
+    await OpenAsync(client, solution, ct);
+
+    var result = await RestoreAsync(client, ct, engine: engine);
+
+    Assert.Equal(RestoreStates.SUCCEEDED, ResultOf(result, a).Restore);
+    var failed = ResultOf(result, b);
+    Assert.Equal(RestoreStates.FAILED, failed.Restore);
+    Assert.Contains(failed.Messages, message => string.Equals(message.Code, "NU1101", StringComparison.Ordinal));
+  }
+
+  [Fact]
+  public async Task External_engine_output_reaches_the_log() {
+    var ct = TestContext.Current.CancellationToken;
+    using var workspace = new TestWorkspace();
+    workspace.AddPackage(ALPHA, V1);
+    SampleSolution.WriteProject(workspace.Root, "App", Project(ALPHA, V1));
+    var solution = SampleSolution.WriteSlnx(workspace.Root, "Sample", "App");
+    await using var client = BackendClient.Start(backend, workspace.Path);
+    var entries = new ConcurrentQueue<LogEntry>();
+    client.Connection.OnNotification(MethodNames.LOG_ENTRY, ProtocolJsonContext.Default.LogEntry,
+      entry =>
+      {
+        entries.Enqueue(entry);
+        return Task.CompletedTask;
+      });
+    var log = WatchFinished(entries);
+    await OpenAsync(client, solution, ct);
+
+    await RestoreAsync(client, ct, engine: RestoreEngineNames.CONSOLE);
+    await log(1, ct);
+
+    Assert.Contains(entries, entry
+      => string.Equals(entry.Context, "NUGET", StringComparison.Ordinal) &&
+         entry.Message.Contains("App.csproj", StringComparison.Ordinal));
+  }
+
+  [Fact]
+  public async Task External_engine_authenticates_with_host_credentials() {
+    const string USER = "user";
+    const string PASSWORD = "s3cr3t-pass";
+    var ct = TestContext.Current.CancellationToken;
+    using var server = new TestFeedServer(new TestFeedPackage(ALPHA, "5.0.0", "Alpha from private feed."));
+    server.RequireBasicAuthentication(USER, PASSWORD);
+    using var workspace = new TestWorkspace();
+    workspace.WriteConfig(
+      $"""
+        <packageSources>
+          <clear />
+          <add key="private" value="{server.V3Url}" allowInsecureConnections="true" />
+        </packageSources>
+      """
+    );
+    var app = SampleSolution.WriteProject(workspace.Root, "App", Project(ALPHA, "5.0.0"));
+    var solution = SampleSolution.WriteSlnx(workspace.Root, "Sample", "App");
+    await using var client = BackendClient.Start(backend, workspace.Path);
+    var asked = new ConcurrentQueue<string>();
+    client.Connection.OnRequest(MethodNames.CREDENTIALS_REQUEST, ProtocolJsonContext.Default.CredentialsRequestParams,
+      ProtocolJsonContext.Default.CredentialsRequestResult, (request, _) =>
+      {
+        asked.Enqueue(request.Source);
+        return Task.FromResult(new CredentialsRequestResult(USER, PASSWORD, false));
+      });
+    await OpenAsync(client, solution, ct);
+
+    var result = await RestoreAsync(client, ct, engine: RestoreEngineNames.CONSOLE);
+
+    Assert.NotEmpty(asked);
+    Assert.Equal(RestoreStates.SUCCEEDED, ResultOf(result, app).Restore);
+    Assert.True(File.Exists(AssetsOf(workspace, "App")));
+  }
+
+  private static Func<int, CancellationToken, Task> WatchFinished(ConcurrentQueue<LogEntry> entries)
+    => async (restores, ct) =>
+    {
+      using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+      timeout.CancelAfter(Timeout);
+      while (entries.Count(entry => entry.Message.StartsWith(FINISHED, StringComparison.Ordinal)) < restores)
+        await Task.Delay(50, timeout.Token).ConfigureAwait(false);
+    };
 }
