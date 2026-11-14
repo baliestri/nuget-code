@@ -24,11 +24,11 @@ Tests run on Microsoft.Testing.Platform. Filter with `--filter-class` or `--filt
 
 `NuGet.VisualStudioCode.AotTests` publishes the backend with NativeAOT once per run and talks to the binary over stdio, so a run takes longer than the unit tests. It needs no network: it uses folder feeds and a local HTTP server that speaks the NuGet V3 and V2 protocols. Three environment variables change how it runs:
 
-| Variable | Effect |
-| --- | --- |
-| `NUGET_VSCODE_BACKEND_PATH` | Use an already published binary instead of publishing. |
-| `NUGET_VSCODE_BACKEND_MODE=jit` | Run the backend on the JIT runtime instead of the AOT binary. |
-| `NUGET_VSCODE_ONLINE_TESTS=1` | Also run the tests that reach nuget.org. They are skipped otherwise. |
+| Variable                        | Effect                                                               |
+| ------------------------------- | -------------------------------------------------------------------- |
+| `NUGET_VSCODE_BACKEND_PATH`     | Use an already published binary instead of publishing.               |
+| `NUGET_VSCODE_BACKEND_MODE=jit` | Run the backend on the JIT runtime instead of the AOT binary.        |
+| `NUGET_VSCODE_ONLINE_TESTS=1`   | Also run the tests that reach nuget.org. They are skipped otherwise. |
 
 Tests that restore use `TestWorkspace`, whose `NuGet.config` clears the inherited sources and points `globalPackagesFolder` inside the test's temporary directory, so nothing is read from or written to the machine's package folder. A test that clears a folder must check that the folder is inside its workspace before asking for it to be cleared.
 

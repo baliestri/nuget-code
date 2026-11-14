@@ -1,5 +1,0 @@
-{
-  "[json][javascript][typescript][javascriptreact][typescriptreact][json][jsonc][markdown][html][css][sass][vue]": {
-    "editor.defaultFormatter": "oxc.oxc-vscode",
-  },
-}
