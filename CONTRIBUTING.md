@@ -121,9 +121,51 @@ This publishes the backend with NativeAOT, bundles the extension and writes `rel
 
 `.github/workflows/ci.yml` runs on pushes to `main` and `develop` and on pull requests: lint, format, types and unit tests; then, for each of the eight targets, on a runner of that system and architecture, the NativeAOT publish, the backend tests and the contract tests against the published binary, and the VSIX, which is kept as an artifact; then the smoke tests in the editor on Windows, Linux and macOS, with the binary taken out of the VSIX. The two musl targets are built and tested in an Alpine container (`scripts/ci/alpine.sh`).
 
-`.github/workflows/release.yml` runs on a `v<version>` tag that matches the version of `apps/extension/package.json`. It attaches the eight VSIX files to a GitHub release and publishes them. A version with a pre-release suffix, such as `3.0.0-alpha.0`, only gets the GitHub release: neither marketplace accepts such a version.
+### Releasing
+
+A release is started from the Actions page, or from the command line, with the version and nothing else:
+
+```powershell
+gh workflow run prepare-release.yml -f version=3.0.0 -f dry_run=true
+gh workflow run prepare-release.yml -f version=3.0.0
+```
+
+With `dry_run` it only prepares the candidate and shows, in the summary of the run, the version change and the new section of the changelog; nothing is pushed. Run it first.
+
+`.github/workflows/prepare-release.yml` does what `git flow release` would, with a check in the middle:
+
+1. **Prepare.** From the tip of `develop` it writes the version to `apps/extension/package.json` and prepends the section of the version to `CHANGELOG.md`, commits both as `chore(release): prepare for v<version>` and pushes the branch `release/v<version>`. That commit is the candidate.
+2. **Validate.** The whole CI runs on the candidate.
+3. **Promote.** If `main` and `develop` did not move meanwhile, the candidate is merged into both, tagged `v<version>`, and the three are pushed together or not at all.
+4. **Publish.** `release.yml` is started on the tag.
+5. **Clean up.** The release branch is deleted.
+
+`.github/workflows/release.yml` is the only workflow that publishes. It runs on a `v<version>` tag that matches the version of `apps/extension/package.json`: pushed by hand, or by dispatch on the tag, which is how `prepare-release.yml` starts it, because a tag pushed by a workflow does not start another one. It builds the eight VSIX files again, attaches them to a GitHub release whose notes are the section of the version in the changelog, and publishes them. A version with a pre-release suffix, such as `3.0.0-alpha.0`, only gets the GitHub release: neither marketplace accepts such a version, and `prepare-release.yml` does not take one.
+
+| What went wrong                                        | What to do                                                                                          |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| The version or the refs were refused                   | Nothing changed. Fix the input and run again.                                                       |
+| The candidate failed validation                        | `main`, `develop` and the tags are untouched. Fix on `develop` and run again with the same version. |
+| `main` or `develop` moved during validation            | Nothing was pushed. Run again.                                                                      |
+| `release.yml` failed for a passing reason              | Run `release.yml` again on the same tag.                                                            |
+| `release.yml` failed for a defect validation missed    | The version is already merged and tagged. Fix on `develop` and release the next patch version.      |
+| The release branch was left behind, changed by someone | It is kept on purpose. Look at it, then delete it by hand.                                          |
 
 Publishing stores no long-lived secret. Both the Visual Studio Marketplace and Open VSX are published with trusted publishing: the job's OIDC token is exchanged for a short-lived publishing token. The trusted publisher configured on each marketplace names this repository and the workflow file, so renaming `release.yml` breaks publishing.
+
+`CHANGELOG.md` is written by [git-cliff](https://git-cliff.org) from the commit messages, as configured in `cliff.toml`, and is not edited by hand. `cliff.toml` passes every message through [typos](https://github.com/crate-ci/typos), so both tools are needed to generate it locally. The packaging script copies the changelog into the VSIX.
+
+Neither `prepare-release.yml` nor the dispatch of `release.yml` has run yet. Whether the marketplaces accept a `release.yml` run that was started by dispatch on a tag is not verified either: check the trusted publisher of each one before the first release.
+
+### Dependencies
+
+Dependabot (`.github/dependabot.yml`) opens weekly pull requests against `develop` for the npm packages, the NuGet packages, the .NET SDK of `backend/global.json` and the GitHub Actions. Its commits are `chore(deps)`, which the changelog leaves out.
+
+`.github/workflows/audit.yml` runs `pnpm audit` and `dotnet list package --vulnerable --include-transitive` every week, on demand, and on pull requests that change a lock file. It is apart from the CI so that an advisory published today does not fail a pull request that has nothing to do with it. The restore of the backend audits too: with warnings as errors, a vulnerable NuGet package breaks the build.
+
+`pnpm-workspace.yaml` overrides a few transitive versions that have advisories and that the editor's test runner still asks for. None of them is in the VSIX. Remove an override when the package that asks for the old version is updated.
+
+Dependabot alerts and security updates are switched on in the settings of the repository, not in a file.
 
 What has been verified so far: before the view was added, the whole workflow passed in CI, the eight targets and the editor smoke tests on Windows, Linux and macOS. The view itself has only been run locally on Windows x64: its tests, the smoke tests in the editor and the packaging of the `win32-x64` VSIX. It has not been through CI yet, and has not been looked at in an editor on Linux or macOS.
 
