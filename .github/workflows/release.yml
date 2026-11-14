@@ -7,9 +7,13 @@ name: Release
 # Both marketplaces are published with trusted publishing: the job's OIDC token is exchanged for a
 # short-lived publishing token, and no long-lived secret is stored. The trusted publisher is configured on
 # each marketplace for this repository and this workflow file, so renaming the file breaks publishing.
+#
+# It also starts by dispatch, which is how prepare-release.yml starts it: a tag pushed by a workflow does not
+# start another workflow. A dispatch has to be on the tag; on a branch, the first job fails.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -23,8 +27,8 @@ jobs:
 
       - run: |
           version="$(node -p "require('./apps/extension/package.json').version")"
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::The tag is $GITHUB_REF_NAME but apps/extension/package.json says $version."
+          if [ "$GITHUB_REF_TYPE" != "tag" ] || [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Run this on the tag v$version: it ran on the $GITHUB_REF_TYPE $GITHUB_REF_NAME."
             exit 1
           fi
 
@@ -70,9 +74,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          flags="--generate-notes"
-          if [ "$PRERELEASE" = "true" ]; then flags="$flags --prerelease"; fi
-          gh release create "$GITHUB_REF_NAME" release-artifacts/*.vsix $flags
+          flags=()
+          if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
+          # The notes are the section of the version in the changelog. A tag pushed by hand for a version
+          # the changelog does not have, such as a pre-release, falls back to generated notes.
+          if pnpm exec tsx scripts/changelog.ts "${GITHUB_REF_NAME#v}" > "$RUNNER_TEMP/notes.md"; then
+            flags+=(--notes-file "$RUNNER_TEMP/notes.md")
+          else
+            flags+=(--generate-notes)
+          fi
+          gh release create "$GITHUB_REF_NAME" release-artifacts/*.vsix --verify-tag "${flags[@]}"
 
       - name: Publish to Open VSX
         if: ${{ env.PRERELEASE == 'false' }}
