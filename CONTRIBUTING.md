@@ -54,6 +54,66 @@ dotnet build NuGet.VisualStudioCode.slnx
 
 Review the cleanup diff and resolve the inspection findings, then run the tests. If an inspection finding contradicts the code, such as a type reported as unused that tests do use, run the inspection again with `--swea` and a fresh `--caches-home` before changing anything: a stale cache produces such findings.
 
+## Extension
+
+The JavaScript side is a pnpm workspace:
+
+| Package                   | What it is                                                                          |
+| ------------------------- | ----------------------------------------------------------------------------------- |
+| `packages/protocol`       | The backend contract in TypeScript: types, method names, error codes.               |
+| `packages/backend-client` | Starts the backend, talks JSON-RPC to it and restarts it. Does not import `vscode`. |
+| `apps/extension`          | The VS Code extension, bundled by rolldown into `dist/extension.js`.                |
+
+The workspace packages are consumed as TypeScript source and have no build step of their own.
+
+### Prerequisites
+
+- Node.js, the version in `.node-version`, and pnpm, the version in `packageManager`.
+- The .NET SDK, as for the backend: the tests start it.
+
+### Build and test
+
+All commands run from the repository root.
+
+```powershell
+pnpm install
+pnpm lint
+pnpm format:check
+pnpm typecheck
+pnpm test
+pnpm --filter nuget-code test:integration
+```
+
+`pnpm test` runs the unit tests and the contract tests of `packages/backend-client`. The contract tests start a real backend: the Debug build, which they build first, or the binary named by `NUGET_VSCODE_BACKEND_PATH`. They call every method of the protocol and fail when an answer has a field the TypeScript types do not declare, which is what keeps the types and the backend from drifting apart. `packages/protocol` has a test that compares its constants with the C# source.
+
+`test:integration` runs a few smoke tests inside a real editor, which it downloads to `apps/extension/.vscode-test/` the first time. It opens a workspace it generates there. With `NUGET_VSCODE_BACKEND_BUNDLED=1` the extension finds the backend under `apps/extension/bin/<target>/`, as an installed package does; otherwise it uses the Debug build or `NUGET_VSCODE_BACKEND_PATH`.
+
+To run the extension by hand, set `nuget.backend.path` to the Debug `NuGet.VisualStudioCode.dll` and start an Extension Development Host on `apps/extension`. The repository has no launch configuration for it yet.
+
+### Rules for extension changes
+
+- A module that decides something is written without importing `vscode` and has unit tests. The modules that touch the editor API stay thin; the smoke tests cover them.
+- A change to the protocol is made in three places together: the C# records, `packages/protocol`, and the contract test of the method.
+- Do not pass an explicit `undefined` cancellation token to `vscode-jsonrpc`'s `sendRequest`: it takes it for a second parameter and sends the params as an array.
+
+### Packaging
+
+```powershell
+pnpm package win32-x64
+```
+
+This publishes the backend with NativeAOT, bundles the extension and writes `release-artifacts/nuget-code-<target>-<version>.vsix`. NativeAOT does not compile from one operating system to another, so a target can only be built on its own system; `--backend <executable>` packages a binary that was published elsewhere.
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on pushes to `main` and `develop` and on pull requests: lint, format, types and unit tests; then, for each of the eight targets, on a runner of that system and architecture, the NativeAOT publish, the backend tests and the contract tests against the published binary, and the VSIX, which is kept as an artifact; then the smoke tests in the editor on Windows, Linux and macOS, with the binary taken out of the VSIX. The two musl targets are built and tested in an Alpine container (`scripts/ci/alpine.sh`).
+
+`.github/workflows/release.yml` runs on a `v<version>` tag that matches the version of `apps/extension/package.json`. It attaches the eight VSIX files to a GitHub release and publishes them. A version with a pre-release suffix, such as `3.0.0-alpha.0`, only gets the GitHub release: neither marketplace accepts such a version.
+
+Publishing uses no long-lived secret where it can. Open VSX is published with trusted publishing: the job's OIDC token is exchanged for a short-lived one, and the trusted publisher configured on open-vsx.org names this repository and the workflow file, so renaming `release.yml` breaks it. The Visual Studio Marketplace is published the same way when the repository variable `VSCE_OIDC` is `true`; otherwise with the `VSCE_PAT` secret when it exists; otherwise it is skipped.
+
+What has been verified so far: everything above was run on Windows x64, including the packaged `win32-x64` VSIX. The workflows were checked with `actionlint` and have not run yet; the other seven targets have never been built.
+
 ## Commits
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/). Branches are managed with git-flow: `main` holds releases and `develop` is the integration branch.
