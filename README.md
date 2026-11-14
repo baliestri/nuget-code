@@ -59,15 +59,15 @@ Open a folder that has a solution or a project. The extension starts its backend
 
 ## Troubleshooting
 
-| What you see                                  | What to check                                                                                                                                |
-| :-------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------- |
-| The status bar says **NuGet: stopped**        | Click it to restart the backend, and read the **Log** tab or the **NuGet** output channel for why it stopped.                                |
-| "The .NET SDK was not found"                  | Install an SDK, or point `nuget.dotnetPath` at `dotnet`.                                                                                     |
-| The Packages tab asks to select a solution    | The workspace has several solutions and none was used before. Select one; it is remembered.                                                  |
-| A package carries a warning                   | It is not restored in some project. Press **Restore**, then read the log if it fails.                                                        |
-| A feed asks for credentials again and again   | The stored ones were refused. Run **NuGet: Clear Saved Credentials** and enter them again.                                                   |
-| An update changed more projects than expected | The version is shared, in `Directory.Packages.props` or a property. The notification that follows the update says which projects it reached. |
-| Restore fails only with the embedded engine   | Set `nuget.restore.engine` to `console` or `msbuild`.                                                                                        |
+| What you see                                          | What to check                                                                                                                                |
+| :---------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------- |
+| The status bar says **NuGet: stopped**                | Click it to restart the backend, and read the **Log** tab or the **NuGet** output channel for why it stopped.                                |
+| "The .NET SDK was not found"                          | Install an SDK, or point `nuget.dotnetPath` at `dotnet`.                                                                                     |
+| The Packages tab asks to select a solution            | The workspace has several solutions and none was used before. Select one; it is remembered.                                                  |
+| A package carries a warning                           | It is not restored in some project. Press **Restore**, then read the log if it fails.                                                        |
+| A private feed fails and nothing asks for credentials | A prompt was cancelled, which stops the asking for that server. Run **NuGet: Clear Saved Credentials** and try again.                        |
+| An update changed more projects than expected         | The version is shared, in `Directory.Packages.props` or a property. The notification that follows the update says which projects it reached. |
+| Restore fails only with the embedded engine           | Set `nuget.restore.engine` to `console` or `msbuild`.                                                                                        |
 
 ## Documentation
 
