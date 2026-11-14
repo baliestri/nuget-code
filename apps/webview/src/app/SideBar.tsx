@@ -1,22 +1,27 @@
 import type { ReactNode } from "react";
-import { useBridge } from "../bridge/BridgeContext";
+import { useBridge, useSession } from "../bridge/BridgeContext";
+import { useOperation } from "../state/operation";
 import { IconButton } from "../ui/IconButton";
 
 export const HELP_URL = "https://github.com/baliestri/nuget-code/blob/main/wiki/extension.md";
 
-interface SideBarProps {
-  /** Runs a restore; absent while it cannot run. */
-  onRestore?: (() => void) | undefined;
-  /** The buttons of the tab, between Restore and Settings. */
-  children?: ReactNode;
-}
-
-/** The column of icon buttons on the left of every tab: Restore, the tab's own actions, Settings, Help. */
-export function SideBar({ onRestore, children }: SideBarProps): ReactNode {
+/**
+ * The column of icon buttons on the left of every tab: Restore, the tab's own actions (the children),
+ * Settings and Help.
+ */
+export function SideBar({ children }: { children?: ReactNode }): ReactNode {
   const bridge = useBridge();
+  const session = useSession();
+  const operation = useOperation();
+  const canRestore = session?.backend === "ready" && session.solution.kind === "open" && !operation.running;
   return (
     <nav aria-label="Actions" className="border-border flex shrink-0 flex-col items-center gap-1 border-r px-1 py-2">
-      <IconButton icon="cloud-download" label="Restore" onClick={onRestore} disabled={onRestore === undefined} />
+      <IconButton
+        icon="cloud-download"
+        label="Restore"
+        disabled={!canRestore}
+        onClick={() => void operation.run("Restore", () => bridge.backend("restore", { force: false }))}
+      />
       {children}
       <IconButton
         icon="settings-gear"

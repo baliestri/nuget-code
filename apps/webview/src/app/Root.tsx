@@ -2,6 +2,7 @@ import type { BridgeClient } from "@nuget-code/bridge";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import { BridgeProvider } from "../bridge/BridgeContext";
+import { OperationProvider } from "../state/operation";
 import { PreferencesProvider, type StateStorage } from "../state/PreferencesContext";
 import { App } from "./App";
 
@@ -25,7 +26,9 @@ export function Root({ client, storage }: { client: BridgeClient; storage: State
     <QueryClientProvider client={queries}>
       <BridgeProvider client={client}>
         <PreferencesProvider storage={storage}>
-          <App />
+          <OperationProvider>
+            <App />
+          </OperationProvider>
         </PreferencesProvider>
       </BridgeProvider>
     </QueryClientProvider>

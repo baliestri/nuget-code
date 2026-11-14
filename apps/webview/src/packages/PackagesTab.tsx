@@ -1,12 +1,248 @@
-import type { ReactNode } from "react";
-import { Placeholder } from "../app/Placeholder";
+import { PackageChangeKinds, type PackageChangeParams, type ProjectInfo } from "@nuget-code/protocol";
+import { useQueries } from "@tanstack/react-query";
+import { useMemo, useState, type ReactNode } from "react";
 import { SideBar } from "../app/SideBar";
+import { useBridge, useSession } from "../bridge/BridgeContext";
+import { useDebounced } from "../lib/useDebounced";
+import { useOperation } from "../state/operation";
+import { usePreferences } from "../state/PreferencesContext";
+import { Banner } from "../ui/Banner";
+import { IconButton } from "../ui/IconButton";
+import { DetailsPanel, NoSelection } from "./DetailsPanel";
+import { DiscoverView } from "./DiscoverView";
+import { InstalledView } from "./InstalledView";
+import { buildRows, filterRows, sortRows, targetOptions, updateChanges } from "./model";
+import { OperationBar, ResultBanner } from "./OperationStatus";
+import { queryKeys, useInstalled, useRefresh, useSearch, useSolutionSync, useSources, useUpdates } from "./queries";
+import { Toolbar } from "./Toolbar";
 
+const SEARCH_DELAY_MS = 300;
+/** Icons of installed packages are fetched for this many at most, so a huge solution does not flood the feeds. */
+const ICON_LIMIT = 60;
+const NO_PROJECTS: readonly ProjectInfo[] = [];
+
+/** The Packages tab: the installed and the available packages on the left, the selected one on the right. */
 export function PackagesTab(): ReactNode {
+  const bridge = useBridge();
+  const session = useSession();
+  const { preferences, set } = usePreferences();
+  const operation = useOperation();
+  const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState<string>();
+  const [checked, setChecked] = useState<ReadonlySet<string>>(new Set());
+  const query = useDebounced(search.trim(), SEARCH_DELAY_MS);
+
+  const projects = session?.solution.kind === "open" ? session.solution.projects : NO_PROJECTS;
+  // A remembered target that is not a project of this solution means the whole solution.
+  const target = projects.some((project) => project.path === preferences.target) ? preferences.target : null;
+  const { feed, prerelease } = preferences;
+
+  useSolutionSync();
+  const installed = useInstalled();
+  const updates = useUpdates(prerelease);
+  const sources = useSources();
+  const discovering = preferences.packagesView === "discover";
+  const found = useSearch(query, feed, prerelease, discovering);
+  const refresh = useRefresh(prerelease);
+
+  const allRows = useMemo(
+    () =>
+      installed.data === undefined
+        ? []
+        : buildRows({ installed: installed.data, projects, target, updates: updates.data, feed, prerelease }),
+    [installed.data, projects, target, updates.data, feed, prerelease]
+  );
+  const rows = useMemo(
+    () => sortRows(filterRows(allRows, query), preferences.sort),
+    [allRows, query, preferences.sort]
+  );
+  const updateCount = allRows.filter((row) => row.hasUpdate).length;
+
+  // The icons of the installed packages come with their details, which are asked for once and kept.
+  const iconIds = allRows.slice(0, ICON_LIMIT).map((row) => row.id);
+  const icons = useQueries({
+    queries: iconIds.map((id) => ({
+      queryKey: queryKeys.details(id, feed, prerelease),
+      queryFn: () =>
+        bridge.backend("packageDetails", { id, ...(feed === null ? {} : { feed }), prerelease, noCache: false })
+    }))
+  });
+  const iconOf = (id: string): string | undefined => {
+    const index = iconIds.indexOf(id);
+    return index < 0 ? undefined : icons[index]?.data?.iconUrl;
+  };
+
+  const targetProjects = target === null ? projects : projects.filter((project) => project.path === target);
+  const targetName = target === null ? "Solution" : (targetProjects[0]?.name ?? "Solution");
+  const selectedRow = allRows.find((row) => row.id.toLowerCase() === selectedId?.toLowerCase());
+
+  const change = (
+    title: string,
+    changes: PackageChangeParams[],
+    action: () => ReturnType<typeof bridge.backend<"updatePackages">>
+  ): void => {
+    void operation.run(title, action, () => bridge.backend("planPackages", { changes }));
+  };
+  const update = (id: string, paths: readonly string[], version: string): void => {
+    const changes = [{ kind: PackageChangeKinds.update, id, version, projects: paths }];
+    change("Update", changes, () => bridge.backend("updatePackages", { changes }));
+  };
+  const updateChecked = (): void => {
+    const changes = updateChanges(allRows, checked);
+    if (changes.length > 0) {
+      change("Update", changes, () => bridge.backend("updatePackages", { changes }));
+      setChecked(new Set());
+    }
+  };
+  const install = (id: string, paths: readonly string[], version: string): void => {
+    change("Install", [{ kind: PackageChangeKinds.install, id, version, projects: paths }], () =>
+      bridge.backend("installPackage", { id, version, projects: paths })
+    );
+  };
+  const remove = (id: string, paths: readonly string[]): void => {
+    change("Remove", [{ kind: PackageChangeKinds.remove, id, projects: paths }], () =>
+      bridge.backend("removePackage", { id, projects: paths })
+    );
+  };
+
+  const side = preferences.detailsPosition === "side";
+  const failures = [...(updates.data?.failures ?? []), ...(discovering ? (found.data?.failures ?? []) : [])];
+
   return (
     <>
-      <SideBar />
-      <Placeholder title="Packages" />
+      <SideBar>
+        <IconButton icon="refresh" label="Refresh NuGet Packages and Clear the Caches" onClick={refresh} />
+        <IconButton
+          icon={side ? "split-vertical" : "split-horizontal"}
+          label={side ? "Show Details Below" : "Show Details on the Side"}
+          onClick={() => set({ detailsPosition: side ? "bottom" : "side" })}
+        />
+        <IconButton
+          icon="sort-precedence"
+          label={
+            preferences.sort === "smart"
+              ? "Sort: Smart. Click for Alphabetically"
+              : "Sort: Alphabetically. Click for Smart"
+          }
+          pressed={preferences.sort === "alphabetical"}
+          onClick={() => set({ sort: preferences.sort === "smart" ? "alphabetical" : "smart" })}
+        />
+      </SideBar>
+      <div
+        data-details={preferences.detailsPosition}
+        className={`flex min-h-0 min-w-0 flex-1 ${side ? "flex-row" : "flex-col"}`}
+      >
+        <section aria-label="Packages" className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <Toolbar
+            search={search}
+            onSearch={setSearch}
+            targets={targetOptions(projects, installed.data)}
+            target={target}
+            onTarget={(value) => {
+              set({ target: value });
+              setChecked(new Set());
+            }}
+            feeds={sources.data?.effective ?? []}
+            feed={feed}
+            onFeed={(value) => set({ feed: value })}
+            onManageFeeds={() => set({ tab: "sources" })}
+            prerelease={prerelease}
+            onPrerelease={(value) => set({ prerelease: value })}
+          />
+          <div role="tablist" aria-label="Package lists" className="flex gap-1 px-2 pb-1">
+            <ListTab selected={!discovering} onSelect={() => set({ packagesView: "installed" })}>
+              Installed
+              {updateCount === 0 ? null : (
+                <span
+                  aria-label={`${updateCount} with updates`}
+                  className="bg-badge text-badge-fg ml-1 rounded-full px-1.5"
+                >
+                  {updateCount}
+                </span>
+              )}
+            </ListTab>
+            <ListTab selected={discovering} onSelect={() => set({ packagesView: "discover" })}>
+              Discover
+            </ListTab>
+          </div>
+          {failures.map((failure) => (
+            <Banner key={`${failure.feed}/${failure.kind}`} kind="warning">
+              {failure.feed}: {failure.message}
+            </Banner>
+          ))}
+          {installed.isError && !discovering ? (
+            <Banner kind="error">The installed packages could not be read. {installed.error.message}</Banner>
+          ) : null}
+          {discovering ? (
+            <DiscoverView
+              packages={found.data?.packages}
+              loading={found.isFetching}
+              error={found.isError ? found.error.message : undefined}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+            />
+          ) : (
+            <InstalledView
+              rows={rows}
+              targetName={targetName}
+              loading={installed.isPending && !installed.isError}
+              updatesLoading={updates.isFetching}
+              selectedId={selectedRow?.id}
+              onSelect={setSelectedId}
+              checked={checked}
+              onCheck={setChecked}
+              onUpdate={updateChecked}
+              busy={operation.running}
+              iconOf={iconOf}
+            />
+          )}
+          <OperationBar />
+        </section>
+        <section
+          aria-label="Details"
+          className={`border-border flex min-h-0 min-w-0 flex-1 flex-col ${side ? "border-l" : "border-t"}`}
+        >
+          <ResultBanner />
+          {selectedId === undefined ? (
+            <NoSelection />
+          ) : (
+            <DetailsPanel
+              key={selectedId.toLowerCase()}
+              id={selectedId}
+              row={selectedRow}
+              projects={targetProjects}
+              feed={feed}
+              prerelease={prerelease}
+              busy={operation.running}
+              onInstall={(paths, version) => install(selectedId, paths, version)}
+              onUpdate={(paths, version) => update(selectedId, paths, version)}
+              onRemove={(paths) => remove(selectedId, paths)}
+            />
+          )}
+        </section>
+      </div>
     </>
+  );
+}
+
+function ListTab({
+  selected,
+  onSelect,
+  children
+}: {
+  selected: boolean;
+  onSelect(): void;
+  children: ReactNode;
+}): ReactNode {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={selected}
+      onClick={onSelect}
+      className={`flex items-center rounded px-2 py-0.5 ${selected ? "border-border bg-surface border" : "hover:bg-hover border border-transparent"}`}
+    >
+      {children}
+    </button>
   );
 }

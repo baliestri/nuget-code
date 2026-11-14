@@ -31,6 +31,26 @@ installSampleData(fake);
 // The page can be driven from the console, or by whoever is taking screenshots.
 Object.assign(window, { fake });
 
+// ?click=<accessible names, separated by |> presses those controls in turn once the page has settled, so a
+// screenshot can show a state that takes interaction to reach.
+const clicks = (query.get("click") ?? "").split("|").filter((name) => name !== "");
+if (clicks.length > 0) {
+  const press = (index: number): void => {
+    const name = clicks[index];
+    if (name === undefined) {
+      return;
+    }
+
+    const controls = [...document.querySelectorAll<HTMLElement>("button, input, [role=tab]")];
+    const control = controls.find((element) =>
+      (element.getAttribute("aria-label") ?? element.textContent ?? "").trim().startsWith(name)
+    );
+    control?.click();
+    setTimeout(() => press(index + 1), 250);
+  };
+  setTimeout(() => press(0), 600);
+}
+
 const stored = query.get("prefs");
 createRoot(document.getElementById("root")!).render(
   <Root client={fake.client} storage={createMemoryStorage(stored === null ? undefined : JSON.parse(stored))} />
