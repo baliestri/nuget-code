@@ -159,7 +159,13 @@ Neither `prepare-release.yml` nor the dispatch of `release.yml` has run yet. Whe
 
 ### Dependencies
 
-Dependabot (`.github/dependabot.yml`) opens weekly pull requests against `develop` for the npm packages, the NuGet packages, the .NET SDK of `backend/global.json` and the GitHub Actions. Its commits are `chore(deps)`, which the changelog leaves out.
+Dependabot (`.github/dependabot.yml`) opens weekly pull requests against `develop` for the npm packages, the NuGet packages and the GitHub Actions. Its commits are `chore(deps)`, which the changelog leaves out.
+
+Three things are left out of it and raised by hand:
+
+- The .NET SDK. `backend/global.json` pins it to 10.0.403, with roll-forward to the latest patch.
+- The next major of the NuGet packages that are versioned with the .NET runtime (`System.*`, `Microsoft.Extensions.*`), which is for the next .NET.
+- `@types/vscode`, which follows `engines.vscode` of the extension: `vsce` refuses to package with newer types.
 
 `.github/workflows/audit.yml` runs `pnpm audit` and `dotnet list package --vulnerable --include-transitive` every week, on demand, and on pull requests that change a lock file. It is apart from the CI so that an advisory published today does not fail a pull request that has nothing to do with it. The restore of the backend audits too: with warnings as errors, a vulnerable NuGet package breaks the build.
 

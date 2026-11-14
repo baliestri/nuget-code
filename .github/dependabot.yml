@@ -14,6 +14,10 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # The types of the editor's API follow engines.vscode of the extension, the oldest editor it supports:
+      # vsce refuses to package with newer types. They are raised by hand, together with engines.vscode.
+      - dependency-name: "@types/vscode"
 
   - package-ecosystem: nuget
     directory: /backend
@@ -26,14 +30,16 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # These packages are versioned with the .NET runtime, and the backend stays on the .NET 10 SDK: their
+      # next major is for the next .NET. Updates within the major still come.
+      - dependency-name: "System.*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Microsoft.Extensions.*"
+        update-types: ["version-update:semver-major"]
 
-  # The SDK version of backend/global.json.
-  - package-ecosystem: dotnet-sdk
-    directory: /backend
-    schedule:
-      interval: weekly
-    commit-message:
-      prefix: chore(deps)
+  # The .NET SDK is not watched here. backend/global.json pins it to 10.0.403, with roll-forward to the latest
+  # patch, and it is raised by hand: a new SDK is a decision about the backend, not a routine update.
 
   - package-ecosystem: github-actions
     directory: /
