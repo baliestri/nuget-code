@@ -28,6 +28,7 @@ internal static class LifecycleMethods {
 
         options.RestoreEngine = parameters.RestoreEngine ?? options.RestoreEngine;
         options.RestoreOnOpen = parameters.RestoreOnOpen ?? options.RestoreOnOpen;
+        options.Audit = parameters.Audit ?? options.Audit;
 
         var info = await sdk.DescribeAsync(Environment.CurrentDirectory, ct).ConfigureAwait(false);
         log.Write(LogLevels.INFO, LogContexts.BACKEND,

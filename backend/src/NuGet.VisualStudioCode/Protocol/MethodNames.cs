@@ -21,6 +21,7 @@ internal static class MethodNames {
   public const string OPERATION_PROGRESS = "operation/progress";
   public const string PACKAGES_SEARCH = "packages/search";
   public const string PACKAGES_DETAILS = "packages/details";
+  public const string PACKAGES_VULNERABILITIES = "packages/vulnerabilities";
 
   public const string RESTORE_RUN = "restore/run";
   public const string RESTORE_DID_FINISH = "restore/didFinish";

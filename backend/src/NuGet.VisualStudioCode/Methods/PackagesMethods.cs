@@ -11,7 +11,11 @@ namespace NuGet.VisualStudioCode.Methods;
 
 internal static class PackagesMethods {
   public static void Register(RpcConnection connection, SessionManager sessions, PackageSearchService search,
-    PackageDetailsService details, PackageUpdatesService updates) {
+    PackageDetailsService details, PackageUpdatesService updates, VulnerabilityService vulnerabilities) {
+    connection.OnRequest(MethodNames.PACKAGES_VULNERABILITIES,
+      ProtocolJsonContext.Default.PackagesVulnerabilitiesParams,
+      ProtocolJsonContext.Default.PackagesVulnerabilitiesResult,
+      (parameters, ct) => vulnerabilities.CheckAsync(Resolved(sessions), parameters.NoCache, ct));
     connection.OnRequest(MethodNames.PACKAGES_UPDATES, ProtocolJsonContext.Default.PackagesUpdatesParams,
       ProtocolJsonContext.Default.PackagesUpdatesResult,
       (parameters, ct) => UpdatesAsync(connection, sessions, updates, parameters, ct));
@@ -60,6 +64,13 @@ internal static class PackagesMethods {
       .ToList();
     return new ProjectPackages(model.Info.Path, packages, assets?.Transitive ?? []);
   }
+
+  /// <summary>Every package version the last restore resolved, referenced or transitive, in any project.</summary>
+  private static List<(string Id, string Version)> Resolved(SessionManager sessions)
+    => sessions.Require().Projects
+      .SelectMany(model => Assets(model)?.Resolved ?? new Dictionary<string, string>(StringComparer.Ordinal))
+      .Select(package => (package.Key, package.Value))
+      .ToList();
 
   private static ResolvedAssets? Assets(EvaluatedProject model)
     => AssetsReader.Read(model.AssetsPath, model.Packages.Select(package => package.Id).ToList());

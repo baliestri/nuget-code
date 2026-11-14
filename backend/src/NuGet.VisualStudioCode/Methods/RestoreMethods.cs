@@ -34,6 +34,7 @@ internal static class RestoreMethods {
       {
         options.RestoreEngine = parameters.RestoreEngine ?? options.RestoreEngine;
         options.RestoreOnOpen = parameters.RestoreOnOpen ?? options.RestoreOnOpen;
+        options.Audit = parameters.Audit ?? options.Audit;
         return Task.CompletedTask;
       });
   }

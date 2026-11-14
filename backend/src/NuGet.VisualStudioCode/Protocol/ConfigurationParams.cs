@@ -3,4 +3,4 @@
 
 namespace NuGet.VisualStudioCode.Protocol;
 
-internal sealed record ConfigurationParams(string? RestoreEngine, bool? RestoreOnOpen);
+internal sealed record ConfigurationParams(string? RestoreEngine, bool? RestoreOnOpen, bool? Audit = null);

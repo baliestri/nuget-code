@@ -18,6 +18,7 @@ public sealed class TestFeedServer : IDisposable {
   private const string JSON = "application/json";
   private const string PACKAGE_SUFFIX = ".nupkg";
   private const int START_ATTEMPTS = 5;
+  private const string VULNERABILITIES = "/v3/vulnerabilities/";
 
   private readonly string _baseUrl;
   private readonly HttpListener _listener = new();
@@ -43,6 +44,15 @@ public sealed class TestFeedServer : IDisposable {
 
   /// <summary>How long the server holds a package download, so a test can act while a restore is running.</summary>
   public TimeSpan PackageDelay { get; init; }
+
+  /// <summary>
+  ///   What the feed knows about vulnerabilities. When <c>null</c> the feed does not publish that resource at
+  ///   all, like most feeds other than nuget.org; an empty list is a feed that publishes it and knows none.
+  /// </summary>
+  public IReadOnlyList<TestFeedVulnerability>? Vulnerabilities { get; init; }
+
+  /// <summary>Makes the vulnerability pages answer with a server error, as a feed in trouble would.</summary>
+  public bool FailVulnerabilities { get; init; }
 
   public void Dispose() {
     _stopping.Cancel();
@@ -124,6 +134,13 @@ public sealed class TestFeedServer : IDisposable {
       return;
     }
 
+    if (FailVulnerabilities &&
+        path.StartsWith(VULNERABILITIES, StringComparison.Ordinal)) {
+      context.Response.StatusCode = 500;
+      context.Response.Close();
+      return;
+    }
+
     var query = context.Request.QueryString;
     var isPackage = path.EndsWith(PACKAGE_SUFFIX, StringComparison.OrdinalIgnoreCase);
     var (contentType, body) = isPackage ? (BINARY, null) : Route(path, query["q"], query["id"], query["prerelease"]);
@@ -171,6 +188,16 @@ public sealed class TestFeedServer : IDisposable {
       return (JSON, Registration(Segment(path, 3)));
     }
 
+    if (Vulnerabilities is not null &&
+        string.Equals(path, VULNERABILITIES + "index.json", StringComparison.Ordinal)) {
+      return (JSON, VulnerabilityIndex());
+    }
+
+    if (Vulnerabilities is not null &&
+        string.Equals(path, VULNERABILITIES + "base.json", StringComparison.Ordinal)) {
+      return (JSON, VulnerabilityPage(Vulnerabilities));
+    }
+
     if (string.Equals(path, "/v2/FindPackagesById()", StringComparison.Ordinal)) {
       return (ATOM, AtomFeed((idFilter ?? string.Empty).Trim('\'')));
     }
@@ -209,11 +236,29 @@ public sealed class TestFeedServer : IDisposable {
       .OrderBy(package => NuGetVersion.Parse(package.Version))
       .ToList();
 
+  // One page, with every vulnerability the feed knows.
+  private string VulnerabilityIndex()
+    => $$"""
+      [{ "@name": "base", "@id": "{{_baseUrl}}{{VULNERABILITIES}}base.json", "@updated": "2026-01-01T00:00:00Z", "comment": "Everything." }]
+      """;
+
+  // A map from the package id, in lower case, to the advisories about it.
+  private static string VulnerabilityPage(IReadOnlyList<TestFeedVulnerability> vulnerabilities) {
+    var packages = vulnerabilities
+      .GroupBy(vulnerability => vulnerability.Id.ToLowerInvariant(), StringComparer.Ordinal)
+      .Select(group => $"\"{group.Key}\": [{string.Join(",", group.Select(Advisory))}]");
+    return "{" + string.Join(",", packages) + "}";
+  }
+
+  private static string Advisory(TestFeedVulnerability vulnerability)
+    => string.Create(CultureInfo.InvariantCulture,
+      $$"""{ "url": "{{vulnerability.Url}}", "severity": {{vulnerability.Severity}}, "versions": "{{vulnerability.Versions}}" }""");
+
   private string ServiceIndex()
     => $$"""
       {
         "version": "3.0.0",
-        "resources": [
+        "resources": [{{(Vulnerabilities is null ? string.Empty : VulnerabilityResource())}}
           { "@id": "{{_baseUrl}}/v3/query", "@type": "SearchQueryService" },
           { "@id": "{{_baseUrl}}/v3/query", "@type": "SearchQueryService/3.0.0-beta" },
           { "@id": "{{_baseUrl}}/v3/query", "@type": "SearchQueryService/3.0.0-rc" },
@@ -224,6 +269,11 @@ public sealed class TestFeedServer : IDisposable {
           { "@id": "{{_baseUrl}}/v3/flat/", "@type": "PackageBaseAddress/3.0.0" }
         ]
       }
+      """;
+
+  private string VulnerabilityResource()
+    => $$"""
+      { "@id": "{{_baseUrl}}{{VULNERABILITIES}}index.json", "@type": "VulnerabilityInfo/6.7.0" },
       """;
 
   private string Search(string term, bool prerelease) {

@@ -163,7 +163,8 @@ describe("what the host refuses and ignores", () => {
   it("the allowed list has every backend method the view uses and none that control the session", () => {
     expect(ALLOWED_BACKEND_METHODS).toContain("installedPackages");
     expect(ALLOWED_BACKEND_METHODS).toContain("clearFolders");
-    expect(ALLOWED_BACKEND_METHODS).toHaveLength(18);
+    expect(ALLOWED_BACKEND_METHODS).toContain("packageVulnerabilities");
+    expect(ALLOWED_BACKEND_METHODS).toHaveLength(19);
     for (const method of ["initialize", "shutdown", "openSolution", "closeSolution", "resetCredentials"]) {
       expect(ALLOWED_BACKEND_METHODS).not.toContain(method);
     }

@@ -7,5 +7,6 @@ internal sealed record InitializeParams(
   string? DotnetPath,
   int? FeedTimeoutSeconds,
   string? RestoreEngine,
-  bool? RestoreOnOpen
+  bool? RestoreOnOpen,
+  bool? Audit = null
 );

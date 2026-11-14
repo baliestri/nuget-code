@@ -38,6 +38,8 @@ namespace NuGet.VisualStudioCode.Protocol;
 [JsonSerializable(typeof(PackagesSearchResult))]
 [JsonSerializable(typeof(PackagesDetailsParams))]
 [JsonSerializable(typeof(PackageDetailsResult))]
+[JsonSerializable(typeof(PackagesVulnerabilitiesParams))]
+[JsonSerializable(typeof(PackagesVulnerabilitiesResult))]
 [JsonSerializable(typeof(SourcesListResult))]
 [JsonSerializable(typeof(SourceWriteParams))]
 [JsonSerializable(typeof(SourceRemoveParams))]

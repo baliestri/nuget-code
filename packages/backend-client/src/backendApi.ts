@@ -28,6 +28,8 @@ import type {
   PackagesUpdateParams,
   PackagesUpdatesParams,
   PackagesUpdatesResult,
+  PackagesVulnerabilitiesParams,
+  PackagesVulnerabilitiesResult,
   ProgressParams,
   RestoreDidFinishParams,
   RestoreRunParams,
@@ -153,6 +155,13 @@ export class BackendApi {
 
   packageUpdates(params: PackagesUpdatesParams, token?: CancellationToken): Promise<PackagesUpdatesResult> {
     return this.request(Methods.packagesUpdates, params, token);
+  }
+
+  packageVulnerabilities(
+    params: PackagesVulnerabilitiesParams,
+    token?: CancellationToken
+  ): Promise<PackagesVulnerabilitiesResult> {
+    return this.request(Methods.packagesVulnerabilities, params, token);
   }
 
   searchPackages(params: PackagesSearchParams, token?: CancellationToken): Promise<PackagesSearchResult> {

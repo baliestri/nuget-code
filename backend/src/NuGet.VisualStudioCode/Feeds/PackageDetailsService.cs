@@ -13,7 +13,8 @@ internal sealed class PackageDetailsService(
   FeedRegistry feeds,
   FeedQuery query,
   NuGetLogAdapter logger,
-  TimedCache<PackageDetailsResult> cache
+  TimedCache<PackageDetailsResult> cache,
+  VulnerabilityService vulnerabilities
 ) {
   public Task<PackageDetailsResult> GetAsync(PackagesDetailsParams parameters, CancellationToken ct)
     => cache.GetAsync($"{parameters.Feed}|{parameters.Id}|{parameters.Prerelease}", parameters.NoCache,
@@ -51,7 +52,7 @@ internal sealed class PackageDetailsService(
     var hit = outcome.Results.FirstOrDefault(result => result.Value.Count > 0);
     if (hit is null) {
       return new PackageDetailsResult(parameters.Id, [], null, null, null, null, null, null, [], null,
-        outcome.Failures);
+        outcome.Failures, []);
     }
 
     var latest = hit.Value.MaxBy(metadata => metadata.Identity.Version)!;
@@ -60,12 +61,14 @@ internal sealed class PackageDetailsService(
       .Select(metadata => metadata.Identity.Version)
       .Distinct()
       .OrderDescending()
-      .Select(version => version.ToNormalizedString())
       .ToList();
+    var vulnerable = await vulnerabilities.VersionsAsync(latest.Identity.Id, versions, ct).ConfigureAwait(false);
 
-    return new PackageDetailsResult(latest.Identity.Id, versions, latest.Description, latest.Authors,
-      latest.LicenseMetadata?.License, latest.LicenseUrl?.ToString(), latest.ProjectUrl?.ToString(),
-      latest.IconUrl?.ToString(), Groups(latest), hit.Feed, outcome.Failures);
+    return new PackageDetailsResult(latest.Identity.Id,
+      versions.Select(version => version.ToNormalizedString()).ToList(),
+      latest.Description, latest.Authors, latest.LicenseMetadata?.License, latest.LicenseUrl?.ToString(),
+      latest.ProjectUrl?.ToString(), latest.IconUrl?.ToString(), Groups(latest), hit.Feed, outcome.Failures,
+      vulnerable);
   }
 
   private async Task<List<IPackageSearchMetadata>> LoadOneAsync(SourceRepository repository,

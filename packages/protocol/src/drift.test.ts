@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  AdvisorySeverities,
   ErrorCodes,
   FeedFailureKinds,
   LogContexts,
@@ -45,6 +46,7 @@ describe("the protocol constants match the backend", () => {
     ["Logging/LogContexts.cs", LogContexts],
     ["Feeds/ProgressKinds.cs", ProgressKinds],
     ["Feeds/FeedFailureKinds.cs", FeedFailureKinds],
+    ["Feeds/AdvisorySeverities.cs", AdvisorySeverities],
     ["Projects/VersionOriginKinds.cs", VersionOriginKinds]
   ] as const)("%s", (file, constants) => {
     const expected = constantsOf(file);

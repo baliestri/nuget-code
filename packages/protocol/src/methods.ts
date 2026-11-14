@@ -14,6 +14,7 @@ export const Methods = {
   packagesUpdates: "packages/updates",
   packagesSearch: "packages/search",
   packagesDetails: "packages/details",
+  packagesVulnerabilities: "packages/vulnerabilities",
   packagesPlan: "packages/plan",
   packagesInstall: "packages/install",
   packagesUpdate: "packages/update",

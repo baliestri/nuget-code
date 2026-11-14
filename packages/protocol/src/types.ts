@@ -4,6 +4,7 @@
  */
 
 import type {
+  AdvisorySeverity,
   FeedFailureKind,
   LogContext,
   LogLevel,
@@ -29,6 +30,8 @@ export interface InitializeParams {
   feedTimeoutSeconds?: number;
   restoreEngine?: RestoreEngine;
   restoreOnOpen?: boolean;
+  /** Whether the feeds are asked about known vulnerabilities. Defaults to true. */
+  audit?: boolean;
 }
 
 export interface SdkInfo {
@@ -45,6 +48,7 @@ export interface InitializeResult {
 export interface ConfigurationParams {
   restoreEngine?: RestoreEngine;
   restoreOnOpen?: boolean;
+  audit?: boolean;
 }
 
 // Solution
@@ -203,6 +207,40 @@ export interface PackageDetailsResult {
   iconUrl?: string;
   dependencyGroups: readonly DependencyGroupInfo[];
   feed?: string;
+  failures: readonly FeedFailure[];
+  /** Of `versions`, the ones with known vulnerabilities. Empty when the audit is off. */
+  vulnerableVersions: readonly VulnerableVersion[];
+}
+
+// Vulnerabilities
+
+/** One known vulnerability of a package version. */
+export interface AdvisoryInfo {
+  severity: AdvisorySeverity;
+  /** The page that describes it. */
+  url: string;
+}
+
+/** A version of a package that has known vulnerabilities, with the highest severity among them. */
+export interface VulnerableVersion {
+  version: string;
+  severity: AdvisorySeverity;
+}
+
+/** A resolved version of a package, referenced or transitive, that has known vulnerabilities. */
+export interface VulnerablePackage {
+  id: string;
+  version: string;
+  /** Worst first. */
+  advisories: readonly AdvisoryInfo[];
+}
+
+export interface PackagesVulnerabilitiesParams {
+  noCache: boolean;
+}
+
+export interface PackagesVulnerabilitiesResult {
+  packages: readonly VulnerablePackage[];
   failures: readonly FeedFailure[];
 }
 

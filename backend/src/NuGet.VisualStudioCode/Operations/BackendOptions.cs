@@ -9,4 +9,7 @@ internal sealed class BackendOptions {
   public string RestoreEngine { get; set; } = RestoreEngineNames.EMBEDDED;
 
   public bool RestoreOnOpen { get; set; } = true;
+
+  /// <summary>Whether the feeds are asked about known vulnerabilities of the resolved packages.</summary>
+  public bool Audit { get; set; } = true;
 }

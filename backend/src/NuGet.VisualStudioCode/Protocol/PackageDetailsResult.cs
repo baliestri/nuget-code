@@ -14,5 +14,6 @@ internal sealed record PackageDetailsResult(
   string? IconUrl,
   IReadOnlyList<DependencyGroupInfo> DependencyGroups,
   string? Feed,
-  IReadOnlyList<FeedFailure> Failures
+  IReadOnlyList<FeedFailure> Failures,
+  IReadOnlyList<VulnerableVersion> VulnerableVersions
 );

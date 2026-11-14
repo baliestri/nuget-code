@@ -33,11 +33,22 @@ internal sealed class FeedRegistry(SettingsProvider settings) {
       }
     }
 
-    return sources
-      .Select(source
-        => _repositories.GetOrAdd($"{source.Name}|{source.Source}", _ => Repository.Factory.GetCoreV3(source)))
-      .ToList();
+    return sources.Select(RepositoryOf).ToList();
   }
+
+  /// <summary>
+  ///   The feeds asked about vulnerabilities: the audit sources of the configuration when it has any, as a
+  ///   restore does, else the enabled package sources.
+  /// </summary>
+  public IReadOnlyList<SourceRepository> Audit() {
+    var provider = new PackageSourceProvider(settings.Load());
+    var audit = provider.LoadAuditSources().Where(source => source.IsEnabled).ToList();
+    var sources = audit.Count > 0 ? audit : provider.LoadPackageSources().Where(source => source.IsEnabled).ToList();
+    return sources.Select(RepositoryOf).ToList();
+  }
+
+  private SourceRepository RepositoryOf(PackageSource source)
+    => _repositories.GetOrAdd($"{source.Name}|{source.Source}", _ => Repository.Factory.GetCoreV3(source));
 
   public void Reset()
     => _repositories.Clear();

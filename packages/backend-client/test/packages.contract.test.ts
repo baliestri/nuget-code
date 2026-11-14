@@ -118,7 +118,8 @@ describe("packages", () => {
       "iconUrl?": "string",
       dependencyGroups: [{ framework: "string", dependencies: [{ id: "string", range: "string" }] }],
       "feed?": "string",
-      failures
+      failures,
+      vulnerableVersions: [{ version: "string", severity: "string" }]
     });
     expectShape(updates, {
       packages: [{ id: "string", versions: [{ feed: "string", version: "string" }] }],
@@ -127,6 +128,19 @@ describe("packages", () => {
     expect(search.packages.map((item) => item.id)).toEqual(["Alpha"]);
     expect(details.versions).toEqual(["2.0.0", "1.0.0"]);
     expect(updates.packages[0]?.versions[0]?.version).toBe("2.0.0");
+  });
+
+  it("vulnerabilities has the documented shape, and a feed that knows none is not a failure", async () => {
+    await backend.api.restore({ force: false });
+
+    const vulnerabilities = await backend.api.packageVulnerabilities({ noCache: false });
+
+    expectShape(vulnerabilities, {
+      packages: [{ id: "string", version: "string", advisories: [{ severity: "string", url: "string" }] }],
+      failures
+    });
+    // The feed of the test workspace is a folder, which says nothing about vulnerabilities.
+    expect(vulnerabilities).toEqual({ packages: [], failures: [] });
   });
 
   it("plan describes the edit without writing it", async () => {

@@ -81,6 +81,17 @@ export const FeedFailureKinds = {
 
 export type FeedFailureKind = (typeof FeedFailureKinds)[keyof typeof FeedFailureKinds];
 
+/** How severe a known vulnerability is. `unknown` is what a feed says when it does not tell. */
+export const AdvisorySeverities = {
+  low: "low",
+  moderate: "moderate",
+  high: "high",
+  critical: "critical",
+  unknown: "unknown"
+} as const;
+
+export type AdvisorySeverity = (typeof AdvisorySeverities)[keyof typeof AdvisorySeverities];
+
 export const VersionOriginKinds = {
   project: "project",
   central: "central",

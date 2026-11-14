@@ -19,6 +19,8 @@ import type {
   PackagesUpdateParams,
   PackagesUpdatesParams,
   PackagesUpdatesResult,
+  PackagesVulnerabilitiesParams,
+  PackagesVulnerabilitiesResult,
   RestoreRunParams,
   SourceRemoveParams,
   SourceSetPropertyParams,
@@ -34,6 +36,7 @@ import type {
 export interface BackendMethods {
   installedPackages: { params: Empty; result: PackagesInstalledResult };
   packageUpdates: { params: PackagesUpdatesParams; result: PackagesUpdatesResult };
+  packageVulnerabilities: { params: PackagesVulnerabilitiesParams; result: PackagesVulnerabilitiesResult };
   searchPackages: { params: PackagesSearchParams; result: PackagesSearchResult };
   packageDetails: { params: PackagesDetailsParams; result: PackageDetailsResult };
   planPackages: { params: PackagesPlanParams; result: PackagesPlanResult };
@@ -57,6 +60,7 @@ export type BackendMethod = keyof BackendMethods;
 const allowed: { readonly [M in BackendMethod]: true } = {
   installedPackages: true,
   packageUpdates: true,
+  packageVulnerabilities: true,
   searchPackages: true,
   packageDetails: true,
   planPackages: true,
