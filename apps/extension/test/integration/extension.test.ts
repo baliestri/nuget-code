@@ -86,6 +86,27 @@ describe("the extension in the editor", () => {
     await until(() => loaded, "the page of the view to load");
   });
 
+  it("answers the view's requests for the folders and their sizes", async () => {
+    const listed = (await api.view.handlers.backend("listFolders", {})) as {
+      folders: { title: string; path: string }[];
+    };
+    assert.ok(listed.folders.length > 0, "No folder was listed.");
+
+    for (const folder of listed.folders) {
+      const size = (await api.view.handlers.backend("folderSize", { path: folder.path })) as {
+        exists: boolean;
+        bytes: number;
+      };
+      assert.strictEqual(typeof size.exists, "boolean", `${folder.title} has no size answer.`);
+    }
+
+    // The global packages folder of the test workspace was written by the restore above.
+    const global = listed.folders.find((folder) => folder.title === "Global Packages");
+    assert.ok(global, "The global packages folder is not listed.");
+    const size = (await api.view.handlers.backend("folderSize", { path: global.path })) as { bytes: number };
+    assert.ok(size.bytes > 0, "The restored global packages folder measured as empty.");
+  });
+
   it("contributes its commands", async () => {
     const commands = await vscode.commands.getCommands(true);
 

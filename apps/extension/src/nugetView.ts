@@ -17,7 +17,8 @@ export class NugetViewProvider implements vscode.WebviewViewProvider {
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly session: BackendSession,
-    private readonly handlers: BridgeHandlers
+    /** What answers the page's requests. Public so that the smoke tests can ask what the page asks. */
+    readonly handlers: BridgeHandlers
   ) {
     this.ready = new Promise((resolve) => {
       this.markReady = resolve;
