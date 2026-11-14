@@ -37,6 +37,11 @@
   "contributes": {
     "commands": [
       {
+        "command": "nuget.selectSolution",
+        "title": "Select Solution",
+        "category": "NuGet"
+      },
+      {
         "command": "nuget.restartBackend",
         "title": "Restart Backend",
         "category": "NuGet"

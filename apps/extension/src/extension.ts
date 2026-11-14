@@ -4,6 +4,7 @@ import { isMuslRuntime, locateBackend } from "./backendLocator";
 import { BackendSession } from "./backendSession";
 import { readSettings, SECTION, type Settings } from "./configuration";
 import { LogChannel } from "./logChannel";
+import { SolutionSelector } from "./solutionSelector";
 import { Commands, StatusBar } from "./statusBar";
 
 /** What the extension hands to whoever depends on it: the session with the backend. */
@@ -61,7 +62,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     wasReady = state === "ready" || (wasReady && state === "starting");
   });
 
+  const selector = new SolutionSelector(session, context.workspaceState, log);
+
   context.subscriptions.push(
+    selector,
+    vscode.commands.registerCommand(Commands.selectSolution, () => selector.pick()),
+    // A solution file that appears when none was open may now be the only choice.
+    selector.onDidChangeCandidates(() => {
+      if (session.state === "ready" && session.solution.kind === "none") {
+        void selector.selectAutomatically();
+      }
+    }),
     vscode.commands.registerCommand(Commands.showLog, () => log.show()),
     vscode.commands.registerCommand(Commands.restartBackend, () => start(session, log, () => session.restart())),
     vscode.workspace.onDidChangeConfiguration((change) => {
@@ -76,6 +87,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   );
 
   await start(session, log, () => session.start());
+  if (session.state === "ready") {
+    await selector.selectAutomatically();
+  }
+
   return { session };
 }
 
