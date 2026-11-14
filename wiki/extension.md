@@ -75,7 +75,7 @@ The dialog that adds or edits a feed also takes a user and a password. They are 
 
 ### Folders
 
-The folders NuGet uses, with their paths. Sizes start unknown; **Recalculate Folder Sizes** measures them one after the other. **Open Folder** shows the selected folder in the file manager. **Clear Selected Caches** deletes what is in the selected folders, after a confirmation that lists them; it is offered only when every selected folder is a cache. Ctrl or Cmd with a click selects several. Afterwards the view says how much was freed and what could not be removed.
+The folders NuGet uses, with their paths. Sizes start unknown; **Recalculate Folder Sizes** measures them one after the other. **Open Folder** shows the selected folder in the file manager. **Clear Selected Caches** deletes what is in the selected folders, after a confirmation that lists them; it is offered only when every selected folder is a cache. Ctrl or Cmd with a click selects several. Afterwards a notification of the editor says how much was freed and what could not be removed, which is also written to the output channel, and the sizes are measured again. A folder that cannot be measured, opened or cleared says why above the table.
 
 ### Log
 

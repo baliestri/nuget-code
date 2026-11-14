@@ -85,7 +85,7 @@ describe("Folders", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "The folder could not be opened. That folder is not one of the NuGet folders."
     );
-    await user.click(screen.getByRole("button", { name: "Dismiss problems" }));
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
@@ -167,7 +167,21 @@ describe("Folders", () => {
     expect(fake.callsOf("clearFolders")).toEqual([]);
   });
 
-  it("after clearing it reports what was freed and what was skipped, and recalculates", async () => {
+  it("a clear that removed everything is an information notification of the editor", async () => {
+    const { fake, user } = open();
+    await user.click(await row("HTTP Cache"));
+
+    await user.click(screen.getByRole("button", { name: "Clear Selected Caches" }));
+    await user.click(screen.getByRole("button", { name: "Clear" }));
+
+    await waitFor(() =>
+      expect(fake.callsOf("notify")).toEqual([{ kind: "info", messages: ["HTTP Cache: 2.0 KB freed."] }])
+    );
+    expect(screen.queryByText(/freed/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("after clearing it notifies what was freed and what was skipped, as a warning, and recalculates", async () => {
     const { fake, user } = open((bridge) => {
       bridge.backend.clearFolders = () =>
         Promise.resolve({
@@ -185,8 +199,16 @@ describe("Folders", () => {
     await user.click(screen.getByRole("button", { name: "Clear Selected Caches" }));
     await user.click(screen.getByRole("button", { name: "Clear" }));
 
-    expect(await screen.findByText("Global Packages: 13.0 MB freed.")).toBeInTheDocument();
-    expect(screen.getByText(/^HTTP Cache: 1 could not be removed.*locked\.dat\.$/)).toBeInTheDocument();
+    await waitFor(() => expect(fake.callsOf("notify")).toHaveLength(1));
+    expect(fake.callsOf("notify")[0]).toEqual({
+      kind: "warning",
+      messages: [
+        "Global Packages: 13.0 MB freed.",
+        "HTTP Cache: 1.0 KB freed.",
+        "HTTP Cache: 1 could not be removed, probably in use: /home/me/.local/share/NuGet/v3-cache/locked.dat."
+      ]
+    });
+    expect(screen.queryByText(/freed/)).not.toBeInTheDocument();
     expect(fake.callsOf("clearFolders")).toEqual([{ paths: [GLOBAL.path, HTTP.path] }]);
     await waitFor(() => expect(fake.callsOf("folderSize")).toHaveLength(FOLDERS.length));
   });

@@ -106,7 +106,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       runCommand: async (command) => {
         await vscode.commands.executeCommand(command);
       },
-      notifyWarnings: (title, messages) => void notifyWarnings(log, title, messages)
+      notifyWarnings: (title, messages) => void notifyWarnings(log, title, messages),
+      notify: (kind, messages) => {
+        for (const message of messages) {
+          log.host(kind, message);
+        }
+
+        // A notification is one line: the sentences follow one another.
+        const show = kind === "warning" ? vscode.window.showWarningMessage : vscode.window.showInformationMessage;
+        void show(messages.join(" "));
+      }
     })
   });
 

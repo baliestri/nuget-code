@@ -28,6 +28,11 @@ export interface HostRequests {
    * silenced. `title` is the operation; each message is one sentence. Answers without waiting for the user.
    */
   notifyWarnings: { params: { title: string; messages: readonly string[] }; result: Empty };
+  /**
+   * Tells the user how something they asked for ended, as a notification of the editor. Each message is one
+   * sentence; they are also written to the log. Answers without waiting for the user.
+   */
+  notify: { params: { kind: "info" | "warning"; messages: readonly string[] }; result: Empty };
 }
 
 export type HostRequest = keyof HostRequests;
@@ -41,7 +46,8 @@ const hostRequests: { readonly [M in HostRequest]: true } = {
   selectSolution: true,
   showLog: true,
   restartBackend: true,
-  notifyWarnings: true
+  notifyWarnings: true,
+  notify: true
 };
 
 export function isHostRequest(name: unknown): name is HostRequest {

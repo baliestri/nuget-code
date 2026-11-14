@@ -62,8 +62,7 @@ export function FoldersTab(): ReactNode {
   const [measuring, setMeasuring] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [clearing, setClearing] = useState(false);
-  const [outcome, setOutcome] = useState<{ kind: "info" | "error"; lines: readonly string[] }>();
-  /** What went wrong measuring or opening, apart from the outcome of a clear. */
+  /** What went wrong clearing, measuring or opening. What went well is a notification of the editor. */
   const [problems, setProblems] = useState<readonly string[]>([]);
 
   const folders = list.data?.folders ?? [];
@@ -84,13 +83,15 @@ export function FoldersTab(): ReactNode {
     });
 
   /** Measures the folders one after the other: each one walks a tree on disk. */
-  const recalculate = async (): Promise<void> => {
+  const recalculate = async (before: readonly string[] = []): Promise<void> => {
     if (measuring) {
+      setProblems(before);
       return;
     }
 
     setMeasuring(true);
-    const failed: string[] = [];
+    // `before` is what already went wrong in the action that asked for the sizes again.
+    const failed = [...before];
     try {
       for (const folder of folders) {
         setSize(folder.path, "measuring");
@@ -116,20 +117,21 @@ export function FoldersTab(): ReactNode {
   const clear = async (): Promise<void> => {
     setConfirming(false);
     setClearing(true);
-    setOutcome(undefined);
+    const refused: string[] = [];
     try {
       const result = await bridge.backend("clearFolders", { paths: chosen.map((folder) => folder.path) });
-      setOutcome({ kind: "info", lines: describeCleared(result, folders) });
+      // How it ended is the editor's to say; the table shows the new sizes.
+      const skipped = result.folders.some((folder) => folder.skipped.length > 0);
+      void bridge
+        .host("notify", { kind: skipped ? "warning" : "info", messages: describeCleared(result, folders) })
+        .catch(() => {});
     } catch (error) {
-      setOutcome({
-        kind: "error",
-        lines: [`The folders were not cleared. ${error instanceof Error ? error.message : String(error)}`]
-      });
+      refused.push(`The folders were not cleared. ${messageOf(error)}`);
     } finally {
       setClearing(false);
     }
 
-    await recalculate();
+    await recalculate(refused);
   };
 
   const select = (path: string, add: boolean): void => {
@@ -169,23 +171,8 @@ export function FoldersTab(): ReactNode {
         />
       </SideBar>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {outcome === undefined ? null : (
-          <Banner
-            kind={outcome.kind}
-            actions={<IconButton icon="close" label="Dismiss" onClick={() => setOutcome(undefined)} />}
-          >
-            <ul>
-              {outcome.lines.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-          </Banner>
-        )}
         {problems.length === 0 ? null : (
-          <Banner
-            kind="error"
-            actions={<IconButton icon="close" label="Dismiss problems" onClick={() => setProblems([])} />}
-          >
+          <Banner kind="error" actions={<IconButton icon="close" label="Dismiss" onClick={() => setProblems([])} />}>
             <ul>
               {problems.map((line) => (
                 <li key={line}>{line}</li>

@@ -41,6 +41,7 @@ function fakeDeps(overrides: Partial<HostDeps> = {}): { deps: HostDeps; calls: s
     runCommand: record("runCommand", undefined),
     notifyWarnings: (...args) =>
       void calls.push(`notifyWarnings(${args.map((arg) => JSON.stringify(arg)).join(", ")})`),
+    notify: (...args) => void calls.push(`notify(${args.map((arg) => JSON.stringify(arg)).join(", ")})`),
     ...overrides
   };
   return { deps, calls };
@@ -181,6 +182,17 @@ describe("createHostHandler", () => {
     await createHostHandler(deps)("notifyWarnings", { title: "Update", messages: ["One.", 5, "", "Two."] });
 
     expect(calls).toEqual([`notifyWarnings("Update", ["One.","Two."])`]);
+  });
+
+  it("notify passes the kind and the sentences on; an unknown kind is plain information", async () => {
+    const { deps, calls } = fakeDeps();
+    const handler = createHostHandler(deps);
+
+    await handler("notify", { kind: "warning", messages: ["One.", null, "Two."] });
+    await handler("notify", { kind: "shout", messages: ["Three."] });
+    await handler("notify", { kind: "info", messages: [] });
+
+    expect(calls).toEqual([`notify("warning", ["One.","Two."])`, `notify("info", ["Three."])`]);
   });
 
   it("notifyWarnings with nothing to say shows nothing", async () => {

@@ -91,6 +91,14 @@ export interface HostDeps {
   runCommand(command: string): Promise<void>;
   /** Shows the notification; must not wait for the user to answer it. */
   notifyWarnings(title: string, messages: readonly string[]): void;
+  /** Shows the notification; must not wait for the user to answer it. */
+  notify(kind: "info" | "warning", messages: readonly string[]): void;
+}
+
+function sentences(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((message): message is string => typeof message === "string" && message !== "")
+    : [];
 }
 
 /** The one line a notification shows for the warnings of an operation: the first, and how many more. */
@@ -154,11 +162,18 @@ const hostCalls: { readonly [M in keyof HostRequests]: HostCall<M> } = {
     return {};
   },
   notifyWarnings: (deps, params) => {
-    const messages = Array.isArray(params.messages)
-      ? params.messages.filter((message): message is string => typeof message === "string" && message !== "")
-      : [];
+    const messages = sentences(params.messages);
     if (messages.length > 0) {
       deps.notifyWarnings(text(params.title, "title"), messages);
+    }
+
+    return Promise.resolve({});
+  },
+  notify: (deps, params) => {
+    const messages = sentences(params.messages);
+    if (messages.length > 0) {
+      // Anything that is not a warning is shown as plain information.
+      deps.notify(params.kind === "warning" ? "warning" : "info", messages);
     }
 
     return Promise.resolve({});
