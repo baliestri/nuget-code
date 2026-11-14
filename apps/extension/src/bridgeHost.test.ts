@@ -1,7 +1,7 @@
 import { BackendRestartedError, BackendStoppedError, ResponseError, type BackendApi } from "@nuget-code/backend-client";
 import { ALLOWED_BACKEND_METHODS, BridgeError, type BackendMethod } from "@nuget-code/bridge";
 import { describe, expect, it } from "vitest";
-import { createBackendHandler, createHostHandler, toSessionState, type HostDeps } from "./bridgeHost";
+import { createBackendHandler, createHostHandler, toSessionState, warningNotice, type HostDeps } from "./bridgeHost";
 
 const WITHOUT_PARAMS: readonly BackendMethod[] = ["installedPackages", "cancelOperation", "listSources", "listFolders"];
 
@@ -39,6 +39,8 @@ function fakeDeps(overrides: Partial<HostDeps> = {}): { deps: HostDeps; calls: s
     saveCredential: record("saveCredential", true),
     resetCredentials: record("resetCredentials", undefined),
     runCommand: record("runCommand", undefined),
+    notifyWarnings: (...args) =>
+      void calls.push(`notifyWarnings(${args.map((arg) => JSON.stringify(arg)).join(", ")})`),
     ...overrides
   };
   return { deps, calls };
@@ -171,6 +173,27 @@ describe("createHostHandler", () => {
     await createHostHandler(deps)(request, {});
 
     expect(calls).toEqual([`runCommand("${command}")`]);
+  });
+
+  it("notifyWarnings passes the title and the sentences on, dropping what is not text", async () => {
+    const { deps, calls } = fakeDeps();
+
+    await createHostHandler(deps)("notifyWarnings", { title: "Update", messages: ["One.", 5, "", "Two."] });
+
+    expect(calls).toEqual([`notifyWarnings("Update", ["One.","Two."])`]);
+  });
+
+  it("notifyWarnings with nothing to say shows nothing", async () => {
+    const { deps, calls } = fakeDeps();
+
+    await createHostHandler(deps)("notifyWarnings", { title: "Update", messages: [] });
+
+    expect(calls).toEqual([]);
+  });
+
+  it("the notice is the first sentence and how many more there are", () => {
+    expect(warningNotice(["One."])).toBe("One.");
+    expect(warningNotice(["One.", "Two.", "Three."])).toBe("One. And 2 more; see the log.");
   });
 
   it.each([null, "text", { path: 5 }, {}])(

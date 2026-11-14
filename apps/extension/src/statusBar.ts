@@ -15,23 +15,39 @@ export interface StatusText {
   text: string;
   tooltip: string;
   command: string;
+  /** The item is drawn as an error: the backend is not running. */
+  error: boolean;
 }
 
-/** What the status bar item shows for a state of the backend and of the solution. */
+/**
+ * What the status bar item shows for a state of the backend and of the solution. The text says the state
+ * of the backend whenever it is not simply running; the tooltip always does.
+ */
 export function statusText(backend: BackendState, solution: SolutionState): StatusText {
   if (backend === "stopped") {
     return {
-      text: "$(error) NuGet",
-      tooltip: "The NuGet backend is not running. Click to restart it.",
-      command: Commands.restartBackend
+      text: "$(error) NuGet: stopped",
+      tooltip: "The NuGet backend is stopped. Click to restart it.",
+      command: Commands.restartBackend,
+      error: true
     };
   }
 
-  if (backend === "starting" || solution.kind === "opening") {
+  if (backend === "starting") {
     return {
-      text: "$(sync~spin) NuGet",
-      tooltip: backend === "starting" ? "Starting the NuGet backend…" : "Opening the solution…",
-      command: Commands.open
+      text: "$(sync~spin) NuGet: starting…",
+      tooltip: "The NuGet backend is starting.",
+      command: Commands.open,
+      error: false
+    };
+  }
+
+  if (solution.kind === "opening") {
+    return {
+      text: "$(sync~spin) NuGet: opening…",
+      tooltip: "The NuGet backend is running and is opening the solution.",
+      command: Commands.open,
+      error: false
     };
   }
 
@@ -39,13 +55,15 @@ export function statusText(backend: BackendState, solution: SolutionState): Stat
   return solution.kind === "open"
     ? {
         text: `$(package) ${solution.name}`,
-        tooltip: "NuGet: click to open the package manager.",
-        command: Commands.open
+        tooltip: "The NuGet backend is running. Click to open the package manager.",
+        command: Commands.open,
+        error: false
       }
     : {
-        text: "$(package) Select Solution",
-        tooltip: "NuGet: no solution is selected.",
-        command: Commands.selectSolution
+        text: "$(package) NuGet: select a solution",
+        tooltip: "The NuGet backend is running, with no solution selected. Click to select one.",
+        command: Commands.selectSolution,
+        error: false
       };
 }
 
@@ -54,17 +72,23 @@ export interface StatusItem {
   text: string;
   tooltip: unknown;
   command: unknown;
+  backgroundColor: unknown;
   show(): void;
 }
 
 export class StatusBar {
-  constructor(private readonly item: StatusItem) {}
+  /** `errorBackground` is the editor's colour for a status bar item that reports an error. */
+  constructor(
+    private readonly item: StatusItem,
+    private readonly errorBackground: unknown
+  ) {}
 
   update(backend: BackendState, solution: SolutionState): void {
     const status = statusText(backend, solution);
     this.item.text = status.text;
     this.item.tooltip = status.tooltip;
     this.item.command = status.command;
+    this.item.backgroundColor = status.error ? this.errorBackground : undefined;
     this.item.show();
   }
 }

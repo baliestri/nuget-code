@@ -23,6 +23,11 @@ export interface HostRequests {
   selectSolution: { params: Empty; result: Empty };
   showLog: { params: Empty; result: Empty };
   restartBackend: { params: Empty; result: Empty };
+  /**
+   * Tells the user what a change did beyond what was asked, as a notification of the editor that can be
+   * silenced. `title` is the operation; each message is one sentence. Answers without waiting for the user.
+   */
+  notifyWarnings: { params: { title: string; messages: readonly string[] }; result: Empty };
 }
 
 export type HostRequest = keyof HostRequests;
@@ -35,7 +40,8 @@ const hostRequests: { readonly [M in HostRequest]: true } = {
   saveCredential: true,
   selectSolution: true,
   showLog: true,
-  restartBackend: true
+  restartBackend: true,
+  notifyWarnings: true
 };
 
 export function isHostRequest(name: unknown): name is HostRequest {

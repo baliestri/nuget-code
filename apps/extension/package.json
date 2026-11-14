@@ -144,6 +144,12 @@
           "scope": "window",
           "description": "The least severe level written to the NuGet output channel."
         },
+        "nuget.notifications.operationWarnings": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "description": "Show a notification when a package change did more than was asked, such as changing a version that other projects share. The details are written to the NuGet log either way."
+        },
         "nuget.backend.path": {
           "type": "string",
           "default": "",

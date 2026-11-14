@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import * as vscode from "vscode";
 import { isMuslRuntime, locateBackend } from "./backendLocator";
 import { BackendSession } from "./backendSession";
-import { createBackendHandler, createHostHandler } from "./bridgeHost";
+import { createBackendHandler, createHostHandler, warningNotice } from "./bridgeHost";
 import { clearCredentialsCommand, restoreCommand } from "./commands";
 import { readSettings, SECTION, type Settings } from "./configuration";
 import { createCredentialStore } from "./credentials";
@@ -31,7 +31,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const log = new LogChannel(vscode.window.createOutputChannel("NuGet", "log"), settings.logLevel);
   const item = vscode.window.createStatusBarItem("nuget.status", vscode.StatusBarAlignment.Left, 0);
   item.name = "NuGet";
-  const status = new StatusBar(item);
+  const status = new StatusBar(item, new vscode.ThemeColor("statusBarItem.errorBackground"));
   context.subscriptions.push(item);
 
   const session = new BackendSession({
@@ -103,7 +103,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       },
       runCommand: async (command) => {
         await vscode.commands.executeCommand(command);
-      }
+      },
+      notifyWarnings: (title, messages) => void notifyWarnings(log, title, messages)
     })
   });
 
@@ -181,6 +182,30 @@ async function start(session: BackendSession, log: LogChannel, run: () => Promis
     if (choice === "Open Settings") {
       await vscode.commands.executeCommand("workbench.action.openSettings", "nuget.dotnetPath");
     }
+  }
+}
+
+const WARNINGS_SETTING = "notifications.operationWarnings";
+
+/**
+ * What a change did beyond what was asked always goes to the log. The notification about it is shown
+ * unless the user silenced it, which turns the setting off for every workspace.
+ */
+async function notifyWarnings(log: LogChannel, title: string, messages: readonly string[]): Promise<void> {
+  for (const message of messages) {
+    log.host("warning", `${title}: ${message}`);
+  }
+
+  const configuration = vscode.workspace.getConfiguration(SECTION);
+  if (configuration.get(WARNINGS_SETTING) === false) {
+    return;
+  }
+
+  const choice = await vscode.window.showInformationMessage(warningNotice(messages), "Show Log", "Don't Show Again");
+  if (choice === "Show Log") {
+    log.show();
+  } else if (choice === "Don't Show Again") {
+    await configuration.update(WARNINGS_SETTING, false, vscode.ConfigurationTarget.Global);
   }
 }
 

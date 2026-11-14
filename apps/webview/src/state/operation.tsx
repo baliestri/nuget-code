@@ -1,21 +1,15 @@
 import { BridgeError } from "@nuget-code/bridge";
-import {
-  RestoreStates,
-  type OperationResult,
-  type OperationStep,
-  type PackagesPlanResult,
-  type PlanWarningInfo
-} from "@nuget-code/protocol";
+import { RestoreStates, type OperationResult, type OperationStep, type PackagesPlanResult } from "@nuget-code/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import { useBridge, useBridgeEvent } from "../bridge/BridgeContext";
+import { describeWarning } from "../packages/warnings";
 
 /** How the last operation ended. */
 export interface OperationOutcome {
   /** What the operation was, for the message: "Update", "Install", "Remove", "Restore". */
   title: string;
   result?: OperationResult;
-  warnings: readonly PlanWarningInfo[];
   error?: BridgeError;
 }
 
@@ -26,7 +20,7 @@ interface OperationValue {
   step: OperationStep | undefined;
   last: OperationOutcome | undefined;
   /**
-   * Runs one operation. `plan` asks the backend what the change does, to show its warnings afterwards; it
+   * Runs one operation. `plan` asks the backend what the change does, to notify its warnings afterwards; it
    * runs beside the action and never holds it back, and its failure is ignored. Returns false, running
    * nothing, when another operation is running.
    */
@@ -89,11 +83,15 @@ export function OperationProvider({ children }: { children: ReactNode }): ReactN
             );
       try {
         const result = await action();
-        setLast({ title: name, result, warnings: await warnings });
+        setLast({ title: name, result });
+        // What the change did beyond what was asked is the editor's to show, where it can be silenced.
+        const messages = (await warnings).map(describeWarning);
+        if (messages.length > 0) {
+          void bridge.host("notifyWarnings", { title: name, messages }).catch(() => {});
+        }
       } catch (error) {
         setLast({
           title: name,
-          warnings: [],
           error:
             error instanceof BridgeError
               ? error
@@ -111,7 +109,7 @@ export function OperationProvider({ children }: { children: ReactNode }): ReactN
 
       return true;
     },
-    [queries]
+    [queries, bridge]
   );
 
   const value = useMemo<OperationValue>(

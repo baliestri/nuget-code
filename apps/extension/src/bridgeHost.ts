@@ -89,6 +89,14 @@ export interface HostDeps {
   /** Lets the backend ask again for the credentials of the source. */
   resetCredentials(source: string): Promise<void>;
   runCommand(command: string): Promise<void>;
+  /** Shows the notification; must not wait for the user to answer it. */
+  notifyWarnings(title: string, messages: readonly string[]): void;
+}
+
+/** The one line a notification shows for the warnings of an operation: the first, and how many more. */
+export function warningNotice(messages: readonly string[]): string {
+  const [first = "", ...rest] = messages;
+  return rest.length === 0 ? first : `${first} And ${rest.length} more; see the log.`;
 }
 
 type HostCall<M extends keyof HostRequests> = (
@@ -144,6 +152,16 @@ const hostCalls: { readonly [M in keyof HostRequests]: HostCall<M> } = {
   restartBackend: async (deps) => {
     await deps.runCommand(Commands.restartBackend);
     return {};
+  },
+  notifyWarnings: (deps, params) => {
+    const messages = Array.isArray(params.messages)
+      ? params.messages.filter((message): message is string => typeof message === "string" && message !== "")
+      : [];
+    if (messages.length > 0) {
+      deps.notifyWarnings(text(params.title, "title"), messages);
+    }
+
+    return Promise.resolve({});
   }
 };
 

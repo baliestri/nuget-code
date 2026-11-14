@@ -7,7 +7,6 @@ import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 import { LinkButton } from "../ui/LinkButton";
 import { Spinner } from "../ui/Spinner";
-import { describeWarning } from "./warnings";
 
 const STEPS: Record<OperationStep, string> = {
   [OperationSteps.planning]: "Planning the change…",
@@ -39,7 +38,8 @@ export function OperationBar(): ReactNode {
 
 /**
  * How the last operation ended, when there is something to say: it failed, a restore failed, a file could
- * not be written, it was cancelled, or the change did more than was asked. A plain success says nothing.
+ * not be written, or it was cancelled. A plain success says nothing; what a change did beyond what was asked
+ * is a notification of the editor, not part of the view.
  */
 export function ResultBanner(): ReactNode {
   const bridge = useBridge();
@@ -82,15 +82,14 @@ export function ResultBanner(): ReactNode {
     lines.push(`Could not write ${error}`);
   }
 
-  const warnings = last.warnings.map(describeWarning);
-  if (lines.length === 0 && warnings.length === 0) {
+  if (lines.length === 0) {
     return null;
   }
 
   const failed = summary !== undefined && (summary.failed > 0 || editErrors.length > 0);
   return (
     <Banner
-      kind={failed ? "error" : lines.length > 0 ? "warning" : "info"}
+      kind={failed ? "error" : "warning"}
       actions={
         <>
           {failed ? showLog : null}
@@ -101,9 +100,6 @@ export function ResultBanner(): ReactNode {
       <ul>
         {lines.map((line) => (
           <li key={line}>{line}</li>
-        ))}
-        {warnings.map((warning) => (
-          <li key={warning}>{warning}</li>
         ))}
       </ul>
     </Banner>

@@ -34,14 +34,15 @@ Selecting a solution replaces the open one. If it cannot be opened, the error fr
 
 ## Status bar
 
-One item, on the left. Clicking it selects a solution, except when the backend is stopped, when it restarts the backend.
+One item, on the left, that says the state of the backend. Its tooltip says it in a sentence.
 
-| State                                                  | Text                         |
-| ------------------------------------------------------ | ---------------------------- |
-| The backend is starting, or a solution is being opened | `$(sync~spin) NuGet`         |
-| A solution is open                                     | `$(package) <file name>`     |
-| No solution is selected                                | `$(package) Select Solution` |
-| The backend is stopped                                 | `$(error) NuGet`             |
+| State                                             | Text                                   | A click              |
+| ------------------------------------------------- | -------------------------------------- | -------------------- |
+| The backend is starting                           | `$(sync~spin) NuGet: starting…`        | Opens the view       |
+| The backend is running and is opening a solution  | `$(sync~spin) NuGet: opening…`         | Opens the view       |
+| The backend is running, with a solution open      | `$(package) <file name>`               | Opens the view       |
+| The backend is running, with no solution selected | `$(package) NuGet: select a solution`  | Selects a solution   |
+| The backend is stopped                            | `$(error) NuGet: stopped`, as an error | Restarts the backend |
 
 ## Commands
 
@@ -57,14 +58,17 @@ A restore that succeeds shows a short message in the status bar. One that fails 
 
 ## Settings
 
-| Setting                    | Default    | Effect                                                                                              |
-| -------------------------- | ---------- | --------------------------------------------------------------------------------------------------- |
-| `nuget.dotnetPath`         | empty      | The `dotnet` executable. When empty, `DOTNET_ROOT` and then `PATH` are used.                        |
-| `nuget.restore.engine`     | `embedded` | `embedded`, `msbuild` or `console`. See [Restore](backend-protocol.md#restore).                     |
-| `nuget.restore.onOpen`     | `true`     | Restore the solution when it is opened.                                                             |
-| `nuget.feedTimeoutSeconds` | `30`       | How long a package source may take to answer.                                                       |
-| `nuget.log.level`          | `info`     | The least severe level written to the output channel.                                               |
-| `nuget.backend.path`       | empty      | Another backend to run, for developing the extension: an executable, or a `.dll` run with `dotnet`. |
+| Setting                                 | Default    | Effect                                                                                              |
+| --------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------- |
+| `nuget.dotnetPath`                      | empty      | The `dotnet` executable. When empty, `DOTNET_ROOT` and then `PATH` are used.                        |
+| `nuget.restore.engine`                  | `embedded` | `embedded`, `msbuild` or `console`. See [Restore](backend-protocol.md#restore).                     |
+| `nuget.restore.onOpen`                  | `true`     | Restore the solution when it is opened.                                                             |
+| `nuget.feedTimeoutSeconds`              | `30`       | How long a package source may take to answer.                                                       |
+| `nuget.log.level`                       | `info`     | The least severe level written to the output channel.                                               |
+| `nuget.backend.path`                    | empty      | Another backend to run, for developing the extension: an executable, or a `.dll` run with `dotnet`. |
+| `nuget.notifications.operationWarnings` | `true`     | Show a notification when a package change did more than was asked.                                  |
+
+A package change can do more than was asked: updating a version that `Directory.Packages.props` shares changes it for every project that uses it, for example. The sentences that say so are always written to the output channel. A notification shows the first one, and how many more there are, with **Show Log** and **Don't Show Again**; the latter turns `nuget.notifications.operationWarnings` off in the user settings.
 
 A change to `nuget.restore.engine` or `nuget.restore.onOpen` is sent to the running backend and applies from the next restore. A change to `nuget.dotnetPath`, `nuget.feedTimeoutSeconds` or `nuget.backend.path` restarts the backend, because it reads them only when it starts. `nuget.log.level` is applied by the extension.
 
