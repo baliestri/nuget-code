@@ -21,8 +21,11 @@ function write(relativePath: string, content: string): void {
 rmSync(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 mkdirSync(workspace, { recursive: true });
 
+// With NUGET_VSCODE_BACKEND_BUNDLED the extension is left to find the binary under bin/<target>, as an
+// installed VSIX does: that is how the packaged backend is tested.
+const bundled = (process.env["NUGET_VSCODE_BACKEND_BUNDLED"] ?? "") !== "";
 const backend = resolveTestBackend();
-if (backend.command === "dotnet") {
+if (!bundled && backend.command === "dotnet") {
   execFileSync("dotnet", ["build", backendProject, "-c", "Debug", "-nologo", "-v:q"], { stdio: "inherit" });
 }
 
@@ -47,8 +50,8 @@ write(
   ".vscode/settings.json",
   JSON.stringify(
     {
-      // The Debug build during development, the published binary in CI.
-      "nuget.backend.path": backend.command === "dotnet" ? backend.args[0] : backend.command,
+      // The Debug build during development, or a published binary named by NUGET_VSCODE_BACKEND_PATH.
+      ...(bundled ? {} : { "nuget.backend.path": backend.command === "dotnet" ? backend.args[0] : backend.command }),
       // Off, so the test of the restore command is what restores.
       "nuget.restore.onOpen": false
     },

@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit -p scripts/tsconfig.json && turbo typecheck",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
-    "test": "turbo test",
+    "test": "vitest run --dir scripts && turbo test",
     "package": "tsx scripts/package.ts"
   },
   "devDependencies": {
