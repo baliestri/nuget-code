@@ -84,7 +84,15 @@ jobs:
       # A VSIX is a zip: the binary is taken out of the very file that would be installed.
       - name: Take the backend out of the VSIX
         run: |
-          unzip -o release-artifacts/*.vsix "extension/bin/*" -d vsix
+          vsix="$(ls release-artifacts/*.vsix)"
+          mkdir -p vsix
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            # The tar that ships with Windows reads zip archives. The unzip of the runner's shell does not
+            # match the entry names of the archive.
+            "$SYSTEMROOT/System32/tar.exe" -xf "$vsix" -C vsix extension/bin
+          else
+            unzip -o "$vsix" "extension/bin/*" -d vsix
+          fi
           rm -rf apps/extension/bin
           cp -R vsix/extension/bin apps/extension/bin
           chmod -R +x apps/extension/bin
