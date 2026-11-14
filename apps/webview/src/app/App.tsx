@@ -85,6 +85,11 @@ function Content({
   session: SessionState | undefined;
   host(request: "selectSolution" | "showLog" | "restartBackend"): void;
 }): ReactNode {
+  // The log is the view's own: it is what explains a backend that is starting or has stopped.
+  if (tab === "log") {
+    return <LogTab />;
+  }
+
   if (session === undefined || session.backend === "starting") {
     return (
       <Placeholder title="Starting…">
@@ -131,7 +136,5 @@ function Content({
       return <SourcesTab />;
     case "folders":
       return <FoldersTab />;
-    case "log":
-      return <LogTab />;
   }
 }

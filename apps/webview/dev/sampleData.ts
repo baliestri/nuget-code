@@ -277,4 +277,18 @@ export function installSampleData(fake: FakeBridge): void {
   fake.backend.clearFolders = (params) =>
     Promise.resolve({ folders: params.paths.map((path) => ({ path, bytesFreed: 123_456_789, skipped: [] })) });
   fake.host.pickFolder = () => Promise.resolve({ path: `${ROOT}\\packages` });
+
+  // A log long enough to scroll, with every level in it; sent once the page listens.
+  const levels = ["debug", "debug", "verbose", "info", "debug", "warning", "debug", "error"] as const;
+  setTimeout(() => {
+    for (let index = 0; index < 400; index++) {
+      const name = PROJECTS[index % PROJECTS.length]!.name;
+      fake.emit("logEntry", {
+        level: levels[index % levels.length]!,
+        time: `2026-11-14T16:08:${String(index % 60).padStart(2, "0")}-03:00`,
+        context: index % 3 === 0 ? "NUGET" : "VSCODE",
+        message: `Resolved the installed packages of ${name}: Meziantou.Analyzer 3.0.326, Microsoft.CodeAnalysis.CSharp 5.9.0, Microsoft.Extensions.DependencyInjection 10.0.15, xunit.v3.mtp-v2 4.0.3 (${index})`
+      });
+    }
+  }, 300);
 }
