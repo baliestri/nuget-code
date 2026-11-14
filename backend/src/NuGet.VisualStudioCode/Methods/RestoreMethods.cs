@@ -16,11 +16,19 @@ internal static class RestoreMethods {
       ? StringComparer.OrdinalIgnoreCase
       : StringComparer.Ordinal;
 
+  private readonly static Empty Done = new();
+
   public static void Register(RpcConnection connection, SessionManager sessions, OperationQueue queue,
     RestoreService restore, SessionRefresher refresher, BackendOptions options) {
     connection.OnRequest(MethodNames.RESTORE_RUN, ProtocolJsonContext.Default.RestoreRunParams,
       ProtocolJsonContext.Default.OperationResult,
       (parameters, ct) => queue.RunAsync(token => RunAsync(sessions, restore, refresher, parameters, token), ct));
+    connection.OnRequest(MethodNames.OPERATIONS_CANCEL, ProtocolJsonContext.Default.Empty,
+      ProtocolJsonContext.Default.Empty, (_, _) =>
+      {
+        queue.CancelCurrent();
+        return Task.FromResult(Done);
+      });
     connection.OnNotification(MethodNames.CONFIGURATION_DID_CHANGE, ProtocolJsonContext.Default.ConfigurationParams,
       parameters =>
       {

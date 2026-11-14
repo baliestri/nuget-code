@@ -12,6 +12,7 @@ namespace NuGet.VisualStudioCode.Rpc;
 internal sealed class RpcConnection(MessageReader reader, MessageWriter writer) {
   private const string CANCEL_METHOD = "$/cancelRequest";
 
+  private readonly static AsyncLocal<List<Action>?> AfterResponseActions = new();
   private readonly static JsonElement EmptyObject = JsonDocument.Parse("{}").RootElement.Clone();
 
   private readonly ConcurrentDictionary<string, CancellationTokenSource> _inbound = new(StringComparer.Ordinal);
@@ -25,6 +26,20 @@ internal sealed class RpcConnection(MessageReader reader, MessageWriter writer) 
     _requestHandlers = new(StringComparer.Ordinal);
 
   private long _nextId;
+
+  /// <summary>
+  ///   Called from inside a request handler: runs <paramref name="action" /> once the answer to that request has
+  ///   been written, so whatever the action sends reaches the other side after the answer. It does not run when
+  ///   the request fails. Outside a request it runs at once.
+  /// </summary>
+  public static void AfterResponse(Action action) {
+    if (AfterResponseActions.Value is { } actions) {
+      actions.Add(action);
+    }
+    else {
+      action();
+    }
+  }
 
   public void OnRequest<TParams, TResult>(string method, JsonTypeInfo<TParams> paramsInfo,
     JsonTypeInfo<TResult> resultInfo, Func<TParams, CancellationToken, Task<TResult>> handler)
@@ -135,6 +150,8 @@ internal sealed class RpcConnection(MessageReader reader, MessageWriter writer) 
         throw new RpcException(RpcErrorCodes.METHOD_NOT_FOUND, $"Unknown method '{method}'.");
       }
 
+      var afterResponse = new List<Action>();
+      AfterResponseActions.Value = afterResponse;
       var writeResult = await handler(parameters, cancellation.Token).ConfigureAwait(false);
       await SendAsync(json =>
       {
@@ -143,6 +160,7 @@ internal sealed class RpcConnection(MessageReader reader, MessageWriter writer) 
         json.WritePropertyName("result");
         writeResult(json);
       }).ConfigureAwait(false);
+      foreach (var action in afterResponse) action();
     }
     catch (OperationCanceledException) {
       await SendErrorAsync(id, RpcErrorCodes.REQUEST_CANCELLED, "Request cancelled.", null).ConfigureAwait(false);

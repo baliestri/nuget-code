@@ -23,6 +23,8 @@ internal static class MethodNames {
   public const string PACKAGES_DETAILS = "packages/details";
 
   public const string RESTORE_RUN = "restore/run";
+  public const string RESTORE_DID_FINISH = "restore/didFinish";
+  public const string OPERATIONS_CANCEL = "operations/cancel";
   public const string CONFIGURATION_DID_CHANGE = "configuration/didChange";
 
   public const string SOURCES_LIST = "sources/list";

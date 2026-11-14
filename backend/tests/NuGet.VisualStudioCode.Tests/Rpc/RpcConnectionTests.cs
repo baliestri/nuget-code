@@ -37,6 +37,29 @@ public sealed class RpcConnectionTests {
   }
 
   [Fact]
+  public async Task Work_deferred_by_a_handler_reaches_the_peer_after_the_answer() {
+    var ct = TestContext.Current.CancellationToken;
+    await using var peer = new RpcTestPeer(connection =>
+      connection.OnRequest("echo", TestJsonContext.Default.EchoParams, TestJsonContext.Default.EchoResult,
+        async (parameters, token) =>
+        {
+          RpcConnection.AfterResponse(() =>
+          {
+            _ = connection.NotifyAsync("later", new EchoParams("after"), TestJsonContext.Default.EchoParams);
+          });
+          await Task.Delay(50, token).ConfigureAwait(false);
+          return new EchoResult(parameters.Text ?? "<none>");
+        }));
+
+    await peer.SendAsync("""{"jsonrpc":"2.0","id":3,"method":"echo","params":{"text":"hi"}}""", ct);
+    var first = await peer.ReceiveAsync(ct);
+    var second = await peer.ReceiveAsync(ct);
+
+    Assert.Equal(3, first.GetProperty("id").GetInt32());
+    Assert.Equal("later", second.GetProperty("method").GetString());
+  }
+
+  [Fact]
   public async Task Unknown_method_returns_method_not_found() {
     var ct = TestContext.Current.CancellationToken;
     await using var peer = new RpcTestPeer(_ => { });

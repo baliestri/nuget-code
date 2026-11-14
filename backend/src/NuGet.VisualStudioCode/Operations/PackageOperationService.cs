@@ -43,18 +43,28 @@ internal sealed class PackageOperationService(
       $"Package change: {written.Count} file(s) written, {failures.Count} failed.");
 
     OperationResult? restored = null;
+    var pending = RestoreStates.NOT_RUN;
     if (written.Count > 0) {
-      await StepAsync(OperationSteps.EVALUATING).ConfigureAwait(false);
-      await refresher.RefreshNowAsync(written, ct).ConfigureAwait(false);
+      try {
+        await StepAsync(OperationSteps.EVALUATING).ConfigureAwait(false);
+        await refresher.RefreshNowAsync(written, ct).ConfigureAwait(false);
 
-      await StepAsync(OperationSteps.RESTORING).ConfigureAwait(false);
-      restored = await RestoreAsync(affected.Where(project => !DependsOnAny(project, failures)).ToList(), ct)
-        .ConfigureAwait(false);
+        await StepAsync(OperationSteps.RESTORING).ConfigureAwait(false);
+        restored = await RestoreAsync(affected.Where(project => !DependsOnAny(project, failures)).ToList(), ct)
+          .ConfigureAwait(false);
+      }
+      catch (OperationCanceledException) {
+        // The files are already written and stay written; only what came after them is reported as cancelled.
+        pending = RestoreStates.CANCELLED;
+      }
     }
 
     await StepAsync(OperationSteps.DONE).ConfigureAwait(false);
     return new OperationResult(restored?.Engine, restored?.FellBack ?? false,
-      affected.Select(project => ResultOf(project, written, failures, restored)).ToList());
+      affected.Select(project
+          => ResultOf(project, written, failures, restored,
+            DependsOnAny(project, failures) ? RestoreStates.NOT_RUN : pending))
+        .ToList());
   }
 
   private Task StepAsync(string step)
@@ -97,7 +107,7 @@ internal sealed class PackageOperationService(
   }
 
   private static ProjectOperationResult ResultOf(string project, List<string> written, List<FileEditResult> failures,
-    OperationResult? restored) {
+    OperationResult? restored, string pending) {
     var outcome = restored?.Projects.FirstOrDefault(result => PathComparer.Equals(result.Project, project));
     return new ProjectOperationResult(
       project,
@@ -105,7 +115,7 @@ internal sealed class PackageOperationService(
       failures.Where(failure => DependsOn(project, failure.File))
         .Select(failure => $"{failure.File}: {failure.Error}")
         .ToList(),
-      outcome?.Restore ?? RestoreStates.NOT_RUN,
+      outcome?.Restore ?? pending,
       outcome?.Messages ?? []
     );
   }

@@ -44,7 +44,6 @@ var advisor = new PlanAdvisor(details);
 
 LifecycleMethods.Register(connection, sdk, log, feedOptions, options);
 ConfigurationMethods.Register(connection, settings, () => sessions.Current is not null);
-SolutionMethods.Register(connection, sessions, evaluator);
 PackagesMethods.Register(connection, sessions, search, details, updates);
 WorkspaceMethods.Register(connection, refresher, ResetFeeds);
 
@@ -64,6 +63,11 @@ var engines = new Dictionary<string, IRestoreEngine>(StringComparer.Ordinal) {
 };
 var restore = new RestoreService(engines, options, log);
 RestoreMethods.Register(connection, sessions, queue, restore, refresher, options);
+
+var openRestore = new SolutionOpenRestore(sessions, queue, restore, refresher, options, log,
+  finished => connection.NotifyAsync(MethodNames.RESTORE_DID_FINISH, finished,
+    ProtocolJsonContext.Default.RestoreDidFinishParams));
+SolutionMethods.Register(connection, sessions, evaluator, queue, openRestore);
 
 var operations = new PackageOperationService(sessions, refresher, restore, log,
   step => connection.NotifyAsync(MethodNames.OPERATION_PROGRESS, step,

@@ -27,6 +27,7 @@ namespace NuGet.VisualStudioCode.Protocol;
 [JsonSerializable(typeof(PackagesUpdateParams))]
 [JsonSerializable(typeof(PackagesRemoveParams))]
 [JsonSerializable(typeof(OperationProgressParams))]
+[JsonSerializable(typeof(RestoreDidFinishParams))]
 [JsonSerializable(typeof(RestoreRunParams))]
 [JsonSerializable(typeof(OperationResult))]
 [JsonSerializable(typeof(ConfigurationParams))]

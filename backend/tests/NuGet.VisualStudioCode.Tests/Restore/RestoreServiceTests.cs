@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using NuGet.VisualStudioCode.Logging;
 using NuGet.VisualStudioCode.Operations;
+using NuGet.VisualStudioCode.Projects;
 using NuGet.VisualStudioCode.Protocol;
 using NuGet.VisualStudioCode.Restore;
 using NuGet.VisualStudioCode.Solutions;
@@ -65,15 +66,20 @@ public sealed class RestoreServiceTests {
   }
 
   [Fact]
-  public async Task Cancellation_does_not_fall_back() {
+  public async Task Cancellation_is_reported_per_project_and_does_not_fall_back() {
     var ct = TestContext.Current.CancellationToken;
     await using var log = Log();
     var embedded = new FakeRestoreEngine(RestoreEngineNames.EMBEDDED, failure: new OperationCanceledException());
     var console = new FakeRestoreEngine(RestoreEngineNames.CONSOLE);
-    var service = Service(log, new BackendOptions(), embedded, console);
+    var app = new EvaluatedProject(new ProjectInfo("App", "App.csproj", [], false, null), [], null);
+    var target = Target with { Projects = [app] };
 
-    await Assert.ThrowsAsync<OperationCanceledException>(() => service.RestoreAsync(Target, null, ct));
+    var result = await Service(log, new BackendOptions(), embedded, console).RestoreAsync(target, null, ct);
 
+    var project = Assert.Single(result.Projects);
+    Assert.Equal("App.csproj", project.Project);
+    Assert.Equal(RestoreStates.CANCELLED, project.Restore);
+    Assert.False(result.FellBack);
     Assert.Equal(0, console.Calls);
   }
 

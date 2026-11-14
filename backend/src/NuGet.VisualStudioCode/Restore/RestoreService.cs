@@ -29,15 +29,24 @@ internal sealed class RestoreService(
     var fellBack = false;
     IReadOnlyList<ProjectOperationResult> results;
     try {
-      results = await engine.RestoreAsync(target, ct).ConfigureAwait(false);
+      try {
+        results = await engine.RestoreAsync(target, ct).ConfigureAwait(false);
+      }
+      catch (RestoreEngineException exception) when (FallbackFor(engine) is { } fallback) {
+        log.Write(LogLevels.WARNING, LogContexts.BACKEND,
+          $"The embedded restore could not run: {exception.Message} Falling back to the console engine.");
+        engine = fallback;
+        fellBack = true;
+        Started(target, engine);
+        results = await engine.RestoreAsync(target, ct).ConfigureAwait(false);
+      }
     }
-    catch (RestoreEngineException exception) when (FallbackFor(engine) is { } fallback) {
-      log.Write(LogLevels.WARNING, LogContexts.BACKEND,
-        $"The embedded restore could not run: {exception.Message} Falling back to the console engine.");
-      engine = fallback;
-      fellBack = true;
-      Started(target, engine);
-      results = await engine.RestoreAsync(target, ct).ConfigureAwait(false);
+    catch (OperationCanceledException) {
+      // A cancelled restore is an outcome the caller reports, with whatever it had already done kept.
+      log.Write(LogLevels.WARNING, LogContexts.BACKEND, "Restore cancelled.");
+      return new OperationResult(engine.Name, fellBack, target.Projects
+        .Select(project => new ProjectOperationResult(project.Info.Path, [], [], RestoreStates.CANCELLED, []))
+        .ToList());
     }
 
     var failed = results.Count(result => string.Equals(result.Restore, RestoreStates.FAILED, StringComparison.Ordinal));

@@ -24,6 +24,7 @@ public sealed class TestFeedServer : IDisposable {
   private readonly TempDirectory _packageFiles = new();
   private readonly IReadOnlyList<TestFeedPackage> _packages;
   private readonly ConcurrentQueue<string> _requestedPaths = new();
+  private readonly CancellationTokenSource _stopping = new();
 
   private string? _expectedAuthorization;
 
@@ -41,7 +42,11 @@ public sealed class TestFeedServer : IDisposable {
 
   public IReadOnlyCollection<string> RequestedPaths => _requestedPaths;
 
+  /// <summary>How long the server holds a package download, so a test can act while a restore is running.</summary>
+  public TimeSpan PackageDelay { get; init; }
+
   public void Dispose() {
+    _stopping.Cancel();
     _listener.Stop();
     _listener.Close();
     try {
@@ -52,6 +57,7 @@ public sealed class TestFeedServer : IDisposable {
     }
 
     _packageFiles.Dispose();
+    _stopping.Dispose();
   }
 
   public void RequireBasicAuthentication(string user, string password)
@@ -96,6 +102,17 @@ public sealed class TestFeedServer : IDisposable {
     var isPackage = path.EndsWith(PACKAGE_SUFFIX, StringComparison.OrdinalIgnoreCase);
     var (contentType, body) = isPackage ? (BINARY, null) : Route(path, query["q"], query["id"], query["prerelease"]);
     var bytes = isPackage ? PackageContent(path) : body is null ? null : Encoding.UTF8.GetBytes(body);
+    if (isPackage &&
+        PackageDelay > TimeSpan.Zero) {
+      try {
+        await Task.Delay(PackageDelay, _stopping.Token).ConfigureAwait(false);
+      }
+      catch (OperationCanceledException) {
+        context.Response.Abort();
+        return;
+      }
+    }
+
     if (bytes is null) {
       context.Response.StatusCode = 404;
       context.Response.Close();
