@@ -10,12 +10,29 @@ using NuGet.VisualStudioCode.Sessions;
 namespace NuGet.VisualStudioCode.Methods;
 
 internal static class OperationMethods {
-  public static void Register(RpcConnection connection, SessionManager sessions, PlanAdvisor advisor)
-    => connection.OnRequest(MethodNames.PACKAGES_PLAN, ProtocolJsonContext.Default.PackagesPlanParams,
+  public static void Register(RpcConnection connection, SessionManager sessions, PlanAdvisor advisor,
+    OperationQueue queue, PackageOperationService operations) {
+    connection.OnRequest(MethodNames.PACKAGES_PLAN, ProtocolJsonContext.Default.PackagesPlanParams,
       ProtocolJsonContext.Default.PackagesPlanResult,
       (parameters, ct) => PlanAsync(sessions, advisor, parameters.Changes, ct));
+    connection.OnRequest(MethodNames.PACKAGES_INSTALL, ProtocolJsonContext.Default.PackagesInstallParams,
+      ProtocolJsonContext.Default.OperationResult, (parameters, ct) => RunAsync(queue, operations,
+        [new PackageChange(PackageChangeKinds.INSTALL, parameters.Id, parameters.Version, parameters.Projects)], ct));
+    connection.OnRequest(MethodNames.PACKAGES_UPDATE, ProtocolJsonContext.Default.PackagesUpdateParams,
+      ProtocolJsonContext.Default.OperationResult, (parameters, ct) => RunAsync(queue, operations,
+        parameters.Changes
+          .Select(change => new PackageChange(PackageChangeKinds.UPDATE, change.Id, change.Version, change.Projects))
+          .ToList(), ct));
+    connection.OnRequest(MethodNames.PACKAGES_REMOVE, ProtocolJsonContext.Default.PackagesRemoveParams,
+      ProtocolJsonContext.Default.OperationResult, (parameters, ct) => RunAsync(queue, operations,
+        [new PackageChange(PackageChangeKinds.REMOVE, parameters.Id, null, parameters.Projects)], ct));
+  }
 
-  public static IReadOnlyList<PackageChange> ToChanges(IReadOnlyList<PackageChangeParams> changes)
+  private static Task<OperationResult> RunAsync(OperationQueue queue, PackageOperationService operations,
+    IReadOnlyList<PackageChange> changes, CancellationToken ct)
+    => queue.RunAsync(token => operations.RunAsync(changes, token), ct);
+
+  private static List<PackageChange> ToChanges(IReadOnlyList<PackageChangeParams> changes)
     => changes.Select(change => new PackageChange(change.Kind, change.Id, change.Version, change.Projects)).ToList();
 
   private static async Task<PackagesPlanResult> PlanAsync(SessionManager sessions, PlanAdvisor advisor,

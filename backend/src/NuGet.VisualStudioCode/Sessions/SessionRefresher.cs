@@ -1,6 +1,8 @@
 // Copyright (c) Bruno Sales <me@baliestri.dev>. Licensed under the zlib/libpng License.
 // See the LICENSE file in the repository root for full license text.
 
+using System.Collections.Concurrent;
+using System.Security.Cryptography;
 using NuGet.VisualStudioCode.Logging;
 using NuGet.VisualStudioCode.Projects;
 using NuGet.VisualStudioCode.Protocol;
@@ -10,6 +12,8 @@ using NuGet.VisualStudioCode.Solutions;
 namespace NuGet.VisualStudioCode.Sessions;
 
 internal sealed class SessionRefresher : IDisposable {
+  private const int REFRESH_ATTEMPTS = 3;
+
   private readonly static StringComparer PathComparer =
     OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
       ? StringComparer.OrdinalIgnoreCase
@@ -17,6 +21,7 @@ internal sealed class SessionRefresher : IDisposable {
 
   private readonly HashSet<string> _assets = new(PathComparer);
   private readonly Debouncer _debouncer;
+  private readonly ConcurrentDictionary<string, string> _evaluated = new(PathComparer);
   private readonly ProjectEvaluator _evaluator;
   private readonly Lock _lock = new();
   private readonly BackendLog _log;
@@ -39,12 +44,57 @@ internal sealed class SessionRefresher : IDisposable {
   public void Dispose()
     => _debouncer.Dispose();
 
+  /// <summary>
+  ///   Evaluates again right away, without the debounce, and returns once the session holds the result. Used
+  ///   after this process edited the files itself; the content it evaluated is remembered, so the host reporting
+  ///   the same edit afterwards does not cause a second evaluation.
+  /// </summary>
+  public async Task RefreshNowAsync(IReadOnlyList<string> changedPaths, CancellationToken ct) {
+    foreach (var path in changedPaths) _evaluated[path] = HashOf(path);
+
+    for (var attempt = 0; attempt < REFRESH_ATTEMPTS; attempt++) {
+      var session = _sessions.Current;
+      if (session is null) {
+        return;
+      }
+
+      var impact = ChangeClassifier.Classify(session, changedPaths);
+      if (impact.IsEmpty) {
+        return;
+      }
+
+      IReadOnlyList<string> changed;
+      try {
+        changed = impact.Solution
+          ? await RefreshSolutionAsync(session, ct).ConfigureAwait(false)
+          : await RefreshProjectsAsync(session, [.. impact.Projects], [.. impact.AssetsProjects], ct)
+            .ConfigureAwait(false);
+      }
+      catch (RpcException exception) {
+        _log.Write(LogLevels.ERROR, LogContexts.BACKEND,
+          $"Re-evaluation failed: {exception.Message} {exception.ErrorData}");
+        return;
+      }
+
+      if (changed.Count > 0) {
+        await _notify(new SolutionDidChangeParams(changed)).ConfigureAwait(false);
+        return;
+      }
+
+      // Nothing changed hands only when another refresh replaced the session meanwhile: evaluate on top of it.
+      if (ReferenceEquals(session, _sessions.Current)) {
+        return;
+      }
+    }
+  }
+
   public void Report(IReadOnlyList<string> changedPaths) {
     var session = _sessions.Current;
     if (session is null) {
       return;
     }
 
+    changedPaths = changedPaths.Where(path => !IsAlreadyEvaluated(path)).ToList();
     var impact = ChangeClassifier.Classify(session, changedPaths);
     if (impact.IsEmpty) {
       return;
@@ -58,6 +108,31 @@ internal sealed class SessionRefresher : IDisposable {
     }
 
     _debouncer.Trigger();
+  }
+
+  private bool IsAlreadyEvaluated(string path) {
+    if (!_evaluated.TryGetValue(path, out var hash)) {
+      return false;
+    }
+
+    if (string.Equals(hash, HashOf(path), StringComparison.Ordinal)) {
+      return true;
+    }
+
+    _evaluated.TryRemove(KeyValuePair.Create(path, hash));
+    return false;
+  }
+
+  private static string HashOf(string path) {
+    try {
+      return Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)));
+    }
+    catch (IOException) {
+      return string.Empty;
+    }
+    catch (UnauthorizedAccessException) {
+      return string.Empty;
+    }
   }
 
   private async Task RefreshAsync(CancellationToken ct) {

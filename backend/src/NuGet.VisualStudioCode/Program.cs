@@ -47,7 +47,6 @@ ConfigurationMethods.Register(connection, settings, () => sessions.Current is no
 SolutionMethods.Register(connection, sessions, evaluator);
 PackagesMethods.Register(connection, sessions, search, details, updates);
 WorkspaceMethods.Register(connection, refresher, ResetFeeds);
-OperationMethods.Register(connection, sessions, advisor);
 
 var credentials = new HostCredentialProvider((request, ct) => connection.RequestAsync(MethodNames.CREDENTIALS_REQUEST,
   request, ProtocolJsonContext.Default.CredentialsRequestParams, ProtocolJsonContext.Default.CredentialsRequestResult,
@@ -65,6 +64,11 @@ var engines = new Dictionary<string, IRestoreEngine>(StringComparer.Ordinal) {
 };
 var restore = new RestoreService(engines, options, log);
 RestoreMethods.Register(connection, sessions, queue, restore, refresher, options);
+
+var operations = new PackageOperationService(sessions, refresher, restore, log,
+  step => connection.NotifyAsync(MethodNames.OPERATION_PROGRESS, step,
+    ProtocolJsonContext.Default.OperationProgressParams));
+OperationMethods.Register(connection, sessions, advisor, queue, operations);
 
 try {
   await connection.RunAsync(CancellationToken.None).ConfigureAwait(false);

@@ -15,6 +15,10 @@ internal static class MethodNames {
   public const string PACKAGES_INSTALLED = "packages/installed";
   public const string PACKAGES_UPDATES = "packages/updates";
   public const string PACKAGES_PLAN = "packages/plan";
+  public const string PACKAGES_INSTALL = "packages/install";
+  public const string PACKAGES_UPDATE = "packages/update";
+  public const string PACKAGES_REMOVE = "packages/remove";
+  public const string OPERATION_PROGRESS = "operation/progress";
   public const string PACKAGES_SEARCH = "packages/search";
   public const string PACKAGES_DETAILS = "packages/details";
 
