@@ -1,4 +1,4 @@
-import type { ProjectInfo } from "@nuget-code/protocol";
+import type { AdvisoryInfo, ProjectInfo } from "@nuget-code/protocol";
 import { useState, type ReactNode } from "react";
 import { Placeholder } from "../app/Placeholder";
 import { useBridge } from "../bridge/BridgeContext";
@@ -12,6 +12,7 @@ import type { PackageRow, TransitiveRow } from "./model";
 import { PackageIcon } from "./PackageIcon";
 import { projectActions } from "./projectActions";
 import { useDetails } from "./queries";
+import { highestSeverity, isSevere } from "./vulnerabilities";
 
 interface DetailsPanelProps {
   id: string;
@@ -19,6 +20,8 @@ interface DetailsPanelProps {
   row: PackageRow | undefined;
   /** The package as the projects of the target have it without referencing it; absent when none does. */
   transitive?: TransitiveRow | undefined;
+  /** The known vulnerabilities of the versions the target has, worst first; empty when there are none. */
+  advisories: readonly AdvisoryInfo[];
   /** The projects of the target. */
   projects: readonly ProjectInfo[];
   feed: string | null;
@@ -43,6 +46,8 @@ export function DetailsPanel(props: DetailsPanelProps): ReactNode {
   const version = chosen !== undefined && versions.includes(chosen) ? chosen : versions[0];
   const actions = projectActions(props.row, props.projects, version, props.transitive);
   const open = (url: string): void => void bridge.host("openExternal", { url }).catch(() => {});
+  const worst = highestSeverity(props.advisories);
+  const severe = worst !== undefined && isSevere(worst);
 
   const toInstall = actions.filter((action) => action.canInstall).map((action) => action.path);
   const toUpdate = actions.filter((action) => action.canUpdate).map((action) => action.path);
@@ -73,7 +78,11 @@ export function DetailsPanel(props: DetailsPanelProps): ReactNode {
           value={version ?? ""}
           disabled={versions.length === 0}
           onChange={setChosen}
-          options={versions.map((item) => ({ value: item, label: item }))}
+          options={versions.map((item) => {
+            // Marked, not hidden: a version with known vulnerabilities can still be chosen.
+            const known = details.data?.vulnerableVersions.find((entry) => entry.version === item);
+            return { value: item, label: known === undefined ? item : `${item} — vulnerable (${known.severity})` };
+          })}
           className="flex-1"
         />
         <IconButton
@@ -95,6 +104,25 @@ export function DetailsPanel(props: DetailsPanelProps): ReactNode {
           onClick={() => props.onRemove(toRemove)}
         />
       </div>
+
+      {props.advisories.length === 0 ? null : (
+        <section aria-label="Vulnerabilities" className="flex flex-col gap-1">
+          <h3 className={`flex items-center gap-1 font-semibold ${severe ? "text-error" : "text-warning"}`}>
+            <i className="codicon codicon-shield" aria-hidden="true" />
+            Known vulnerabilities of what is installed
+          </h3>
+          <ul className="flex flex-col gap-0.5 pl-5">
+            {props.advisories.map((advisory) => (
+              <li key={advisory.url} className="flex min-w-0 items-baseline gap-2">
+                <span className={`shrink-0 ${isSevere(advisory.severity) ? "text-error" : "text-warning"}`}>
+                  {advisory.severity}
+                </span>
+                <LinkButton onClick={() => open(advisory.url)}>{advisory.url}</LinkButton>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {details.data === undefined ? null : (
         <>

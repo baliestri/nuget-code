@@ -195,10 +195,19 @@ const byId = (left: Listed, right: Listed): number => {
   return a < b ? -1 : a > b ? 1 : 0;
 };
 
-/** Smart puts the packages that have an update first; both orders are alphabetical within that. */
-export function sortRows<T extends Listed>(rows: readonly T[], mode: "smart" | "alphabetical"): T[] {
+/**
+ * Smart puts first the packages with known vulnerabilities, then the ones that have an update; both orders
+ * are alphabetical within that. `vulnerable` says which packages have known vulnerabilities.
+ */
+export function sortRows<T extends Listed>(
+  rows: readonly T[],
+  mode: "smart" | "alphabetical",
+  vulnerable: (row: T) => boolean = () => false
+): T[] {
+  // The lower the earlier: vulnerable, then with an update, then the rest.
+  const rank = (row: T): number => (vulnerable(row) ? 0 : row.hasUpdate ? 1 : 2);
   return [...rows].sort((left, right) =>
-    mode === "smart" && left.hasUpdate !== right.hasUpdate ? (left.hasUpdate ? -1 : 1) : byId(left, right)
+    mode === "smart" && rank(left) !== rank(right) ? rank(left) - rank(right) : byId(left, right)
   );
 }
 

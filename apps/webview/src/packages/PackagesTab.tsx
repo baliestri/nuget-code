@@ -1,4 +1,9 @@
-import { PackageChangeKinds, type PackageChangeParams, type ProjectInfo } from "@nuget-code/protocol";
+import {
+  PackageChangeKinds,
+  type AdvisoryInfo,
+  type PackageChangeParams,
+  type ProjectInfo
+} from "@nuget-code/protocol";
 import { useQueries } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { SideBar } from "../app/SideBar";
@@ -13,7 +18,15 @@ import { packageMenu, Shortcuts, type PackageMenuAction } from "./contextMenu";
 import { DetailsPanel, NoSelection } from "./DetailsPanel";
 import { DiscoverView } from "./DiscoverView";
 import { InstalledView } from "./InstalledView";
-import { buildRows, buildTransitiveRows, filterRows, sortRows, targetOptions, updateChanges } from "./model";
+import {
+  buildRows,
+  buildTransitiveRows,
+  filterRows,
+  sortRows,
+  targetOptions,
+  updateChanges,
+  type PackageRow
+} from "./model";
 import { OperationBar, ResultBanner } from "./OperationStatus";
 import {
   queryKeys,
@@ -24,14 +37,20 @@ import {
   useSolutionSync,
   useSources,
   useTransitiveUpdates,
-  useUpdates
+  useUpdates,
+  useVulnerabilities
 } from "./queries";
+import { advisoriesFor, advisoryIndex, shieldOf } from "./vulnerabilities";
 import { Toolbar } from "./Toolbar";
 
 const SEARCH_DELAY_MS = 300;
 /** Icons of installed packages are fetched for this many at most, so a huge solution does not flood the feeds. */
 const ICON_LIMIT = 60;
 const NO_PROJECTS: readonly ProjectInfo[] = [];
+
+/** The versions of a referenced package that the last restore resolved in the target. */
+const resolvedVersions = (row: PackageRow): string[] =>
+  row.projects.flatMap((use) => (use.resolved === undefined ? [] : [use.resolved]));
 
 /** The Packages tab: the installed and the available packages on the left, the selected one on the right. */
 export function PackagesTab(): ReactNode {
@@ -62,7 +81,14 @@ export function PackagesTab(): ReactNode {
   const found = useSearch(query, feed, prerelease, discovering);
   const hasTransitive = installed.data?.projects.some((project) => project.transitive.length > 0) === true;
   const transitiveUpdates = useTransitiveUpdates(prerelease, hasTransitive);
-  const refresh = useRefresh(prerelease, hasTransitive);
+  // The setting of the editor: with the audit off nothing is asked and nothing is shown.
+  const audit = session?.audit !== false;
+  const vulnerabilities = useVulnerabilities(audit);
+  const advisories = useMemo(
+    () => advisoryIndex(audit ? vulnerabilities.data : undefined),
+    [audit, vulnerabilities.data]
+  );
+  const refresh = useRefresh(prerelease, hasTransitive, audit);
   // The pages of a package, for its menu, come with its details; asked for when the menu opens.
   const menuDetails = useDetails(menu?.id, feed, prerelease);
 
@@ -74,8 +100,13 @@ export function PackagesTab(): ReactNode {
     [installed.data, projects, target, updates.data, feed, prerelease]
   );
   const rows = useMemo(
-    () => sortRows(filterRows(allRows, query), preferences.sort),
-    [allRows, query, preferences.sort]
+    () =>
+      sortRows(
+        filterRows(allRows, query),
+        preferences.sort,
+        (row) => advisoriesFor(advisories, row.id, resolvedVersions(row)).length > 0
+      ),
+    [allRows, query, preferences.sort, advisories]
   );
   const updateCount = allRows.filter((row) => row.hasUpdate).length;
   const allTransitive = useMemo(
@@ -93,9 +124,25 @@ export function PackagesTab(): ReactNode {
     [installed.data, projects, target, transitiveUpdates.data, feed, prerelease]
   );
   const transitiveRows = useMemo(
-    () => sortRows(filterRows(allTransitive, query), preferences.sort),
-    [allTransitive, query, preferences.sort]
+    () =>
+      sortRows(
+        filterRows(allTransitive, query),
+        preferences.sort,
+        (row) => advisoriesFor(advisories, row.id, row.versions).length > 0
+      ),
+    [allTransitive, query, preferences.sort, advisories]
   );
+  /** The known vulnerabilities of a package in what the target has of it, referenced or transitive. */
+  const advisoriesOf = (id: string): AdvisoryInfo[] => {
+    const lower = id.toLowerCase();
+    return advisoriesFor(advisories, id, [
+      ...allRows.filter((row) => row.id.toLowerCase() === lower).flatMap(resolvedVersions),
+      ...allTransitive.filter((row) => row.id.toLowerCase() === lower).flatMap((row) => row.versions)
+    ]);
+  };
+  const vulnerableCount = new Set(
+    [...allRows, ...allTransitive].filter((row) => advisoriesOf(row.id).length > 0).map((row) => row.id.toLowerCase())
+  ).size;
 
   // The icons of the installed packages come with their details, which are asked for once and kept.
   const iconIds = allRows.slice(0, ICON_LIMIT).map((row) => row.id);
@@ -152,6 +199,7 @@ export function PackagesTab(): ReactNode {
           id: menu.id,
           row: allRows.find((row) => row.id.toLowerCase() === menu.id.toLowerCase()),
           transitive: allTransitive.find((row) => row.id.toLowerCase() === menu.id.toLowerCase()),
+          advisories: advisoriesOf(menu.id),
           targetName,
           details: menuDetails.data,
           feeds: sources.data?.effective ?? [],
@@ -234,7 +282,16 @@ export function PackagesTab(): ReactNode {
   };
 
   const side = preferences.detailsPosition === "side";
-  const failures = [...(updates.data?.failures ?? []), ...(discovering ? (found.data?.failures ?? []) : [])];
+  // A feed that fails more than one of the questions is said once.
+  const failures = [
+    ...new Map(
+      [
+        ...(updates.data?.failures ?? []),
+        ...(audit ? (vulnerabilities.data?.failures ?? []) : []),
+        ...(discovering ? (found.data?.failures ?? []) : [])
+      ].map((failure) => [`${failure.feed}/${failure.kind}`, failure])
+    ).values()
+  ];
 
   return (
     <>
@@ -291,6 +348,16 @@ export function PackagesTab(): ReactNode {
                   {updateCount}
                 </span>
               )}
+              {vulnerableCount === 0 ? null : (
+                <span
+                  aria-label={`${vulnerableCount} with known vulnerabilities`}
+                  title={`${vulnerableCount} with known vulnerabilities`}
+                  className="text-error ml-1 flex items-center gap-0.5"
+                >
+                  <i className="codicon codicon-shield" aria-hidden="true" />
+                  {vulnerableCount}
+                </span>
+              )}
             </ListTab>
             <ListTab selected={discovering} onSelect={() => set({ packagesView: "discover" })}>
               Discover
@@ -334,6 +401,7 @@ export function PackagesTab(): ReactNode {
               onUpdate={updateChecked}
               busy={operation.running}
               iconOf={iconOf}
+              shieldOf={(id, versions) => shieldOf(advisoriesFor(advisories, id, versions))}
             />
           )}
           <OperationBar />
@@ -351,6 +419,7 @@ export function PackagesTab(): ReactNode {
               id={selectedId}
               row={selectedRow}
               transitive={selectedTransitive}
+              advisories={advisoriesOf(selectedId)}
               projects={targetProjects}
               feed={feed}
               prerelease={prerelease}

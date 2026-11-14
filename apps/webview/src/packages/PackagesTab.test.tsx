@@ -6,6 +6,7 @@ import type {
   PackageDetailsResult,
   PackagesInstalledResult,
   PackagesUpdatesResult,
+  PackagesVulnerabilitiesResult,
   ProjectInfo
 } from "@nuget-code/protocol";
 import { render, screen, waitFor, within } from "@testing-library/react";
@@ -101,6 +102,8 @@ interface Setup {
   updates?: PackagesUpdatesResult | Promise<PackagesUpdatesResult>;
   /** What the backend answers about the transitive packages. */
   transitiveUpdates?: PackagesUpdatesResult;
+  /** What the backend knows about vulnerabilities; nothing, unless given. */
+  vulnerabilities?: PackagesVulnerabilitiesResult;
   session?: SessionState;
   stored?: unknown;
   configure?(fake: FakeBridge): void;
@@ -115,6 +118,7 @@ function open(setup: Setup = {}) {
         ? (setup.transitiveUpdates ?? { packages: [], failures: [] })
         : (setup.updates ?? UPDATES)
     );
+  fake.backend.packageVulnerabilities = () => Promise.resolve(setup.vulnerabilities ?? { packages: [], failures: [] });
   fake.backend.listSources = () =>
     Promise.resolve({ files: [], effective: [FEED], fallbackFolders: [], globalPackagesFolder: "/packages" });
   fake.backend.packageDetails = (params) => Promise.resolve(details(params.id, ["9.0.0", "1.5.0", "1.0.0"]));
@@ -855,6 +859,159 @@ describe("transitive packages", () => {
     await waitFor(() =>
       expect(fake.callsOf("packageUpdates")).toContainEqual({ prerelease: false, noCache: true, transitive: true })
     );
+  });
+});
+
+describe("known vulnerabilities", () => {
+  const HIGH = { severity: "high" as const, url: "https://github.com/advisories/GHSA-high" };
+  const LOW = { severity: "low" as const, url: "https://github.com/advisories/GHSA-low" };
+  const INSTALLED_WITH_INNER: PackagesInstalledResult = {
+    projects: [
+      {
+        projectPath: APP,
+        packages: [pkg("Alpha", "1.0.0"), pkg("Beta", "2.0.0")],
+        transitive: [
+          { id: "Inner", resolvedVersion: "1.0.0", frameworks: ["net10.0"], via: ["Alpha"] },
+          { id: "Aardvark", resolvedVersion: "1.0.0", frameworks: ["net10.0"], via: ["Alpha"] }
+        ]
+      }
+    ]
+  };
+  const KNOWN: PackagesVulnerabilitiesResult = {
+    packages: [
+      { id: "Beta", version: "2.0.0", advisories: [LOW] },
+      { id: "Inner", version: "1.0.0", advisories: [HIGH, LOW] }
+    ],
+    failures: []
+  };
+  const openVulnerable = (setup: Setup = {}) =>
+    open({ installed: INSTALLED_WITH_INNER, vulnerabilities: KNOWN, ...setup });
+  const shield = (name: RegExp): Promise<HTMLElement[]> => screen.findAllByRole("img", { name });
+
+  it("a vulnerable package, referenced or transitive, shows a shield that says how many and how bad", async () => {
+    openVulnerable();
+
+    const beta = (await shield(/^1 known vulnerability \(low\)/))[0]!;
+    const inner = (await shield(/^2 known vulnerabilities, the worst is high/))[0]!;
+    expect(beta.closest("li")).toHaveTextContent("Beta");
+    expect(inner.closest("li")).toHaveTextContent("Inner");
+    expect(screen.getAllByRole("img", { name: /known vulnerabilit/ })).toHaveLength(2);
+  });
+
+  it("high and critical use the colour of an error, low and moderate the colour of a warning", async () => {
+    openVulnerable();
+
+    expect((await shield(/the worst is high/))[0]!.className).toContain("text-error");
+    expect((await shield(/\(low\)/))[0]!.className).toContain("text-warning");
+  });
+
+  it("the Installed tab counts the vulnerable packages", async () => {
+    openVulnerable();
+
+    expect(await screen.findByLabelText("2 with known vulnerabilities")).toBeInTheDocument();
+  });
+
+  it("vulnerable packages come first in the smart order, and in their place in the alphabetical one", async () => {
+    const { user } = openVulnerable();
+    await shield(/the worst is high/);
+    const names = (heading: RegExp): string[] =>
+      within(screen.getByRole("heading", { name: heading }).closest("section")!)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent.split(" ")[0]!);
+    expect(names(/^Implicitly Installed/)).toEqual(["Inner", "Aardvark"]);
+    expect(names(/^Installed Packages/)).toEqual(["Beta", "Alpha"]);
+
+    await user.click(screen.getByRole("button", { name: /^Sort: Smart/ }));
+
+    expect(names(/^Implicitly Installed/)).toEqual(["Aardvark", "Inner"]);
+  });
+
+  it("the details list each advisory of what is installed, worst first, and open it in the browser", async () => {
+    const { fake, user } = openVulnerable();
+    await shield(/the worst is high/);
+
+    await user.click(screen.getByRole("button", { name: /^Inner/ }));
+
+    const section = await screen.findByRole("region", { name: "Vulnerabilities" });
+    expect(
+      within(section)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent)
+    ).toEqual([`high${HIGH.url}`, `low${LOW.url}`]);
+    await user.click(within(section).getByRole("button", { name: HIGH.url }));
+    await waitFor(() => expect(fake.callsOf("openExternal")).toEqual([{ url: HIGH.url }]));
+  });
+
+  it("a package without advisories has no such section", async () => {
+    const { user } = openVulnerable();
+    await shield(/the worst is high/);
+
+    await user.click(screen.getAllByRole("button", { name: /^Alpha/ })[0]!);
+
+    await screen.findByRole("heading", { name: "Alpha" });
+    expect(screen.queryByRole("region", { name: "Vulnerabilities" })).not.toBeInTheDocument();
+  });
+
+  it("the version list marks the vulnerable versions, and they can still be installed", async () => {
+    const { fake, user } = openVulnerable({
+      configure: (bridge) => {
+        bridge.backend.packageDetails = (params) =>
+          Promise.resolve({
+            ...details(params.id, ["2.0.0", "1.0.0"]),
+            vulnerableVersions: [{ version: "1.0.0", severity: "high" }]
+          });
+      }
+    });
+    await shield(/the worst is high/);
+    await user.click(screen.getByRole("button", { name: /^Inner/ }));
+
+    const versions = within(await screen.findByRole("combobox", { name: "Version" })).getAllByRole("option");
+    expect(versions.map((option) => option.textContent)).toEqual(["2.0.0", "1.0.0 — vulnerable (high)"]);
+    await user.selectOptions(screen.getByRole("combobox", { name: "Version" }), "1.0.0");
+    await user.click(screen.getByRole("button", { name: "Install in App" }));
+
+    await waitFor(() =>
+      expect(fake.callsOf("installPackage")).toEqual([{ id: "Inner", version: "1.0.0", projects: [APP] }])
+    );
+  });
+
+  it("the menu offers each advisory of the installed version", async () => {
+    const { fake, user } = openVulnerable();
+    await shield(/the worst is high/);
+
+    await user.pointer({ keys: "[MouseRight]", target: screen.getByRole("button", { name: /^Inner/ }) });
+    expect(screen.getByRole("menuitem", { name: "Show Advisory GHSA-low (low)" })).toBeInTheDocument();
+    await user.click(screen.getByRole("menuitem", { name: "Show Advisory GHSA-high (high)" }));
+
+    await waitFor(() => expect(fake.callsOf("openExternal")).toEqual([{ url: HIGH.url }]));
+  });
+
+  it("Refresh asks for the vulnerabilities again, without the cache", async () => {
+    const { fake, user } = openVulnerable();
+    await shield(/the worst is high/);
+
+    await user.click(screen.getByRole("button", { name: "Refresh NuGet Packages and Clear the Caches" }));
+
+    await waitFor(() => expect(fake.callsOf("packageVulnerabilities")).toContainEqual({ noCache: true }));
+  });
+
+  it("a feed that failed to answer is shown with the other feed failures, once", async () => {
+    const failure = { feed: "private", kind: "unreachable" as const, message: "The feed did not answer." };
+    openVulnerable({
+      vulnerabilities: { packages: [], failures: [failure] },
+      updates: { ...UPDATES, failures: [failure] }
+    });
+
+    expect(await screen.findAllByText("private: The feed did not answer.")).toHaveLength(1);
+  });
+
+  it("with the audit off nothing is asked and nothing is shown", async () => {
+    const { fake } = openVulnerable({ session: { ...SESSION, audit: false } });
+
+    await screen.findByRole("heading", { name: /^Implicitly Installed/ });
+    expect(screen.queryByRole("img", { name: /known vulnerabilit/ })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/with known vulnerabilities/)).not.toBeInTheDocument();
+    expect(fake.callsOf("packageVulnerabilities")).toEqual([]);
   });
 });
 

@@ -3,6 +3,7 @@ import type {
   PackagesInstalledResult,
   PackagesSearchResult,
   PackagesUpdatesResult,
+  PackagesVulnerabilitiesResult,
   SourcesListResult
 } from "@nuget-code/protocol";
 import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
@@ -15,6 +16,7 @@ export const SEARCH_SIZE = 100;
 export const queryKeys = {
   installed: ["installed"] as const,
   updates: (prerelease: boolean, transitive = false) => ["updates", prerelease, transitive] as const,
+  vulnerabilities: ["vulnerabilities"] as const,
   sources: ["sources"] as const,
   folders: ["folders"] as const,
   search: (query: string, feed: string | null, prerelease: boolean) => ["search", query, feed, prerelease] as const,
@@ -44,6 +46,16 @@ export function useTransitiveUpdates(prerelease: boolean, enabled: boolean): Use
   return useQuery({
     queryKey: queryKeys.updates(prerelease, true),
     queryFn: () => bridge.backend("packageUpdates", { prerelease, noCache: false, transitive: true }),
+    enabled
+  });
+}
+
+/** The known vulnerabilities of the resolved packages. Not asked for while the audit is off. */
+export function useVulnerabilities(enabled: boolean): UseQueryResult<PackagesVulnerabilitiesResult> {
+  const bridge = useBridge();
+  return useQuery({
+    queryKey: queryKeys.vulnerabilities,
+    queryFn: () => bridge.backend("packageVulnerabilities", { noCache: false }),
     enabled
   });
 }
@@ -95,6 +107,7 @@ export function useSolutionSync(): void {
   const invalidate = useCallback(() => {
     void queries.invalidateQueries({ queryKey: queryKeys.installed });
     void queries.invalidateQueries({ queryKey: ["updates"] });
+    void queries.invalidateQueries({ queryKey: queryKeys.vulnerabilities });
   }, [queries]);
   useBridgeEvent("solutionDidChange", invalidate);
   useBridgeEvent("restoreDidFinish", invalidate);
@@ -107,7 +120,7 @@ export function useSolutionSync(): void {
 }
 
 /** Fetches everything about packages again, asking the backend to skip its caches. */
-export function useRefresh(prerelease: boolean, transitive: boolean): () => void {
+export function useRefresh(prerelease: boolean, transitive: boolean, audit: boolean): () => void {
   const bridge = useBridge();
   const queries = useQueryClient();
   return useCallback(() => {
@@ -130,5 +143,15 @@ export function useRefresh(prerelease: boolean, transitive: boolean): () => void
         })
         .catch(() => {});
     }
-  }, [bridge, queries, prerelease, transitive]);
+
+    if (audit) {
+      void queries
+        .fetchQuery({
+          queryKey: queryKeys.vulnerabilities,
+          queryFn: () => bridge.backend("packageVulnerabilities", { noCache: true }),
+          staleTime: 0
+        })
+        .catch(() => {});
+    }
+  }, [bridge, queries, prerelease, transitive, audit]);
 }

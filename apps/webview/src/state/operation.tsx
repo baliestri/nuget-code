@@ -105,6 +105,7 @@ export function OperationProvider({ children }: { children: ReactNode }): ReactN
         // reports, such as a restore that only wrote the assets files.
         void queries.invalidateQueries({ queryKey: ["installed"] });
         void queries.invalidateQueries({ queryKey: ["updates"] });
+        void queries.invalidateQueries({ queryKey: ["vulnerabilities"] });
       }
 
       return true;

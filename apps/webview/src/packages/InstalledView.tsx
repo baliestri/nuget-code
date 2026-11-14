@@ -26,7 +26,13 @@ interface InstalledViewProps {
   /** An operation is running: nothing can be started. */
   busy: boolean;
   iconOf(id: string): string | undefined;
+  /** What to say about the known vulnerabilities of a package in the given versions; undefined when it has none. */
+  shieldOf(id: string, versions: readonly string[]): { label: string; severe: boolean } | undefined;
 }
+
+/** The versions of a package that are on disk in the target: what the last restore resolved. */
+const resolvedOf = (row: PackageRow): string[] =>
+  row.projects.flatMap((use) => (use.resolved === undefined ? [] : [use.resolved]));
 
 function reasonNotRestored(row: PackageRow): string {
   const projects = row.projects.filter((use) => !use.restored).map((use) => use.name);
@@ -84,6 +90,7 @@ export function InstalledView(props: InstalledViewProps): ReactNode {
               onSelect={() => props.onSelect(row.id)}
               onMenu={(at) => props.onMenu(row.id, at)}
               check={{ checked: checked.has(row.id), disabled: props.busy, onChange: (on) => toggle(row.id, on) }}
+              shield={props.shieldOf(row.id, resolvedOf(row))}
             />
           ))}
         </PackageGroup>
@@ -101,6 +108,7 @@ export function InstalledView(props: InstalledViewProps): ReactNode {
             onMenu={(at) => props.onMenu(row.id, at)}
             dimmed={row.implicit}
             warning={row.restored || row.implicit ? undefined : reasonNotRestored(row)}
+            shield={props.shieldOf(row.id, resolvedOf(row))}
           />
         ))}
       </PackageGroup>
@@ -119,6 +127,7 @@ export function InstalledView(props: InstalledViewProps): ReactNode {
               selected={isSelected(row.id)}
               onSelect={() => props.onSelect(row.id)}
               onMenu={(at) => props.onMenu(row.id, at)}
+              shield={props.shieldOf(row.id, row.versions)}
             />
           ))}
         </PackageGroup>

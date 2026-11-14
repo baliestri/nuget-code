@@ -1,6 +1,7 @@
-import type { FeedInfo, PackageDetailsResult } from "@nuget-code/protocol";
+import type { AdvisoryInfo, FeedInfo, PackageDetailsResult } from "@nuget-code/protocol";
 import type { MenuEntry } from "../ui/Menu";
 import type { PackageRow, TransitiveRow } from "./model";
+import { advisoryName } from "./vulnerabilities";
 
 /** What an item of the package menu does. */
 export type PackageMenuAction =
@@ -20,6 +21,8 @@ export interface PackageMenuInput {
   transitive?: TransitiveRow | undefined;
   /** The name of the target, as the lists say it: "Solution" or a project. */
   targetName: string;
+  /** The known vulnerabilities of the versions the target has, worst first. */
+  advisories?: readonly AdvisoryInfo[] | undefined;
   /** What is known about the package; absent while it is being fetched. */
   details: PackageDetailsResult | undefined;
   feeds: readonly FeedInfo[];
@@ -117,6 +120,16 @@ export function packageMenu(input: PackageMenuInput): MenuEntry<PackageMenuActio
   }
 
   groups.push(folders);
+
+  groups.push(
+    (input.advisories ?? []).map((advisory) => ({
+      kind: "item" as const,
+      // The name of the advisory tells one item from another when there are several.
+      label: `Show Advisory ${advisoryName(advisory)} (${advisory.severity})`,
+      icon: "shield",
+      action: { kind: "openExternal" as const, url: advisory.url }
+    }))
+  );
 
   // The pages of the package come with its details. Until they arrive the items wait, disabled.
   const loading = details === undefined;

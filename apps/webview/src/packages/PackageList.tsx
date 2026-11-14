@@ -79,6 +79,8 @@ interface LineProps {
   dimmed?: boolean;
   /** A warning shown after the id, with this explanation. */
   warning?: string | undefined;
+  /** The package has known vulnerabilities: what to say about them, and whether the worst is high or critical. */
+  shield?: { label: string; severe: boolean } | undefined;
 }
 
 /** One package in a list. The line is a button that shows the package's details. */
@@ -125,6 +127,14 @@ export function PackageLine(props: LineProps): ReactNode {
             aria-label={props.warning}
             title={props.warning}
             className="codicon codicon-warning text-warning shrink-0"
+          />
+        )}
+        {props.shield === undefined ? null : (
+          <i
+            role="img"
+            aria-label={props.shield.label}
+            title={props.shield.label}
+            className={`codicon codicon-shield shrink-0 ${props.shield.severe ? "text-error" : "text-warning"}`}
           />
         )}
       </button>
