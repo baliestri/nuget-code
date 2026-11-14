@@ -7,7 +7,9 @@
     ".vscode-test/**",
     "backend/**",
     "docs/**",
-    "apps/extension/bin/**"
+    "apps/extension/bin/**",
+    "CHANGELOG.md",
+    "apps/extension/CHANGELOG.md"
   ],
   "printWidth": 120,
   "semi": true,

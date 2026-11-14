@@ -648,3 +648,5 @@ FodyWeavers.xsd
 media/
 release-artifacts/
 alpine-out/
+# Copied from the root by the packaging script.
+/apps/extension/CHANGELOG.md

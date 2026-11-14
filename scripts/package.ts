@@ -87,6 +87,9 @@ for (const file of ["main.js", "main.css", "codicon.ttf"]) {
 
 run("pnpm", ["exec", "rolldown", "-c"], extension, production);
 
+// The marketplaces show the changelog that is inside the package.
+copyFileSync(join(repository, "CHANGELOG.md"), join(extension, "CHANGELOG.md"));
+
 const version = (JSON.parse(readFileSync(join(extension, "package.json"), "utf8")) as { version: string }).version;
 mkdirSync(out, { recursive: true });
 const vsix = join(out, `nuget-code-${target.vsce}-${version}.vsix`);
