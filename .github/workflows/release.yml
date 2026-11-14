@@ -1,0 +1,87 @@
+name: Release
+
+# A tag v<version> builds the eight VSIX files and attaches them to a GitHub release. They are also
+# published to the Visual Studio Marketplace and to Open VSX, each only when its token is configured as a
+# secret (VSCE_PAT, OVSX_PAT) and only for a plain major.minor.patch version: neither marketplace accepts
+# a version with a pre-release suffix such as 3.0.0-alpha.0.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: The tag matches the extension version
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - run: |
+          version="$(node -p "require('./apps/extension/package.json').version")"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::The tag is $GITHUB_REF_NAME but apps/extension/package.json says $version."
+            exit 1
+          fi
+
+  targets:
+    name: Targets
+    needs: verify
+    uses: ./.github/workflows/build-target.yml
+
+  publish:
+    name: Publish
+    needs: targets
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: vsix-*
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Decide what kind of release this is
+        run: |
+          case "$GITHUB_REF_NAME" in
+            *-*) echo "PRERELEASE=true" >> "$GITHUB_ENV" ;;
+            *) echo "PRERELEASE=false" >> "$GITHUB_ENV" ;;
+          esac
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags="--generate-notes"
+          if [ "$PRERELEASE" = "true" ]; then flags="$flags --prerelease"; fi
+          gh release create "$GITHUB_REF_NAME" release-artifacts/*.vsix $flags
+
+      - name: Publish to the Visual Studio Marketplace
+        if: ${{ env.VSCE_PAT != '' && env.PRERELEASE == 'false' }}
+        run: |
+          for vsix in "$GITHUB_WORKSPACE"/release-artifacts/*.vsix; do
+            pnpm --filter nuget-code exec vsce publish --packagePath "$vsix"
+          done
+
+      - name: Publish to Open VSX
+        if: ${{ env.OVSX_PAT != '' && env.PRERELEASE == 'false' }}
+        run: |
+          for vsix in "$GITHUB_WORKSPACE"/release-artifacts/*.vsix; do
+            pnpm --filter nuget-code exec ovsx publish "$vsix" --pat "$OVSX_PAT"
+          done

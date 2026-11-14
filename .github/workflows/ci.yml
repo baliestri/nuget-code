@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  js:
+    name: Lint, types and unit tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm lint
+
+      - run: pnpm format:check
+
+      - run: pnpm typecheck
+
+      # The tests that need no backend process. The contract tests run per target, against the published binary.
+      - run: pnpm exec vitest run --dir scripts
+
+      - run: pnpm --filter @nuget-code/protocol test
+
+      - run: pnpm --filter nuget-code test
+
+  targets:
+    name: Targets
+    uses: ./.github/workflows/build-target.yml
+
+  integration:
+    name: Editor (${{ matrix.target }})
+    needs: targets
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: win32-x64, os: windows-latest }
+          - { target: linux-x64, os: ubuntu-24.04 }
+          - { target: darwin-arm64, os: macos-15 }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      # The backend runs dotnet msbuild on the test project.
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: backend/global.json
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: vsix-${{ matrix.target }}
+          path: release-artifacts
+
+      # A VSIX is a zip: the binary is taken out of the very file that would be installed.
+      - name: Take the backend out of the VSIX
+        run: |
+          unzip -o release-artifacts/*.vsix "extension/bin/*" -d vsix
+          rm -rf apps/extension/bin
+          cp -R vsix/extension/bin apps/extension/bin
+          chmod -R +x apps/extension/bin
+
+      - name: Smoke tests in the editor
+        env:
+          NUGET_VSCODE_BACKEND_BUNDLED: "1"
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a pnpm --filter nuget-code test:integration
+          else
+            pnpm --filter nuget-code test:integration
+          fi

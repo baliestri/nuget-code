@@ -1,0 +1,95 @@
+name: Build targets
+
+# Publishes the backend with NativeAOT for each target, tests the published binary and packages the VSIX.
+# NativeAOT does not compile from one operating system to another, so every target runs on a runner of its
+# own system and architecture. musl is built in an Alpine container started from an Ubuntu runner.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  target:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: win32-x64, rid: win-x64, os: windows-latest, exe: .exe }
+          - { target: win32-arm64, rid: win-arm64, os: windows-11-arm, exe: .exe }
+          - { target: linux-x64, rid: linux-x64, os: ubuntu-24.04 }
+          - { target: linux-arm64, rid: linux-arm64, os: ubuntu-24.04-arm }
+          - { target: darwin-arm64, rid: osx-arm64, os: macos-15 }
+          - { target: darwin-x64, rid: osx-x64, os: macos-15-intel }
+          - { target: alpine-x64, rid: linux-musl-x64, os: ubuntu-24.04, alpine: true }
+          - { target: alpine-arm64, rid: linux-musl-arm64, os: ubuntu-24.04-arm, alpine: true }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Everything but musl: build and test on the runner itself.
+
+      - uses: actions/setup-dotnet@v6
+        if: ${{ !matrix.alpine }}
+        with:
+          global-json-file: backend/global.json
+
+      - name: Install the native toolchain (Linux)
+        if: ${{ !matrix.alpine && runner.os == 'Linux' }}
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+
+      - name: Put vswhere on PATH (Windows)
+        if: ${{ runner.os == 'Windows' }}
+        run: echo "C:\Program Files (x86)\Microsoft Visual Studio\Installer" >> "$GITHUB_PATH"
+
+      - name: Publish the backend
+        if: ${{ !matrix.alpine }}
+        run: |
+          dotnet publish backend/src/NuGet.VisualStudioCode -c Release -r ${{ matrix.rid }} -nologo
+          echo "NUGET_VSCODE_BACKEND_PATH=${{ github.workspace }}/backend/src/NuGet.VisualStudioCode/bin/Release/net10.0/${{ matrix.rid }}/publish/NuGet.VisualStudioCode${{ matrix.exe }}" >> "$GITHUB_ENV"
+
+      - name: Backend unit tests
+        if: ${{ !matrix.alpine }}
+        working-directory: backend
+        run: dotnet test --project tests/NuGet.VisualStudioCode.Tests
+
+      - name: Backend tests against the published binary
+        if: ${{ !matrix.alpine }}
+        working-directory: backend
+        run: dotnet test --project tests/NuGet.VisualStudioCode.AotTests
+
+      - name: Client contract tests against the published binary
+        if: ${{ !matrix.alpine }}
+        run: pnpm --filter @nuget-code/backend-client test
+
+      # musl: the same steps, inside an Alpine container. See scripts/ci/alpine.sh.
+
+      - name: Publish and test the backend (Alpine)
+        if: ${{ matrix.alpine }}
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work mcr.microsoft.com/dotnet/sdk:10.0-alpine \
+            sh scripts/ci/alpine.sh ${{ matrix.rid }}
+          echo "NUGET_VSCODE_BACKEND_PATH=${{ github.workspace }}/alpine-out/NuGet.VisualStudioCode" >> "$GITHUB_ENV"
+
+      - name: Package the VSIX
+        run: pnpm package ${{ matrix.target }} --backend "$NUGET_VSCODE_BACKEND_PATH" --out release-artifacts
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: vsix-${{ matrix.target }}
+          path: release-artifacts/*.vsix
+          if-no-files-found: error

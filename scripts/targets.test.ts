@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { findTarget, TARGETS } from "./targets";
 
@@ -19,6 +20,13 @@ describe("targets", () => {
     for (const item of TARGETS) {
       expect(item.executable.endsWith(".exe")).toBe(item.vsce.startsWith("win32-"));
     }
+  });
+
+  it("the build matrix of the workflow covers exactly these targets", () => {
+    const workflow = readFileSync(new URL("../.github/workflows/build-target.yml", import.meta.url), "utf8");
+    const matrix = [...workflow.matchAll(/\{ target: ([\w-]+), rid: ([\w-]+),/g)].map((match) => [match[1], match[2]]);
+
+    expect(matrix.toSorted()).toEqual(TARGETS.map((item) => [item.vsce, item.rid]).toSorted());
   });
 
   it("finds a target by its name and nothing for an unknown one", () => {
