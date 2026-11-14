@@ -3,6 +3,7 @@ import type { BackendState } from "@nuget-code/backend-client";
 export type SolutionState = { kind: "none" } | { kind: "opening" } | { kind: "open"; name: string };
 
 export const Commands = {
+  open: "nuget.open",
   selectSolution: "nuget.selectSolution",
   restore: "nuget.restore",
   restartBackend: "nuget.restartBackend",
@@ -30,15 +31,16 @@ export function statusText(backend: BackendState, solution: SolutionState): Stat
     return {
       text: "$(sync~spin) NuGet",
       tooltip: backend === "starting" ? "Starting the NuGet backend…" : "Opening the solution…",
-      command: Commands.selectSolution
+      command: Commands.open
     };
   }
 
+  // With a solution open the item leads to the view; with none, the text itself says what a click does.
   return solution.kind === "open"
     ? {
         text: `$(package) ${solution.name}`,
-        tooltip: "NuGet: click to select another solution.",
-        command: Commands.selectSolution
+        tooltip: "NuGet: click to open the package manager.",
+        command: Commands.open
       }
     : {
         text: "$(package) Select Solution",

@@ -174,6 +174,25 @@ describe("CredentialStore", () => {
     expect(test.asked).toHaveLength(1);
   });
 
+  it("save stores and indexes without prompting, and a later request is answered from it", async () => {
+    const test = harness();
+
+    const saved = await test.store.save(FEED, GOOD);
+    const answer = await test.store.resolve({ source: FEED, isRetry: false });
+
+    expect(saved).toBe(true);
+    expect(answer).toEqual({ ...GOOD, cancelled: false });
+    expect(test.asked).toEqual([]);
+    expect(test.index()).toEqual(["https://nuget.example:443"]);
+  });
+
+  it("save refuses a source that is not a URL", async () => {
+    const test = harness();
+
+    expect(await test.store.save("C:\\packages\\feed", GOOD)).toBe(false);
+    expect(test.secrets.size).toBe(0);
+  });
+
   it("the index holds addresses only", async () => {
     const test = harness();
 

@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@nuget-code/backend-client": "workspace:*",
+    "@nuget-code/bridge": "workspace:*",
     "@nuget-code/protocol": "workspace:*"
   },
   "devDependencies": {
@@ -41,7 +42,30 @@
     "rolldown": "^1.3.2"
   },
   "contributes": {
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "nuget",
+          "title": "NuGet",
+          "icon": "$(package)"
+        }
+      ]
+    },
+    "views": {
+      "nuget": [
+        {
+          "id": "nuget.view",
+          "name": "NuGet",
+          "type": "webview"
+        }
+      ]
+    },
     "commands": [
+      {
+        "command": "nuget.open",
+        "title": "Open",
+        "category": "NuGet"
+      },
       {
         "command": "nuget.selectSolution",
         "title": "Select Solution",

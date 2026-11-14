@@ -193,6 +193,9 @@ importers:
       '@nuget-code/backend-client':
         specifier: workspace:*
         version: link:../../packages/backend-client
+      '@nuget-code/bridge':
+        specifier: workspace:*
+        version: link:../../packages/bridge
       '@nuget-code/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol

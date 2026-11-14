@@ -42,6 +42,7 @@ export class BackendSession {
   private target: SolutionTarget | undefined;
   private solutionState: SolutionState = { kind: "none" };
   private initialized: InitializeResult | undefined;
+  private openResult: SolutionOpenResult | undefined;
 
   constructor(options: BackendSessionOptions) {
     this.settings = options.settings;
@@ -70,6 +71,11 @@ export class BackendSession {
     return this.target;
   }
 
+  /** What the backend answered when the open solution was opened: its path and its projects. */
+  get openedSolution(): SolutionOpenResult | undefined {
+    return this.openResult;
+  }
+
   /** What the backend said about itself when it last started; `sdk` is absent when no .NET SDK was found. */
   get initializeResult(): InitializeResult | undefined {
     return this.initialized;
@@ -91,12 +97,14 @@ export class BackendSession {
   /** Opens the solution, replacing the one that was open. On failure no solution is left open. */
   async openSolution(target: SolutionTarget): Promise<SolutionOpenResult> {
     this.target = target;
+    this.openResult = undefined;
     this.setSolution({ kind: "opening" });
     try {
       const result = await this.api.openSolution(
         target.projects === undefined ? { path: target.path } : { path: target.path, projects: target.projects }
       );
       if (this.target === target) {
+        this.openResult = result;
         this.setSolution({ kind: "open", name: basename(result.path) });
       }
 
@@ -104,6 +112,7 @@ export class BackendSession {
     } catch (error) {
       if (this.target === target) {
         this.target = undefined;
+        this.openResult = undefined;
         this.setSolution({ kind: "none" });
       }
 
@@ -113,6 +122,7 @@ export class BackendSession {
 
   async closeSolution(): Promise<void> {
     this.target = undefined;
+    this.openResult = undefined;
     this.setSolution({ kind: "none" });
     await this.api.closeSolution();
   }

@@ -2,17 +2,21 @@ import { existsSync } from "node:fs";
 import * as vscode from "vscode";
 import { isMuslRuntime, locateBackend } from "./backendLocator";
 import { BackendSession } from "./backendSession";
+import { createBackendHandler, createHostHandler } from "./bridgeHost";
 import { clearCredentialsCommand, restoreCommand } from "./commands";
 import { readSettings, SECTION, type Settings } from "./configuration";
 import { createCredentialStore } from "./credentials";
 import { FileWatcher } from "./fileWatcher";
 import { LogChannel } from "./logChannel";
+import { NugetViewProvider, VIEW_ID } from "./nugetView";
+import { samePath } from "./solutionCandidates";
 import { SolutionSelector } from "./solutionSelector";
 import { Commands, StatusBar } from "./statusBar";
 
-/** What the extension hands to whoever depends on it: the session with the backend. */
+/** What the extension hands to whoever depends on it: the session with the backend, and the view. */
 export interface ExtensionApi {
   session: BackendSession;
+  view: NugetViewProvider;
 }
 
 let active: BackendSession | undefined;
@@ -68,9 +72,45 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   });
 
   const selector = new SolutionSelector(session, context.workspaceState, log);
+  const view = new NugetViewProvider(context.extensionUri, session, {
+    backend: createBackendHandler(session.api),
+    host: createHostHandler({
+      isKnownFolder: async (path) =>
+        (await session.api.listFolders()).folders.some((folder) => samePath(folder.path, path, process.platform)),
+      revealFolder: async (path) => {
+        await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(path));
+      },
+      openSettings: async (query) => {
+        await vscode.commands.executeCommand("workbench.action.openSettings", query ?? SECTION);
+      },
+      pickFolder: async (title) => {
+        const picked = await vscode.window.showOpenDialog({
+          title,
+          canSelectFiles: false,
+          canSelectFolders: true,
+          canSelectMany: false
+        });
+        return picked?.[0]?.fsPath;
+      },
+      openExternal: async (url) => {
+        await vscode.env.openExternal(vscode.Uri.parse(url, true));
+      },
+      saveCredential: (source, username, password) => credentials.save(source, { username, password }),
+      resetCredentials: async (source) => {
+        if (session.state === "ready") {
+          await session.api.resetCredentials({ source });
+        }
+      },
+      runCommand: async (command) => {
+        await vscode.commands.executeCommand(command);
+      }
+    })
+  });
 
   context.subscriptions.push(
     selector,
+    vscode.window.registerWebviewViewProvider(VIEW_ID, view, { webviewOptions: { retainContextWhenHidden: true } }),
+    vscode.commands.registerCommand(Commands.open, () => vscode.commands.executeCommand(`${VIEW_ID}.focus`)),
     new FileWatcher((paths) => {
       if (session.state === "ready") {
         session.api.didChangeFiles({ paths }).catch((error: unknown) => log.host("error", messageOf(error)));
@@ -103,7 +143,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     await selector.selectAutomatically();
   }
 
-  return { session };
+  return { session, view };
 }
 
 export async function deactivate(): Promise<void> {

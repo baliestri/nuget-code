@@ -81,6 +81,20 @@ export class CredentialStore {
     return pending;
   }
 
+  /**
+   * Stores a credential the user typed somewhere else than the prompt, such as the feed dialog. Returns
+   * false, storing nothing, when the source is not an HTTP URL.
+   */
+  async save(source: string, credential: Credential): Promise<boolean> {
+    const server = serverOf(source);
+    if (server === undefined) {
+      return false;
+    }
+
+    await this.remember(server, credential);
+    return true;
+  }
+
   /** Forgets every stored credential. */
   async clear(): Promise<void> {
     for (const server of this.index.get()) {
@@ -101,12 +115,18 @@ export class CredentialStore {
       return { cancelled: true };
     }
 
-    await this.secrets.store(KEY_PREFIX + server, JSON.stringify(answer));
+    await this.remember(server, answer);
+    return { ...answer, cancelled: false };
+  }
+
+  private async remember(server: string, credential: Credential): Promise<void> {
+    await this.secrets.store(
+      KEY_PREFIX + server,
+      JSON.stringify({ username: credential.username, password: credential.password })
+    );
     if (!this.index.get().includes(server)) {
       await this.index.set([...this.index.get(), server]);
     }
-
-    return { ...answer, cancelled: false };
   }
 
   private async forget(server: string): Promise<void> {

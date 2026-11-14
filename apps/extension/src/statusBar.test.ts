@@ -21,7 +21,12 @@ describe("statusText", () => {
     const status = statusText("ready", { kind: "open", name: "Sample.slnx" });
 
     expect(status.text).toBe("$(package) Sample.slnx");
-    expect(status.command).toBe(Commands.selectSolution);
+    expect(status.command).toBe(Commands.open);
+  });
+
+  it("while it starts or opens, a click opens the view", () => {
+    expect(statusText("starting", { kind: "none" }).command).toBe(Commands.open);
+    expect(statusText("ready", { kind: "opening" }).command).toBe(Commands.open);
   });
 
   it("no solution asks for one", () => {
@@ -40,7 +45,7 @@ describe("StatusBar", () => {
     new StatusBar(item).update("ready", { kind: "open", name: "App.sln" });
 
     expect(item.text).toBe("$(package) App.sln");
-    expect(item.command).toBe(Commands.selectSolution);
+    expect(item.command).toBe(Commands.open);
     expect(item.tooltip).not.toBe("");
     expect(shown).toBe(1);
   });
