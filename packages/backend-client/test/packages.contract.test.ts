@@ -59,13 +59,33 @@ describe("packages", () => {
               restored: "boolean",
               "origin?": { kind: "string", "file?": "string", "line?": "number", "column?": "number" }
             }
-          ]
+          ],
+          transitive: [{ id: "string", resolvedVersion: "string", frameworks: ["string"], via: ["string"] }]
         }
       ]
     });
     const alpha = installed.projects[0]?.packages.find((item) => item.id === "Alpha");
     expect(alpha?.requestedVersion).toBe("1.0.0");
     expect(alpha?.origin?.kind).toBe("project");
+    // Not restored yet: what comes with the packages is not known.
+    expect(installed.projects[0]?.transitive).toEqual([]);
+  });
+
+  it("a restored project lists its transitive packages, and their newest versions are asked for apart", async () => {
+    workspace.addPackage("Inner", "1.0.0");
+    workspace.addPackage("Inner", "2.0.0");
+    workspace.addPackage("Outer", "1.0.0", { Inner: "1.0.0" });
+    await backend.api.installPackage({ id: "Outer", version: "1.0.0", projects: [app] });
+
+    const installed = await backend.api.installedPackages();
+    const direct = await backend.api.packageUpdates({ prerelease: false, noCache: false });
+    const transitive = await backend.api.packageUpdates({ prerelease: false, noCache: false, transitive: true });
+
+    expect(installed.projects[0]?.transitive).toEqual([
+      { id: "Inner", resolvedVersion: "1.0.0", frameworks: ["net10.0"], via: ["Outer"] }
+    ]);
+    expect(direct.packages.map((item) => item.id)).toEqual(["Alpha", "Outer"]);
+    expect(transitive.packages).toEqual([{ id: "Inner", versions: [{ feed: "local", version: "2.0.0" }] }]);
   });
 
   it("search, details and updates have the documented shape", async () => {

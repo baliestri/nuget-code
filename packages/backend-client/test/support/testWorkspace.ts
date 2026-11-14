@@ -51,8 +51,8 @@ export class TestWorkspace {
     return this.writeFile(`${name}.slnx`, `<Solution>\n${lines.join("\n")}\n</Solution>\n`);
   }
 
-  addPackage(id: string, version: string): void {
-    createPackage(this.resolve("feed"), id, version);
+  addPackage(id: string, version: string, dependencies: Record<string, string> = {}): void {
+    createPackage(this.resolve("feed"), id, version, dependencies);
   }
 
   /** Replaces the package sources, keeping the isolated global packages folder. */

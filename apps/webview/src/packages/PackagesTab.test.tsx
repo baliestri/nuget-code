@@ -40,8 +40,8 @@ function pkg(id: string, version: string, extra: Partial<InstalledPackage> = {})
 
 const INSTALLED: PackagesInstalledResult = {
   projects: [
-    { projectPath: APP, packages: [pkg("Alpha", "1.0.0"), pkg("Beta", "2.0.0")] },
-    { projectPath: LIB, packages: [pkg("Alpha", "1.0.0"), pkg("Gamma", "3.0.0")] }
+    { projectPath: APP, packages: [pkg("Alpha", "1.0.0"), pkg("Beta", "2.0.0")], transitive: [] },
+    { projectPath: LIB, packages: [pkg("Alpha", "1.0.0"), pkg("Gamma", "3.0.0")], transitive: [] }
   ]
 };
 
@@ -256,7 +256,9 @@ describe("Installed", () => {
 
   it("implicit packages are dimmed and are never offered for update", async () => {
     open({
-      installed: { projects: [{ projectPath: APP, packages: [pkg("Sdk.Implicit", "1.0.0", { implicit: true })] }] },
+      installed: {
+        projects: [{ projectPath: APP, packages: [pkg("Sdk.Implicit", "1.0.0", { implicit: true })], transitive: [] }]
+      },
       updates: { packages: [{ id: "Sdk.Implicit", versions: [{ feed: "nuget.org", version: "2.0.0" }] }], failures: [] }
     });
 
@@ -271,6 +273,7 @@ describe("Installed", () => {
         projects: [
           {
             projectPath: APP,
+            transitive: [],
             packages: [pkg("Alpha", "1.0.0", { restored: false, resolvedVersion: undefined as never })]
           }
         ]

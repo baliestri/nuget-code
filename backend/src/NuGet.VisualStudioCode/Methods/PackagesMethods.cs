@@ -26,10 +26,11 @@ internal static class PackagesMethods {
 
   private static async Task<PackagesUpdatesResult> UpdatesAsync(RpcConnection connection, SessionManager sessions,
     PackageUpdatesService updates, PackagesUpdatesParams parameters, CancellationToken ct) {
-    var ids = sessions.Require().Projects
-      .SelectMany(model => model.Packages)
-      .Where(package => !package.Implicit)
-      .Select(package => package.Id)
+    var projects = sessions.Require().Projects;
+    var ids = (parameters.Transitive
+        ? projects.SelectMany(model => Assets(model)?.Transitive ?? []).Select(package => package.Id)
+        : projects.SelectMany(model => model.Packages).Where(package => !package.Implicit)
+          .Select(package => package.Id))
       .Distinct(StringComparer.OrdinalIgnoreCase)
       .ToList();
     await ProgressAsync(connection, parameters.ProgressToken, ProgressKinds.BEGIN, null).ConfigureAwait(false);
@@ -52,13 +53,16 @@ internal static class PackagesMethods {
         ProtocolJsonContext.Default.ProgressParams);
 
   private static ProjectPackages Describe(EvaluatedProject model) {
-    var resolved = AssetsReader.ReadResolved(model.AssetsPath);
+    var assets = Assets(model);
     var locator = new VersionOriginLocator();
     var packages = model.Packages
-      .Select(package => Describe(model.Info, package, resolved?.GetValueOrDefault(package.Id), locator))
+      .Select(package => Describe(model.Info, package, assets?.Resolved.GetValueOrDefault(package.Id), locator))
       .ToList();
-    return new ProjectPackages(model.Info.Path, packages);
+    return new ProjectPackages(model.Info.Path, packages, assets?.Transitive ?? []);
   }
+
+  private static ResolvedAssets? Assets(EvaluatedProject model)
+    => AssetsReader.Read(model.AssetsPath, model.Packages.Select(package => package.Id).ToList());
 
   private static InstalledPackage Describe(ProjectInfo project, DeclaredPackage package, string? resolvedVersion,
     VersionOriginLocator locator) {

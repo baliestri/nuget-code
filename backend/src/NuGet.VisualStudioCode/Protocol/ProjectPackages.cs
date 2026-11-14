@@ -3,4 +3,8 @@
 
 namespace NuGet.VisualStudioCode.Protocol;
 
-internal sealed record ProjectPackages(string ProjectPath, IReadOnlyList<InstalledPackage> Packages);
+internal sealed record ProjectPackages(
+  string ProjectPath,
+  IReadOnlyList<InstalledPackage> Packages,
+  IReadOnlyList<TransitivePackage> Transitive
+);

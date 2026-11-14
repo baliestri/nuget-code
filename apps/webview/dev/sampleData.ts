@@ -6,7 +6,8 @@ import type {
   PackageDetailsResult,
   PackagesInstalledResult,
   PackageSummary,
-  ProjectInfo
+  ProjectInfo,
+  TransitivePackage
 } from "@nuget-code/protocol";
 import type { FakeBridge } from "../test/fakeBridge";
 
@@ -53,12 +54,31 @@ function pkg(id: string, version: string, extra: Partial<InstalledPackage> = {})
 
 const ANALYZER = pkg("Meziantou.Analyzer", "3.0.326");
 
+const transitive = (id: string, version: string, via: string): TransitivePackage => ({
+  id,
+  resolvedVersion: version,
+  frameworks: ["net10.0"],
+  via: [via]
+});
+
+const TRANSITIVE: readonly TransitivePackage[] = [
+  transitive("Castle.Core", "5.2.1", "Moq"),
+  transitive("Microsoft.ApplicationInsights", "2.23.0", "Microsoft.NET.Test.Sdk"),
+  transitive("Microsoft.Bcl.AsyncInterfaces", "6.0.0", "xunit.v3.mtp-v2"),
+  transitive("Microsoft.CodeCoverage", "18.12.0", "Microsoft.NET.Test.Sdk"),
+  transitive("Microsoft.CodeAnalysis.Analyzers", "5.9.0", "Microsoft.CodeAnalysis.CSharp"),
+  transitive("Microsoft.CodeAnalysis.Common", "5.12.0", "Microsoft.CodeAnalysis.CSharp"),
+  transitive("Microsoft.Testing.Platform", "2.5.2", "xunit.v3.mtp-v2"),
+  transitive("System.Text.Json", "8.0.0", "Microsoft.Extensions.DependencyInjection")
+];
+
 const INSTALLED: PackagesInstalledResult = {
   projects: [
-    { projectPath: PROJECTS[0]!.path, packages: [ANALYZER] },
-    { projectPath: PROJECTS[1]!.path, packages: [ANALYZER] },
+    { projectPath: PROJECTS[0]!.path, packages: [ANALYZER], transitive: [] },
+    { projectPath: PROJECTS[1]!.path, packages: [ANALYZER], transitive: [] },
     {
       projectPath: PROJECTS[2]!.path,
+      transitive: [],
       packages: [
         ANALYZER,
         pkg("Microsoft.CodeAnalysis.CSharp", "5.9.0"),
@@ -67,6 +87,7 @@ const INSTALLED: PackagesInstalledResult = {
     },
     {
       projectPath: PROJECTS[3]!.path,
+      transitive: TRANSITIVE,
       packages: [
         ANALYZER,
         pkg("coverlet.collector", "10.1.0"),
@@ -80,9 +101,10 @@ const INSTALLED: PackagesInstalledResult = {
         pkg("xunit.v3.mtp-v2", "4.0.3")
       ]
     },
-    { projectPath: PROJECTS[4]!.path, packages: [ANALYZER] },
+    { projectPath: PROJECTS[4]!.path, packages: [ANALYZER], transitive: [] },
     {
       projectPath: PROJECTS[5]!.path,
+      transitive: TRANSITIVE.slice(0, 4),
       packages: [
         ANALYZER,
         pkg("coverlet.collector", "10.1.0"),

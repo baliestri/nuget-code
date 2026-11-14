@@ -29,8 +29,8 @@ function pkg(id: string, requested: string | undefined, resolved?: string, impli
 function installed(app: InstalledPackage[], lib: InstalledPackage[] = []): PackagesInstalledResult {
   return {
     projects: [
-      { projectPath: APP, packages: app },
-      { projectPath: LIB, packages: lib }
+      { projectPath: APP, packages: app, transitive: [] },
+      { projectPath: LIB, packages: lib, transitive: [] }
     ]
   };
 }
@@ -172,7 +172,9 @@ describe("buildRows", () => {
 
   it("a project the session does not list is named after its file", () => {
     const [row] = buildRows({
-      installed: { projects: [{ projectPath: "C:\\work\\New\\New.fsproj", packages: [pkg("Alpha", "1.0.0")] }] },
+      installed: {
+        projects: [{ projectPath: "C:\\work\\New\\New.fsproj", packages: [pkg("Alpha", "1.0.0")], transitive: [] }]
+      },
       projects: [],
       target: null,
       feed: null,

@@ -3,4 +3,13 @@
 
 namespace NuGet.VisualStudioCode.Protocol;
 
-internal sealed record PackagesUpdatesParams(bool Prerelease, bool NoCache, string? ProgressToken);
+/// <summary>
+///   With <c>Transitive</c>, the answer is about the transitive packages of the solution and not about the
+///   ones the projects reference: the two are asked for apart, because the transitive ones are many.
+/// </summary>
+internal sealed record PackagesUpdatesParams(
+  bool Prerelease,
+  bool NoCache,
+  string? ProgressToken,
+  bool Transitive = false
+);

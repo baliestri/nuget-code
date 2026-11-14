@@ -7,9 +7,20 @@ interface Entry {
   data: Buffer;
 }
 
-/** Writes `<id>.<version>.nupkg` into the folder: the smallest package NuGet restores from a folder feed. */
-export function createPackage(feedDirectory: string, id: string, version: string): string {
+/**
+ * Writes `<id>.<version>.nupkg` into the folder: the smallest package NuGet restores from a folder feed.
+ * `dependencies` are the packages it depends on, as id and version.
+ */
+export function createPackage(
+  feedDirectory: string,
+  id: string,
+  version: string,
+  dependencies: Record<string, string> = {}
+): string {
   mkdirSync(feedDirectory, { recursive: true });
+  const dependencyItems = Object.entries(dependencies)
+    .map(([name, range]) => `<dependency id="${name}" version="${range}" />`)
+    .join("");
   const nuspec = `<?xml version="1.0" encoding="utf-8"?>
 <package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
   <metadata>
@@ -18,7 +29,7 @@ export function createPackage(feedDirectory: string, id: string, version: string
     <authors>tests</authors>
     <description>Test package ${id}.</description>
     <dependencies>
-      <group targetFramework=".NETStandard2.0" />
+      <group targetFramework=".NETStandard2.0">${dependencyItems}</group>
     </dependencies>
   </metadata>
 </package>

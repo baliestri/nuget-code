@@ -95,9 +95,20 @@ export interface InstalledPackage {
   origin?: VersionOrigin;
 }
 
+/** A package a project has without referencing it. */
+export interface TransitivePackage {
+  id: string;
+  resolvedVersion: string;
+  frameworks: readonly string[];
+  /** The packages the project references through which this one arrives; none when it comes with a project. */
+  via: readonly string[];
+}
+
 export interface ProjectPackages {
   projectPath: string;
   packages: readonly InstalledPackage[];
+  /** Empty until the project is restored. */
+  transitive: readonly TransitivePackage[];
 }
 
 export interface PackagesInstalledResult {
@@ -126,6 +137,8 @@ export interface PackagesUpdatesParams {
   prerelease: boolean;
   noCache: boolean;
   progressToken?: string;
+  /** Answer about the transitive packages and not about the referenced ones. Defaults to false. */
+  transitive?: boolean;
 }
 
 export interface PackagesUpdatesResult {
