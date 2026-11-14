@@ -76,10 +76,21 @@ describe("the extension in the editor", () => {
     assert.strictEqual(installed.projects.length, 1);
   });
 
+  it("the view opens and its page loads under the content security policy", async () => {
+    let loaded = false;
+    void api.view.ready.then(() => (loaded = true));
+
+    await vscode.commands.executeCommand("nuget.open");
+
+    // The page says it is ready only after its script ran and its bridge is listening.
+    await until(() => loaded, "the page of the view to load");
+  });
+
   it("contributes its commands", async () => {
     const commands = await vscode.commands.getCommands(true);
 
     for (const command of [
+      "nuget.open",
       "nuget.selectSolution",
       "nuget.restore",
       "nuget.restartBackend",

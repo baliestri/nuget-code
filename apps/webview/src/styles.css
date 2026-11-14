@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+/*
+ * Every colour and font comes from the editor's theme, so the view follows it, high contrast included.
+ * No colour is written out here or in the components.
+ */
+@theme {
+  --color-fg: var(--vscode-foreground);
+  --color-muted: var(--vscode-descriptionForeground);
+  --color-bg: var(--vscode-panel-background, var(--vscode-editor-background));
+  --color-surface: var(--vscode-editorWidget-background);
+  --color-border: var(--vscode-panel-border, var(--vscode-widget-border));
+  --color-accent: var(--vscode-button-background);
+  --color-accent-hover: var(--vscode-button-hoverBackground);
+  --color-accent-fg: var(--vscode-button-foreground);
+  --color-secondary: var(--vscode-button-secondaryBackground);
+  --color-secondary-fg: var(--vscode-button-secondaryForeground);
+  --color-link: var(--vscode-textLink-foreground);
+  --color-selection: var(--vscode-list-activeSelectionBackground);
+  --color-selection-fg: var(--vscode-list-activeSelectionForeground);
+  --color-hover: var(--vscode-list-hoverBackground);
+  --color-toolbar-hover: var(--vscode-toolbar-hoverBackground);
+  --color-input: var(--vscode-input-background);
+  --color-input-fg: var(--vscode-input-foreground);
+  --color-input-border: var(--vscode-input-border, var(--vscode-panel-border));
+  --color-focus: var(--vscode-focusBorder);
+  --color-error: var(--vscode-errorForeground);
+  --color-warning: var(--vscode-editorWarning-foreground);
+  --color-info: var(--vscode-editorInfo-foreground);
+  --color-badge: var(--vscode-badge-background);
+  --color-badge-fg: var(--vscode-badge-foreground);
+  --color-notice: var(--vscode-inputValidation-infoBackground);
+  --color-notice-border: var(--vscode-inputValidation-infoBorder);
+  --font-sans: var(--vscode-font-family);
+  --font-mono: var(--vscode-editor-font-family);
+}
+
+/* The icon classes (.codicon, .codicon-*) are appended to the built style sheet by build.ts. */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  font-size: var(--vscode-font-size, 13px);
+}
+
+:focus-visible {
+  outline: 1px solid var(--color-focus);
+  outline-offset: -1px;
+}

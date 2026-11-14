@@ -641,6 +641,9 @@ FodyWeavers.xsd
 ### Project related ###
 # The workspace's own packages, not a NuGet packages folder
 !/packages/*
+# Source folders of the view that share a name with build output folders
+!/apps/webview/src/packages/*
+!/apps/webview/src/log/
 .turbo
 media/
 release-artifacts/

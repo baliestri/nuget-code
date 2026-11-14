@@ -2,6 +2,8 @@ packages:
   - "apps/*"
   - "packages/*"
 allowBuilds:
+  # A dependency of the Tailwind CLI's watch mode. Its prebuilt binary is enough; nothing is compiled here.
+  "@parcel/watcher": false
   "@vscode/vsce-sign": true
   esbuild: true
   keytar: true

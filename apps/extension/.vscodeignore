@@ -1,5 +1,8 @@
 **
 !dist/extension.js
+!dist/webview/main.js
+!dist/webview/main.css
+!dist/webview/codicon.ttf
 !bin/**
 !package.json
 !README.md

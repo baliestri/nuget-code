@@ -25,7 +25,7 @@
     "dev": "rolldown -c --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:integration": "tsx test/integration/prepare.ts && rolldown -c && rolldown -c rolldown.integration.config.ts && vscode-test"
+    "test:integration": "tsx test/integration/prepare.ts && pnpm --filter @nuget-code/webview build && rolldown -c && rolldown -c rolldown.integration.config.ts && vscode-test"
   },
   "dependencies": {
     "@nuget-code/backend-client": "workspace:*",
@@ -33,6 +33,7 @@
     "@nuget-code/protocol": "workspace:*"
   },
   "devDependencies": {
+    "@nuget-code/webview": "workspace:*",
     "@types/mocha": "^10.0.10",
     "@types/vscode": "1.100.0",
     "@vscode/test-cli": "^0.0.15",
