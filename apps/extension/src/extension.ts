@@ -2,7 +2,10 @@ import { existsSync } from "node:fs";
 import * as vscode from "vscode";
 import { isMuslRuntime, locateBackend } from "./backendLocator";
 import { BackendSession } from "./backendSession";
+import { clearCredentialsCommand, restoreCommand } from "./commands";
 import { readSettings, SECTION, type Settings } from "./configuration";
+import { createCredentialStore } from "./credentials";
+import { FileWatcher } from "./fileWatcher";
 import { LogChannel } from "./logChannel";
 import { SolutionSelector } from "./solutionSelector";
 import { Commands, StatusBar } from "./statusBar";
@@ -48,6 +51,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   });
   active = session;
 
+  const credentials = createCredentialStore(context);
+  session.api.onCredentialsRequest((params) => credentials.resolve(params));
   session.api.onLogEntry((entry) => log.write(entry));
   session.client.onStderr((text) => log.host("error", text));
   session.onDidChange(() => status.update(session.state, session.solution));
@@ -66,6 +71,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
 
   context.subscriptions.push(
     selector,
+    new FileWatcher((paths) => {
+      if (session.state === "ready") {
+        session.api.didChangeFiles({ paths }).catch((error: unknown) => log.host("error", messageOf(error)));
+      }
+    }),
     vscode.commands.registerCommand(Commands.selectSolution, () => selector.pick()),
     // A solution file that appears when none was open may now be the only choice.
     selector.onDidChangeCandidates(() => {
@@ -73,6 +83,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         void selector.selectAutomatically();
       }
     }),
+    vscode.commands.registerCommand(Commands.restore, () => restoreCommand(session, log)),
+    vscode.commands.registerCommand(Commands.clearCredentials, () => clearCredentialsCommand(session, credentials)),
     vscode.commands.registerCommand(Commands.showLog, () => log.show()),
     vscode.commands.registerCommand(Commands.restartBackend, () => start(session, log, () => session.restart())),
     vscode.workspace.onDidChangeConfiguration((change) => {

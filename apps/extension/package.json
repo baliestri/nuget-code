@@ -42,6 +42,16 @@
         "category": "NuGet"
       },
       {
+        "command": "nuget.restore",
+        "title": "Restore",
+        "category": "NuGet"
+      },
+      {
+        "command": "nuget.clearCredentials",
+        "title": "Clear Saved Credentials",
+        "category": "NuGet"
+      },
+      {
         "command": "nuget.restartBackend",
         "title": "Restart Backend",
         "category": "NuGet"
@@ -123,6 +133,7 @@
   "extensionKind": [
     "workspace"
   ],
+  "icon": "logo.png",
   "engines": {
     "vscode": "^1.100.0"
   },
