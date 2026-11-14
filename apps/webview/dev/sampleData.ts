@@ -205,12 +205,56 @@ export function installSampleData(fake: FakeBridge): void {
   fake.backend.removePackage = (params) => operation(params.projects);
   fake.backend.restore = () => operation(PROJECTS.map((item) => item.path));
   fake.backend.cancelOperation = () => Promise.resolve({});
+  // The feeds can be changed on the page; nothing is kept when it reloads.
+  let feeds = [...FEEDS];
+  const machine = "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config";
+  const offline: FeedInfo = {
+    ...FEEDS[0]!,
+    name: "Microsoft Visual Studio Offline Packages",
+    source: "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\",
+    isLocal: true,
+    isMachineWide: true,
+    declaredIn: machine
+  };
   fake.backend.listSources = () =>
     Promise.resolve({
-      files: [{ path: CONFIG, feeds: FEEDS, writable: true, isMachineWide: false }],
-      effective: FEEDS,
-      fallbackFolders: [],
-      globalPackagesFolder: "C:\\Users\\sample\\.nuget\\packages"
+      files: [
+        { path: CONFIG, feeds, writable: true, isMachineWide: false },
+        {
+          path: "C:\\Users\\sample\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          feeds: [],
+          writable: true,
+          isMachineWide: false
+        },
+        { path: machine, feeds: [offline], writable: false, isMachineWide: true }
+      ],
+      effective: [...feeds, offline],
+      fallbackFolders: ["C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"],
+      globalPackagesFolder: "C:\\Users\\sample\\.nuget\\packages",
+      localPackagesFolder: `${ROOT}\\packages`
     });
+  fake.backend.addSource = (params) => {
+    const added: FeedInfo = {
+      ...FEEDS[0]!,
+      ...params,
+      name: params.name,
+      source: params.source ?? "",
+      declaredIn: CONFIG
+    };
+    feeds = [...feeds, added];
+    return Promise.resolve(added);
+  };
+  fake.backend.updateSource = (params) => {
+    const { file: _file, newName, ...changes } = params;
+    feeds = feeds.map((item) =>
+      item.name === params.name ? { ...item, ...changes, name: newName ?? item.name } : item
+    );
+    return Promise.resolve(feeds.find((item) => item.name === (newName ?? params.name)) ?? FEEDS[0]!);
+  };
+  fake.backend.removeSource = (params) => {
+    feeds = feeds.filter((item) => item.name !== params.name);
+    return Promise.resolve({});
+  };
+  fake.backend.setSourceProperty = () => Promise.resolve({});
   fake.host.pickFolder = () => Promise.resolve({ path: `${ROOT}\\packages` });
 }
