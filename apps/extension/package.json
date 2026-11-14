@@ -1,0 +1,131 @@
+{
+  "name": "nuget-code",
+  "displayName": "NuGet Manager for VS Code",
+  "version": "3.0.0-alpha.0",
+  "private": true,
+  "description": "A NuGet Package Manager based on JetBrains Rider's UI and features.",
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "csharp",
+    "dotnet",
+    "nuget",
+    "package manager"
+  ],
+  "license": "Zlib",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/baliestri/nuget-code.git"
+  },
+  "publisher": "baliestri",
+  "main": "./dist/extension.js",
+  "scripts": {
+    "build": "rolldown -c",
+    "dev": "rolldown -c --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nuget-code/backend-client": "workspace:*",
+    "@nuget-code/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/vscode": "1.100.0",
+    "rolldown": "^1.3.2"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "nuget.restartBackend",
+        "title": "Restart Backend",
+        "category": "NuGet"
+      },
+      {
+        "command": "nuget.showLog",
+        "title": "Show Log",
+        "category": "NuGet"
+      }
+    ],
+    "configuration": {
+      "title": "NuGet",
+      "properties": {
+        "nuget.dotnetPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "markdownDescription": "Path to the `dotnet` executable. When empty, `DOTNET_ROOT` and then `PATH` are used. Changing it restarts the NuGet backend."
+        },
+        "nuget.restore.engine": {
+          "type": "string",
+          "enum": [
+            "embedded",
+            "msbuild",
+            "console"
+          ],
+          "enumDescriptions": [
+            "Restores inside the NuGet backend, without starting dotnet. Falls back to the console engine when it cannot run.",
+            "Runs dotnet msbuild -t:Restore.",
+            "Runs dotnet restore."
+          ],
+          "default": "embedded",
+          "scope": "window",
+          "description": "How packages are restored."
+        },
+        "nuget.restore.onOpen": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "description": "Restore the solution when it is opened."
+        },
+        "nuget.feedTimeoutSeconds": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "scope": "window",
+          "description": "How long a package source may take to answer. Changing it restarts the NuGet backend."
+        },
+        "nuget.log.level": {
+          "type": "string",
+          "enum": [
+            "debug",
+            "verbose",
+            "info",
+            "warning",
+            "error"
+          ],
+          "default": "info",
+          "scope": "window",
+          "description": "The least severe level written to the NuGet output channel."
+        },
+        "nuget.backend.path": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "markdownDescription": "Path to another NuGet backend, for developing the extension: an executable, or a `.dll` that is run with `dotnet`. Changing it restarts the backend."
+        }
+      }
+    }
+  },
+  "activationEvents": [
+    "workspaceContains:**/*.csproj",
+    "workspaceContains:**/*.fsproj",
+    "workspaceContains:**/*.sln",
+    "workspaceContains:**/*.slnf",
+    "workspaceContains:**/*.slnx",
+    "workspaceContains:**/*.vbproj"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "The extension runs MSBuild on the projects of the workspace, which executes code from the repository."
+    },
+    "virtualWorkspaces": false
+  }
+}
