@@ -1,0 +1,60 @@
+/*
+ * Builds the workspace the editor opens for the smoke tests: one solution with one project that references
+ * a package from a folder feed, restoring into a global packages folder of its own. Run before vscode-test.
+ */
+import { execFileSync } from "node:child_process";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createPackage } from "../../../../packages/backend-client/test/support/testPackages";
+import { backendProject, resolveTestBackend } from "../../../../packages/backend-client/test/support/testBackend";
+import { project } from "../../../../packages/backend-client/test/support/testWorkspace";
+
+const workspace = fileURLToPath(new URL("../../.vscode-test/workspace/", import.meta.url));
+
+function write(relativePath: string, content: string): void {
+  const path = join(workspace, relativePath);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, content);
+}
+
+rmSync(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+mkdirSync(workspace, { recursive: true });
+
+const backend = resolveTestBackend();
+if (backend.command === "dotnet") {
+  execFileSync("dotnet", ["build", backendProject, "-c", "Debug", "-nologo", "-v:q"], { stdio: "inherit" });
+}
+
+write(
+  "NuGet.config",
+  `<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="local" value="feed" />
+  </packageSources>
+  <config>
+    <add key="globalPackagesFolder" value="global-packages" />
+  </config>
+</configuration>
+`
+);
+createPackage(join(workspace, "feed"), "Alpha", "1.0.0");
+write("App/App.csproj", project({ Alpha: "1.0.0" }));
+write("Sample.slnx", '<Solution>\n  <Project Path="App/App.csproj" />\n</Solution>\n');
+write(
+  ".vscode/settings.json",
+  JSON.stringify(
+    {
+      // The Debug build during development, the published binary in CI.
+      "nuget.backend.path": backend.command === "dotnet" ? backend.args[0] : backend.command,
+      // Off, so the test of the restore command is what restores.
+      "nuget.restore.onOpen": false
+    },
+    null,
+    2
+  )
+);
+
+console.log(`Smoke test workspace: ${workspace}`);
