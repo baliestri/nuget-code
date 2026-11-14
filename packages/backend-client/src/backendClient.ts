@@ -80,7 +80,15 @@ export class BackendClient {
 
   private async launch(): Promise<void> {
     this.setState("starting");
-    const backend = BackendProcess.start(this.options.launch(), this.options.cwd);
+    let backend: BackendProcess;
+    try {
+      backend = BackendProcess.start(this.options.launch(), this.options.cwd);
+    } catch (error) {
+      // Nothing to run: the host could not say which binary to start.
+      this.setState("stopped");
+      throw error;
+    }
+
     this.current = backend;
     backend.onStderr((text) => this.stderr.fire(text));
 

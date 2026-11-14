@@ -186,6 +186,22 @@ describe("restart", () => {
     expect(client.state).toBe("stopped");
   });
 
+  it("a launch that cannot name a binary rejects start and leaves the client stopped", async () => {
+    workspace = new TestWorkspace();
+    client = new BackendClient({
+      launch: () => {
+        throw new Error("no binary for this platform");
+      },
+      cwd: workspace.path,
+      onStarted: () => Promise.resolve()
+    });
+
+    const error = await client.start().catch((reason: unknown) => reason);
+
+    expect((error as Error).message).toBe("no binary for this platform");
+    expect(client.state).toBe("stopped");
+  });
+
   it("a backend that cannot be started rejects start and leaves the client stopped", async () => {
     workspace = new TestWorkspace();
     client = new BackendClient({
