@@ -1,0 +1,243 @@
+name: Prepare release
+
+# Prepares a release candidate on release/v<version>, runs the whole CI on it, and only then merges it into
+# main and develop and tags it. Publishing is not done here: release.yml is started on the new tag, because
+# it is the workflow the marketplaces trust. A tag pushed by a workflow does not start another workflow, so
+# release.yml is started by dispatch.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release (MAJOR.MINOR.PATCH)
+        required: true
+        type: string
+      dry_run:
+        description: Only show the version change and the changelog; push nothing
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nuget-code-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare the candidate
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.preflight.outputs.tag }}
+      branch: ${{ steps.preflight.outputs.branch }}
+      main_base: ${{ steps.preflight.outputs.main_base }}
+      develop_base: ${{ steps.preflight.outputs.develop_base }}
+      candidate_sha: ${{ steps.candidate.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/heads/develop
+          fetch-depth: 0
+
+      - name: Validate the version and record where main and develop are
+        id: preflight
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Expected MAJOR.MINOR.PATCH.' >&2; exit 1; }
+          tag="v$VERSION"
+          git fetch --tags origin \
+            +refs/heads/main:refs/remotes/origin/main \
+            +refs/heads/develop:refs/remotes/origin/develop
+          [[ -z "$(git ls-remote origin "refs/tags/$tag")" ]] || { echo 'The tag already exists.' >&2; exit 1; }
+          [[ -z "$(git ls-remote --heads origin "refs/heads/release/$tag")" ]] || {
+            echo 'The release branch already exists.' >&2
+            exit 1
+          }
+          [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/develop)" ]] || {
+            echo 'develop changed during checkout; run it again.' >&2
+            exit 1
+          }
+          {
+            echo "tag=$tag"
+            echo "branch=release/$tag"
+            echo "main_base=$(git rev-parse origin/main)"
+            echo "develop_base=$(git rev-parse origin/develop)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Install typos, which cliff.toml runs on every commit message
+        run: |
+          set -euo pipefail
+          curl -fsSLo "$RUNNER_TEMP/typos.tar.gz" \
+            https://github.com/crate-ci/typos/releases/download/v1.52.2/typos-v1.52.2-x86_64-unknown-linux-musl.tar.gz
+          echo "3b13d1291281d39d01822e54035636487a7a0f228e70097899b1e33aeb0e7e93  $RUNNER_TEMP/typos.tar.gz" \
+            | sha256sum --check --strict -
+          # The member of the archive is ./typos, not typos.
+          tar -xzf "$RUNNER_TEMP/typos.tar.gz" -C "$RUNNER_TEMP" ./typos
+          chmod +x "$RUNNER_TEMP/typos"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Write the changelog section of the version
+        uses: orhun/git-cliff-action@a9a95522b26fe6403f7bb24031f21fb573d0f5ff # v4.9.1
+        with:
+          config: cliff.toml
+          args: --tag ${{ steps.preflight.outputs.tag }} --prepend CHANGELOG.md --unreleased
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Write the version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: pnpm exec tsx scripts/set-version.ts "$VERSION"
+
+      - name: Check what changed and show it
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          pnpm exec tsx scripts/changelog.ts "$VERSION" > "$RUNNER_TEMP/notes.md" || {
+            echo 'The changelog has no section for this version.' >&2
+            exit 1
+          }
+          test -s "$RUNNER_TEMP/notes.md" || { echo 'Nothing was released since the last version.' >&2; exit 1; }
+          pnpm format:check
+          {
+            echo "## Version"
+            echo '```diff'
+            git diff -- apps/extension/package.json
+            echo '```'
+            echo "## Changelog"
+            cat "$RUNNER_TEMP/notes.md"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit the candidate and push its branch
+        id: candidate
+        if: ${{ !inputs.dry_run }}
+        env:
+          TAG: ${{ steps.preflight.outputs.tag }}
+          BRANCH: ${{ steps.preflight.outputs.branch }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add -- CHANGELOG.md apps/extension/package.json
+          git commit -m "chore(release): prepare for $TAG"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          git push origin "HEAD:refs/heads/$BRANCH"
+
+  validate:
+    name: Validate the candidate
+    needs: prepare
+    if: ${{ !inputs.dry_run }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.prepare.outputs.candidate_sha }}
+
+  promote:
+    name: Merge the candidate and tag it
+    needs: [prepare, validate]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.candidate_sha }}
+          fetch-depth: 0
+
+      - name: Check that nothing moved, then push main, develop and the tag together
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+          BRANCH: ${{ needs.prepare.outputs.branch }}
+          CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
+          MAIN_BASE: ${{ needs.prepare.outputs.main_base }}
+          DEVELOP_BASE: ${{ needs.prepare.outputs.develop_base }}
+        run: |
+          set -euo pipefail
+          git fetch --tags origin \
+            +refs/heads/main:refs/remotes/origin/main \
+            +refs/heads/develop:refs/remotes/origin/develop \
+            "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
+          [[ "$(git rev-parse origin/main)" == "$MAIN_BASE" ]] || {
+            echo 'main moved during validation.' >&2
+            exit 1
+          }
+          [[ "$(git rev-parse origin/develop)" == "$DEVELOP_BASE" ]] || {
+            echo 'develop moved during validation.' >&2
+            exit 1
+          }
+          [[ "$(git rev-parse "refs/remotes/origin/$BRANCH")" == "$CANDIDATE_SHA" ]] || {
+            echo 'The release branch changed during validation.' >&2
+            exit 1
+          }
+          if git show-ref --verify --quiet "refs/tags/$TAG"; then
+            echo 'The tag was created during validation.' >&2
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git switch -C main "$MAIN_BASE"
+          git merge --no-ff --no-edit "$CANDIDATE_SHA"
+          git switch -C develop "$DEVELOP_BASE"
+          git merge --no-ff --no-edit "$CANDIDATE_SHA"
+          git tag "$TAG" "$CANDIDATE_SHA"
+          git push --atomic origin \
+            refs/heads/main:refs/heads/main \
+            refs/heads/develop:refs/heads/develop \
+            "refs/tags/$TAG"
+
+  publish:
+    name: Start the release workflow on the tag
+    needs: [prepare, promote]
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch release.yml
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"
+
+  cleanup:
+    name: Remove the release branch
+    needs: [prepare, validate, promote, publish]
+    if: ${{ always() && needs.prepare.outputs.candidate_sha != '' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/heads/develop
+
+      - name: Delete the branch only if it is still this run's candidate
+        env:
+          BRANCH: ${{ needs.prepare.outputs.branch }}
+          CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          remote_sha="$(git ls-remote --heads origin "refs/heads/$BRANCH" | cut -f1)"
+          if [[ -z "$remote_sha" ]]; then
+            echo 'Already removed.'
+            exit 0
+          fi
+          [[ "$remote_sha" == "$CANDIDATE_SHA" ]] || {
+            echo 'The branch changed; it is kept for review.' >&2
+            exit 1
+          }
+          git push origin --delete "refs/heads/$BRANCH"
