@@ -10,30 +10,31 @@ The backend loads NuGet configuration from the directory of the open solution. B
 
 ## Requests from the host
 
-| Method                | Params                                                                                                              | Result                                                                                        |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `initialize`          | `dotnetPath?`, `feedTimeoutSeconds?`, `restoreEngine?`, `restoreOnOpen?`                                            | `protocolVersion`, `backendVersion`, `sdk?`                                                   |
-| `shutdown`            | —                                                                                                                   | —                                                                                             |
-| `solution/open`       | `path`, `projects?`                                                                                                 | `path`, `kind`, `projects[]`                                                                  |
-| `solution/close`      | —                                                                                                                   | —                                                                                             |
-| `packages/installed`  | —                                                                                                                   | `projects[]`, each with its `packages[]`                                                      |
-| `packages/updates`    | `prerelease`, `noCache`, `progressToken?`                                                                           | `packages[]`, `failures[]`                                                                    |
-| `packages/search`     | `query?`, `feed?`, `prerelease`, `skip`, `take`                                                                     | `packages[]`, `failures[]`                                                                    |
-| `packages/details`    | `id`, `feed?`, `prerelease`, `noCache`                                                                              | versions, metadata, `failures[]`                                                              |
-| `packages/plan`       | `changes[]`                                                                                                         | `edits[]`, `warnings[]`                                                                       |
-| `packages/install`    | `id`, `version`, `projects[]`                                                                                       | [operation result](#operation-result)                                                         |
-| `packages/update`     | `changes[]`, each with `id`, `version`, `projects[]`                                                                | [operation result](#operation-result)                                                         |
-| `packages/remove`     | `id`, `projects[]`                                                                                                  | [operation result](#operation-result)                                                         |
-| `restore/run`         | `projects?`, `engine?`, `force`                                                                                     | [operation result](#operation-result)                                                         |
-| `operations/cancel`   | —                                                                                                                   | —                                                                                             |
-| `sources/list`        | —                                                                                                                   | `files[]`, `effective[]`, `fallbackFolders[]`, `globalPackagesFolder`, `localPackagesFolder?` |
-| `sources/add`         | `file?`, `name`, `source`, `enabled?`, `allowInsecureConnections?`, `disableTlsCertificateValidation?`              | the feed as written                                                                           |
-| `sources/update`      | `file?`, `name`, `newName?`, `source?`, `enabled?`, `allowInsecureConnections?`, `disableTlsCertificateValidation?` | the feed as written                                                                           |
-| `sources/remove`      | `file?`, `name`                                                                                                     | —                                                                                             |
-| `sources/setProperty` | `file`, `property`, `value?`                                                                                        | —                                                                                             |
-| `folders/list`        | —                                                                                                                   | `folders[]`                                                                                   |
-| `folders/size`        | `path`                                                                                                              | `exists`, `bytes`                                                                             |
-| `folders/clear`       | `paths[]`                                                                                                           | `folders[]`, each with `path`, `bytesFreed`, `skipped[]`                                      |
+| Method                     | Params                                                                                                              | Result                                                                                        |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `initialize`               | `dotnetPath?`, `feedTimeoutSeconds?`, `restoreEngine?`, `restoreOnOpen?`, `audit?`                                  | `protocolVersion`, `backendVersion`, `sdk?`                                                   |
+| `shutdown`                 | —                                                                                                                   | —                                                                                             |
+| `solution/open`            | `path`, `projects?`                                                                                                 | `path`, `kind`, `projects[]`                                                                  |
+| `solution/close`           | —                                                                                                                   | —                                                                                             |
+| `packages/installed`       | —                                                                                                                   | `projects[]`, each with its `packages[]` and `transitive[]`                                   |
+| `packages/updates`         | `prerelease`, `noCache`, `progressToken?`, `transitive?`                                                            | `packages[]`, `failures[]`                                                                    |
+| `packages/vulnerabilities` | `noCache`                                                                                                           | `packages[]`, `failures[]`                                                                    |
+| `packages/search`          | `query?`, `feed?`, `prerelease`, `skip`, `take`                                                                     | `packages[]`, `failures[]`                                                                    |
+| `packages/details`         | `id`, `feed?`, `prerelease`, `noCache`                                                                              | versions, metadata, `failures[]`                                                              |
+| `packages/plan`            | `changes[]`                                                                                                         | `edits[]`, `warnings[]`                                                                       |
+| `packages/install`         | `id`, `version`, `projects[]`                                                                                       | [operation result](#operation-result)                                                         |
+| `packages/update`          | `changes[]`, each with `id`, `version`, `projects[]`                                                                | [operation result](#operation-result)                                                         |
+| `packages/remove`          | `id`, `projects[]`                                                                                                  | [operation result](#operation-result)                                                         |
+| `restore/run`              | `projects?`, `engine?`, `force`                                                                                     | [operation result](#operation-result)                                                         |
+| `operations/cancel`        | —                                                                                                                   | —                                                                                             |
+| `sources/list`             | —                                                                                                                   | `files[]`, `effective[]`, `fallbackFolders[]`, `globalPackagesFolder`, `localPackagesFolder?` |
+| `sources/add`              | `file?`, `name`, `source`, `enabled?`, `allowInsecureConnections?`, `disableTlsCertificateValidation?`              | the feed as written                                                                           |
+| `sources/update`           | `file?`, `name`, `newName?`, `source?`, `enabled?`, `allowInsecureConnections?`, `disableTlsCertificateValidation?` | the feed as written                                                                           |
+| `sources/remove`           | `file?`, `name`                                                                                                     | —                                                                                             |
+| `sources/setProperty`      | `file`, `property`, `value?`                                                                                        | —                                                                                             |
+| `folders/list`             | —                                                                                                                   | `folders[]`                                                                                   |
+| `folders/size`             | `path`                                                                                                              | `exists`, `bytes`                                                                             |
+| `folders/clear`            | `paths[]`                                                                                                           | `folders[]`, each with `path`, `bytesFreed`, `skipped[]`                                      |
 
 ### `initialize`
 
@@ -43,7 +44,7 @@ Without an SDK, feed, source and folder requests still work; `solution/open` fai
 
 `feedTimeoutSeconds` sets how long a single feed may take to answer. The default is 30 seconds.
 
-`restoreEngine` is `embedded` (the default), `msbuild` or `console`; see [Restore](#restore). `restoreOnOpen` (default `true`) says whether opening a solution restores it. Both can be changed later with `configuration/didChange`.
+`restoreEngine` is `embedded` (the default), `msbuild` or `console`; see [Restore](#restore). `restoreOnOpen` (default `true`) says whether opening a solution restores it. `audit` (default `true`) says whether the feeds are asked about known vulnerabilities. The three can be changed later with `configuration/didChange`.
 
 ### `solution/open`
 
@@ -81,9 +82,22 @@ Each package carries:
 
 An `undetermined` origin only means the position cannot be shown. It does not stop the package from being updated.
 
+Each project also carries `transitive[]`: the packages it has without referencing them, read from `obj/project.assets.json`. It is empty until the project is restored.
+
+| Field             | Meaning                                                                                                     |
+| ----------------- | ----------------------------------------------------------------------------------------------------------- |
+| `id`              | Package id                                                                                                  |
+| `resolvedVersion` | The version the restore resolved                                                                            |
+| `frameworks`      | The target frameworks in which the package appears                                                          |
+| `via`             | The packages the project references through which it arrives; empty when it comes with a referenced project |
+
+`transitive` is not the same as `implicit`: an implicit package is one the SDK references on the project's behalf, and it is listed in `packages[]`.
+
 ### `packages/updates`
 
 For each installed package that is not implicit, `packages[]` carries `id` and `versions[]`: the newest version on each feed that has the package, as `feed` and `version`. The client compares them with what is installed. A package no feed knows has an empty `versions`.
+
+With `transitive: true` the answer is about the transitive packages of the solution instead, and not about the referenced ones. They are asked for apart because they are many.
 
 With a `progressToken`, the backend sends `progress` notifications while it works.
 
@@ -96,6 +110,16 @@ Without `feed`, every enabled feed is asked. Search results from several feeds a
 `packageSourceMapping`, when configured, limits which feeds are asked about a package in `packages/details` and `packages/updates`.
 
 `noCache` bypasses the backend's short-lived cache and NuGet's HTTP cache. Search has no such option because search results are not cached.
+
+`packages/details` also returns `vulnerableVersions[]`: of `versions`, the ones with known vulnerabilities, each as `version` and the highest `severity` among its advisories. See [`packages/vulnerabilities`](#packagesvulnerabilities) for where that knowledge comes from.
+
+### `packages/vulnerabilities`
+
+Checks every package version the last restore resolved, referenced or transitive, in every project of the solution. `packages[]` has one entry for each that has known vulnerabilities, with `id`, `version` and `advisories[]`, worst first; an advisory is a `severity` (`low`, `moderate`, `high`, `critical` or `unknown`) and the `url` of the page that describes it.
+
+The knowledge is the vulnerability resource of the V3 feeds, the same the audit of a restore reads. The feeds asked are the `auditSources` of the NuGet configuration when it has any, else the enabled package sources. A feed that does not publish the resource is left out without a failure; one that publishes it and fails to answer is in `failures[]`. What a feed knows is kept in memory for an hour, and `noCache` reads it again.
+
+With `audit` off, in `initialize` or in `configuration/didChange`, nothing is asked and both `packages[]` here and `vulnerableVersions[]` in `packages/details` are empty. The `NuGetAudit` properties of the projects, such as `NuGetAuditSuppress`, are not taken into account.
 
 ### `sources/list`
 
@@ -269,12 +293,12 @@ Credentials the host supplied in this session are passed to the external engines
 
 ## Notifications from the host
 
-| Method                     | Params                             | Effect                                                                                                                                    |
-| -------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `workspace/didChangeFiles` | `paths[]`                          | Re-evaluates what the changed files affect.                                                                                               |
-| `configuration/didChange`  | `restoreEngine?`, `restoreOnOpen?` | Changes the settings given in `initialize`. Absent fields keep their value.                                                               |
-| `credentials/reset`        | `source?`                          | Lets the backend ask for credentials again after a cancelled prompt, and forgets the ones it was given. Without `source`, for every feed. |
-| `$/cancelRequest`          | `id`                               | Cancels the request with that id.                                                                                                         |
+| Method                     | Params                                       | Effect                                                                                                                                    |
+| -------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `workspace/didChangeFiles` | `paths[]`                                    | Re-evaluates what the changed files affect.                                                                                               |
+| `configuration/didChange`  | `restoreEngine?`, `restoreOnOpen?`, `audit?` | Changes the settings given in `initialize`. Absent fields keep their value.                                                               |
+| `credentials/reset`        | `source?`                                    | Lets the backend ask for credentials again after a cancelled prompt, and forgets the ones it was given. Without `source`, for every feed. |
+| `$/cancelRequest`          | `id`                                         | Cancels the request with that id.                                                                                                         |
 
 A new `restoreEngine` applies from the next restore. The name is checked when it is used, not when it arrives.
 

@@ -63,19 +63,20 @@ A restore that succeeds shows a short message in the status bar. One that fails 
 
 ## Settings
 
-| Setting                                 | Default    | Effect                                                                                              |
-| --------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------- |
-| `nuget.dotnetPath`                      | empty      | The `dotnet` executable. When empty, `DOTNET_ROOT` and then `PATH` are used.                        |
-| `nuget.restore.engine`                  | `embedded` | `embedded`, `msbuild` or `console`. See [Restore](backend-protocol.md#restore).                     |
-| `nuget.restore.onOpen`                  | `true`     | Restore the solution when it is opened.                                                             |
-| `nuget.feedTimeoutSeconds`              | `30`       | How long a package source may take to answer.                                                       |
-| `nuget.log.level`                       | `info`     | The least severe level written to the output channel.                                               |
-| `nuget.backend.path`                    | empty      | Another backend to run, for developing the extension: an executable, or a `.dll` run with `dotnet`. |
-| `nuget.notifications.operationWarnings` | `true`     | Show a notification when a package change did more than was asked.                                  |
+| Setting                                 | Default    | Effect                                                                                                                                                     |
+| --------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `nuget.dotnetPath`                      | empty      | The `dotnet` executable. When empty, `DOTNET_ROOT` and then `PATH` are used.                                                                               |
+| `nuget.restore.engine`                  | `embedded` | `embedded`, `msbuild` or `console`. See [Restore](backend-protocol.md#restore).                                                                            |
+| `nuget.restore.onOpen`                  | `true`     | Restore the solution when it is opened.                                                                                                                    |
+| `nuget.feedTimeoutSeconds`              | `30`       | How long a package source may take to answer.                                                                                                              |
+| `nuget.log.level`                       | `info`     | The least severe level written to the output channel.                                                                                                      |
+| `nuget.backend.path`                    | empty      | Another backend to run, for developing the extension: an executable, or a `.dll` run with `dotnet`.                                                        |
+| `nuget.notifications.operationWarnings` | `true`     | Show a notification when a package change did more than was asked.                                                                                         |
+| `nuget.audit.enabled`                   | `true`     | Check the packages of the solution, transitive ones included, for known vulnerabilities. See [Known vulnerabilities](nuget-view.md#known-vulnerabilities). |
 
 A package change can do more than was asked: updating a version that `Directory.Packages.props` shares changes it for every project that uses it, for example. The sentences that say so are always written to the output channel. A notification shows the first one, and how many more there are, with **Show Log** and **Don't Show Again**; the latter turns `nuget.notifications.operationWarnings` off in the user settings.
 
-A change to `nuget.restore.engine` or `nuget.restore.onOpen` is sent to the running backend and applies from the next restore. A change to `nuget.dotnetPath`, `nuget.feedTimeoutSeconds` or `nuget.backend.path` restarts the backend, because it reads them only when it starts. `nuget.log.level` is applied by the extension.
+A change to `nuget.restore.engine` or `nuget.restore.onOpen` is sent to the running backend and applies from the next restore. A change to `nuget.audit.enabled` is sent to it too, and the view shows or hides the warnings at once. A change to `nuget.dotnetPath`, `nuget.feedTimeoutSeconds` or `nuget.backend.path` restarts the backend, because it reads them only when it starts. `nuget.log.level` is applied by the extension.
 
 `nuget.dotnetPath` and `nuget.backend.path` name executables, so they are machine settings that a workspace may override only in a trusted workspace.
 

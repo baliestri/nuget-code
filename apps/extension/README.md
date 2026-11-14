@@ -12,6 +12,8 @@ See what every project references, and act on it.
 
 - **Installed** lists the packages of the whole solution, or of one project, with the versions in use.
 - **Packages to Update** gathers the ones with a newer version. Tick some or all of them and update them together.
+- **Implicitly Installed Packages** lists what comes with the packages you reference, and through which of them.
+- **Known vulnerabilities** are marked with a shield, on referenced and transitive packages alike, with the advisories one click away and the affected versions pointed out when you choose one. They come from what your feeds publish, as in `dotnet list package --vulnerable`.
 - **Discover** searches your feeds, all of them or one, with or without prereleases.
 - The **details** show the versions, the description, the licence and the dependencies of a package, and every project of the solution: install it where it is missing, move a project to another version, or remove it.
 
@@ -80,6 +82,7 @@ Works on Windows, Linux (glibc and musl) and macOS, on x64 and arm64, and in Rem
 | `nuget.feedTimeoutSeconds`              | `30`       | How long a package source may take to answer.                   |
 | `nuget.log.level`                       | `info`     | The least severe level written to the **NuGet** output channel. |
 | `nuget.notifications.operationWarnings` | `true`     | Tell you when a change reached further than what you asked for. |
+| `nuget.audit.enabled`                   | `true`     | Check the packages for known vulnerabilities.                   |
 
 ## Commands
 

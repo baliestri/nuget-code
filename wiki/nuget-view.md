@@ -30,20 +30,31 @@ Under it, two lists:
 - **Installed** shows the packages the target references, each with the versions in use and, at the right, the newest version when there is a newer one. Those packages are also listed above, in **Packages to Update**, where they can be ticked, one by one or all at once, and updated together with **Update**. The number beside the name of the list is how many have updates. A package the SDK adds on its own is dimmed and cannot be changed. A package that is not restored carries a warning that says in which projects.
 - **Discover** shows what the feeds answer to the search, up to 100 packages, each with its newest version.
 
+The Installed list ends with a third group, **Implicitly Installed Packages**: the packages the target has without referencing them, because a referenced package, or a referenced project, brings them. Each is shown with its versions in parentheses and, at the right, the newest version on the feeds. Their newest versions are asked for apart from the others, so they may arrive a moment later. A package that one project references and another only has through a dependency is in both groups.
+
 Clicking the title of a group folds and unfolds it.
+
+#### Known vulnerabilities
+
+A package that has known vulnerabilities in a version the target has, referenced or implicitly installed, carries a shield on its line, in the colour of an error when the worst is high or critical and of a warning otherwise. Its tooltip says how many there are. The Installed tab counts those packages, and with the order "updates first" they come before everything else in their group.
+
+The knowledge comes from the package sources that publish it, which nuget.org does and most private feeds do not; when the NuGet configuration has `auditSources`, those are asked instead. A package with no shield is one no feed warned about, which is not the same as one that is known to be safe. `NuGetAuditSuppress` and the other audit properties of the projects are not taken into account here.
+
+Nothing is held back by a warning: a vulnerable version can be kept, and can be installed. `nuget.audit.enabled`, in [Settings](extension.md#settings), turns the check off.
 
 Selecting a package shows its details on the other side:
 
-| Control                     | Description                                                                                                                                                |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Version                     | The versions the feeds have, newest first. The buttons act on the version selected here.                                                                   |
-| Install (`+`)               | Beside the version: installs it in every project of the target that does not have the package. Beside a project: installs it in that project.              |
-| Change to this version      | Beside the version: moves every project that has the package to the selected version. Beside a project: moves that project. Upgrades and downgrades alike. |
-| Remove                      | Beside the version: removes the package from every project. Beside a project: removes it from that project.                                                |
-| Info                        | The description, the authors, the licence, the project page and the feed the details came from. Links open in the browser.                                 |
-| Frameworks and Dependencies | The dependencies the package declares for each framework.                                                                                                  |
+| Control                     | Description                                                                                                                                                     |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Version                     | The versions the feeds have, newest first. The buttons act on the version selected here. A version with known vulnerabilities says so, with the worst severity. |
+| Known vulnerabilities       | Shown when a version the target has is affected: each advisory with its severity, worst first, as a link that opens in the browser.                             |
+| Install (`+`)               | Beside the version: installs it in every project of the target that does not have the package. Beside a project: installs it in that project.                   |
+| Change to this version      | Beside the version: moves every project that has the package to the selected version. Beside a project: moves that project. Upgrades and downgrades alike.      |
+| Remove                      | Beside the version: removes the package from every project. Beside a project: removes it from that project.                                                     |
+| Info                        | The description, the authors, the licence, the project page and the feed the details came from. Links open in the browser.                                      |
+| Frameworks and Dependencies | The dependencies the package declares for each framework.                                                                                                       |
 
-The projects of the target are listed under the details, the ones that have the package first, each with the version it has.
+The projects of the target are listed under the details, the ones that reference the package first, each with the version it has. A project that only has the package through another shows that version in parentheses and which of its packages brings it; it can install the package, which makes it a reference of its own, and has nothing to change or remove.
 
 A click applies the change at once; nothing asks for confirmation. Only one change or restore runs at a time: while one runs, a line under the lists says which step it is at and offers **Cancel**, and the other actions are disabled. Files that were already edited when an operation is cancelled stay edited.
 
@@ -55,18 +66,19 @@ A right click on a package, in either list, opens a menu for it and selects it. 
 
 The menu only has what applies to the package:
 
-| Item                                       | Shown for                                         | Description                                                                                                        |
-| ------------------------------------------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Update _package_ in _target_ from … to …   | An installed package with a newer version         | Moves the projects of the target to the newest version.                                                            |
-| Remove _package_ from …                    | An installed package that is not added by the SDK | Removes it from the projects of the target that have it.                                                           |
-| Show _version_ in File Explorer            | Each version that is restored                     | Shows the folder of that version, inside the global packages folder, in the file manager.                          |
-| Show All Package Versions in File Explorer | Every package                                     | Shows the folder of the package. A package that was never downloaded has none, and that is said in a notification. |
-| Show Package on NuGet.Org                  | A package that comes from nuget.org               | Opens its page there.                                                                                              |
-| Show Project Page, Show License Page       | A package that declares them                      | Opens the page in the browser.                                                                                     |
-| Search Package with Google                 | Every package                                     | Searches for the name of the package.                                                                              |
-| Toggle NuGet Info Expander                 | Every package                                     | Opens or closes **Info** in the details. Also **Ctrl+I**.                                                          |
-| Toggle NuGet Dependencies Expander         | Every package                                     | Opens or closes **Frameworks and Dependencies** in the details. Also **Ctrl+D**.                                   |
-| Copy Package Name to Clipboard             | Every package                                     | Also **Ctrl+C**, when no text is selected.                                                                         |
+| Item                                       | Shown for                                            | Description                                                                                                        |
+| ------------------------------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Update _package_ in _target_ from … to …   | An installed package with a newer version            | Moves the projects of the target to the newest version.                                                            |
+| Remove _package_ from …                    | An installed package that is not added by the SDK    | Removes it from the projects of the target that have it.                                                           |
+| Show _version_ in File Explorer            | Each version that is restored                        | Shows the folder of that version, inside the global packages folder, in the file manager.                          |
+| Show All Package Versions in File Explorer | Every package                                        | Shows the folder of the package. A package that was never downloaded has none, and that is said in a notification. |
+| Show Advisory …                            | Each known vulnerability of a version the target has | Opens the advisory in the browser.                                                                                 |
+| Show Package on NuGet.Org                  | A package that comes from nuget.org                  | Opens its page there.                                                                                              |
+| Show Project Page, Show License Page       | A package that declares them                         | Opens the page in the browser.                                                                                     |
+| Search Package with Google                 | Every package                                        | Searches for the name of the package.                                                                              |
+| Toggle NuGet Info Expander                 | Every package                                        | Opens or closes **Info** in the details. Also **Ctrl+I**.                                                          |
+| Toggle NuGet Dependencies Expander         | Every package                                        | Opens or closes **Frameworks and Dependencies** in the details. Also **Ctrl+D**.                                   |
+| Copy Package Name to Clipboard             | Every package                                        | Also **Ctrl+C**, when no text is selected.                                                                         |
 
 The three keys act on the selected package without the menu being open. On macOS, Cmd takes the place of Ctrl.
 
@@ -183,6 +195,6 @@ The view is modelled on the NuGet window of JetBrains Rider. Some of what that w
 - There is no Package Manager Console tab.
 - There is no button that upgrades every package of the solution at once; ticking every package in **Packages to Update** and pressing **Update** does the same.
 - The context menu of a package has no documentation popup, no assembly explorer and no search for the code that depends on it.
-- Nothing warns about packages with known vulnerabilities.
+- Nothing offers to move a vulnerable package to its nearest safe version; the list of versions shows which ones are affected.
 - Restore has no "force" variant in the view.
 - The available packages are shown in the order the feeds return them.

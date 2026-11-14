@@ -20,6 +20,7 @@ The screenshots were taken from the development page of the view, with sample da
 ## What it does
 
 - **Packages.** The installed packages of the whole solution or of one project, the ones with a newer version, and a search of the feeds. Install, change version and remove per project, or update several packages at once. A click applies the change; nothing asks first.
+- **Transitive packages and known vulnerabilities.** The packages that come with the ones you reference are listed too, and any package with a known vulnerability, as the feeds publish them, is marked, with the advisories one click away.
 - **Sources.** The feeds of every `NuGet.config` NuGet reads, and of all of them combined: add, edit, enable, disable and remove. The global and local packages folders.
 - **Folders.** Where NuGet keeps packages and caches, how much each folder holds, and a way to clear the caches.
 - **Log.** What NuGet and the backend are doing, as it happens.
