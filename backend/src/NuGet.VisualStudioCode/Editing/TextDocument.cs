@@ -56,9 +56,22 @@ internal sealed class TextDocument {
   }
 
   public void Save() {
+    // Replacing a file by renaming another over it only needs write access to the directory, so on Unix it
+    // would go through for a read-only file. A file marked read-only is not to be changed, on any system.
+    if (File.Exists(_path) &&
+        File.GetAttributes(_path).HasFlag(FileAttributes.ReadOnly)) {
+      throw new UnauthorizedAccessException($"The file '{_path}' is read-only.");
+    }
+
     var temporary = $"{_path}.{Guid.NewGuid():N}.tmp";
     try {
       File.WriteAllBytes(temporary, [.. _preamble, .. _encoding.GetBytes(Text)]);
+      if (!OperatingSystem.IsWindows() &&
+          File.Exists(_path)) {
+        // The new file takes the place of the old one: it keeps the old one's permissions.
+        File.SetUnixFileMode(temporary, File.GetUnixFileMode(_path));
+      }
+
       File.Move(temporary, _path, true);
     }
     catch {

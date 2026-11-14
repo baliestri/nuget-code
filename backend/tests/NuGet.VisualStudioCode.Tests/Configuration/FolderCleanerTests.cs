@@ -1,6 +1,7 @@
 // Copyright (c) Bruno Sales <me@baliestri.dev>. Licensed under the zlib/libpng License.
 // See the LICENSE file in the repository root for full license text.
 
+using System.Runtime.Versioning;
 using NuGet.VisualStudioCode.Configuration;
 using NuGet.VisualStudioCode.Protocol;
 using NuGet.VisualStudioCode.Rpc;
@@ -42,6 +43,9 @@ public sealed class FolderCleanerTests {
 
   [Fact]
   public void File_in_use_is_skipped_and_the_rest_is_deleted() {
+    // Only Windows refuses to delete a file that is open; elsewhere the test below covers a file that
+    // cannot be deleted.
+    Assert.SkipUnless(OperatingSystem.IsWindows(), "Only Windows keeps an open file from being deleted.");
     using var directory = new TempDirectory();
     var locked = directory.WriteFile(Path.Combine(CACHE, "pkg", "locked.bin"), "locked");
     var free = directory.WriteFile(Path.Combine(CACHE, "pkg", "free.bin"), "free");
@@ -53,6 +57,32 @@ public sealed class FolderCleanerTests {
     Assert.Equal(4, result.BytesFreed);
     Assert.Contains(locked, result.Skipped, StringComparer.OrdinalIgnoreCase);
     Assert.True(File.Exists(locked));
+    Assert.False(File.Exists(free));
+  }
+
+  [Fact]
+  [UnsupportedOSPlatform("windows")]
+  public void File_that_cannot_be_deleted_is_skipped_and_the_rest_is_deleted() {
+    Assert.SkipWhen(OperatingSystem.IsWindows(), "Directory permissions of this kind do not exist on Windows.");
+    Assert.SkipWhen(Environment.IsPrivilegedProcess, "A privileged process is not held back by permissions.");
+    using var directory = new TempDirectory();
+    var kept = directory.WriteFile(Path.Combine(CACHE, "sealed", "kept.bin"), "kept");
+    var free = directory.WriteFile(Path.Combine(CACHE, "open", "free.bin"), "free");
+    var sealedDirectory = Path.GetDirectoryName(kept)!;
+    // Deleting a file needs write access to its directory.
+    File.SetUnixFileMode(sealedDirectory, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+    FolderClearInfo result;
+    try {
+      result = FolderCleaner.Clear(directory.Combine(CACHE), TestContext.Current.CancellationToken);
+    }
+    finally {
+      File.SetUnixFileMode(sealedDirectory,
+        UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+    }
+
+    Assert.Equal(4, result.BytesFreed);
+    Assert.Contains(kept, result.Skipped, StringComparer.Ordinal);
+    Assert.True(File.Exists(kept));
     Assert.False(File.Exists(free));
   }
 

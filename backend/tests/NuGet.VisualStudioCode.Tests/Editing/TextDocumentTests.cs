@@ -1,6 +1,7 @@
 // Copyright (c) Bruno Sales <me@baliestri.dev>. Licensed under the zlib/libpng License.
 // See the LICENSE file in the repository root for full license text.
 
+using System.Runtime.Versioning;
 using System.Text;
 using NuGet.VisualStudioCode.Editing;
 using NuGet.VisualStudioCode.TestSupport;
@@ -82,5 +83,37 @@ public sealed class TextDocumentTests {
       Directory.GetFiles(directory.Path).Select(Path.GetFileName),
       StringComparer.Ordinal
     );
+  }
+
+  [Fact]
+  public void Read_only_file_is_not_replaced_and_nothing_is_left_behind() {
+    using var directory = new TempDirectory();
+    var path = Write(directory, "abc"u8.ToArray());
+    var edited = TextDocument.Load(path).Apply([new TextEdit(0, 1, "x")]);
+    File.SetAttributes(path, FileAttributes.ReadOnly);
+    try {
+      Assert.Throws<UnauthorizedAccessException>(edited.Save);
+
+      Assert.Equal("abc", File.ReadAllText(path));
+      Assert.Single(Directory.GetFiles(directory.Path));
+    }
+    finally {
+      File.SetAttributes(path, FileAttributes.Normal);
+    }
+  }
+
+  [Fact]
+  [UnsupportedOSPlatform("windows")]
+  public void Save_keeps_the_permissions_of_the_file() {
+    Assert.SkipWhen(OperatingSystem.IsWindows(), "Unix file modes do not exist on Windows.");
+    using var directory = new TempDirectory();
+    var path = Write(directory, "abc"u8.ToArray());
+    const UnixFileMode MODE = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+    File.SetUnixFileMode(path, MODE);
+
+    TextDocument.Load(path).Apply([new TextEdit(0, 1, "x")]).Save();
+
+    Assert.Equal(MODE, File.GetUnixFileMode(path));
+    Assert.Equal("xbc", File.ReadAllText(path));
   }
 }
