@@ -46,40 +46,7 @@ One item, on the left, that says the state of the backend. Its tooltip says it i
 
 ## The view
 
-The **NuGet** view lives in the panel, beside Terminal and Output, and has four tabs. A column of buttons on its left holds Restore, the actions of the tab, the settings and this page. What the user chose in the view, such as the tab, the target, the feed and the log columns, is remembered for the workspace.
-
-Only one operation that changes packages or restores runs at a time. While one runs, the view says which step it is at and offers **Cancel**; files that were already edited stay edited.
-
-### Packages
-
-The toolbar chooses what the lists are about: a search text, the target (the whole solution or one project), the feed (every enabled feed or one) and whether prerelease versions count.
-
-- **Installed** lists the packages the target references, with the versions in use. Those with a newer version on the feeds are also listed above, in **Packages to Update**, where they can be ticked and updated together to the newest version. A package the SDK adds on its own is shown dimmed and cannot be changed. A package that is not restored carries a warning.
-- **Discover** lists what the feeds answer to the search, up to 100 packages.
-
-Selecting a package shows its details: the versions, newest first, its description, authors, licence and dependencies, and the projects of the target. A project that has the package can be moved to the selected version or have the package removed; one that does not can have it installed. The buttons beside the version do the same for every project at once.
-
-A click applies the change at once; nothing asks for confirmation. When the change is done, the view says only what went wrong: a restore that failed, a file that could not be written, a cancellation. What a change did beyond what was asked is a [notification](#settings).
-
-The side bar adds **Refresh**, which asks the feeds again without the backend's cache, the position of the details, beside or below the lists, and the order of the installed list: packages with updates first, or alphabetical.
-
-### Sources
-
-The list has `[Effective NuGet.Config]`, every file combined, and then each configuration file NuGet reads for the solution.
-
-- **Feeds** shows name, URL, **Allow insecure** and **Enabled**, with buttons to edit and remove, and a last row to add a feed. From the effective list a change is written to the file that declares the feed, and a new feed goes to the `NuGet.config` of the solution. From a file's list, changes go to that file. A file that cannot be written is read-only; the feeds of a machine-wide file can still be enabled and disabled.
-- **Properties** shows the global packages folder and the local packages folder: what the selected file declares, which can be typed or chosen, and under it what NuGet ends up using. They are read-only in the effective list.
-- **Summary** is the effective configuration as text.
-
-The dialog that adds or edits a feed also takes a user and a password. They are stored in the editor's secret storage, as in [Credentials](#credentials), and never written to a `NuGet.config`; leaving them empty keeps what is stored.
-
-### Folders
-
-The folders NuGet uses, with their paths. Sizes start unknown; **Recalculate Folder Sizes** measures them one after the other. A measured size is remembered by the extension for every workspace of the machine and shown, with when it was measured in its tooltip, until it is measured again or thirty days have passed. **Open Folder** shows the selected folder in the file manager. **Clear Selected Caches** deletes what is in the selected folders, after a confirmation that lists them; it is offered only when every selected folder is a cache. Ctrl or Cmd with a click selects several. Afterwards a notification of the editor says how much was freed and what could not be removed, which is also written to the output channel, and the cleared folders, with any folder that holds one of them, are measured again. A folder that cannot be measured, opened or cleared says why above the table.
-
-### Log
-
-The last 5,000 lines of the backend's log received since the view opened, coloured by level. The toolbar shows and hides the time, the context and the level, wraps long lines, scrolls to the end, clears the list and chooses which levels are shown; that choice is independent of `nuget.log.level`, which governs the output channel. The list stays at the end as lines arrive until it is scrolled up. The Log tab is shown even while the backend is starting or stopped.
+The **NuGet** view lives in the panel, beside Terminal and Output. It has four tabs: Packages, Sources, Folders and Log. Its tabs and controls are described in [NuGet view](nuget-view.md).
 
 ## Commands
 

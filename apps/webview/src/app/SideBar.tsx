@@ -3,7 +3,7 @@ import { useBridge, useSession } from "../bridge/BridgeContext";
 import { useOperation } from "../state/operation";
 import { IconButton } from "../ui/IconButton";
 
-export const HELP_URL = "https://github.com/baliestri/nuget-code/blob/main/wiki/extension.md";
+export const HELP_URL = "https://github.com/baliestri/nuget-code/blob/main/wiki/nuget-view.md";
 
 /**
  * The column of icon buttons on the left of every tab: Restore, the tab's own actions (the children),

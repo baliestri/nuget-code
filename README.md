@@ -10,6 +10,7 @@ What exists today:
 
 It has not been published yet. What is still ahead is trying it on more solutions and systems before a first release.
 
+- [NuGet view](wiki/nuget-view.md)
 - [Extension](wiki/extension.md)
 - [Backend protocol](wiki/backend-protocol.md)
 - [Contributing](CONTRIBUTING.md)
