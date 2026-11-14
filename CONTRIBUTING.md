@@ -112,6 +112,8 @@ This publishes the backend with NativeAOT, bundles the extension and writes `rel
 
 Publishing stores no long-lived secret. Both the Visual Studio Marketplace and Open VSX are published with trusted publishing: the job's OIDC token is exchanged for a short-lived publishing token. The trusted publisher configured on each marketplace names this repository and the workflow file, so renaming `release.yml` breaks publishing.
 
+What has been verified so far: the Windows x64 and Windows arm64 jobs pass in CI, and everything was also run locally on Windows x64, including the packaged `win32-x64` VSIX. The musl x64 build and its three test suites pass in a local container. The glibc Linux and macOS jobs publish the backend but have not passed yet, and the editor smoke tests have not run in CI.
+
 To run what the CI runs for the musl targets on a local machine, start the same container with Docker or Podman from the repository root:
 
 ```powershell
