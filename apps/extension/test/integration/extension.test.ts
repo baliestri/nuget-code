@@ -143,15 +143,22 @@ describe("the extension in the editor", () => {
     const terminal = vscode.window.terminals.find((item) => item.name === "NuGet Package Manager Console");
     assert.ok(terminal, "The command did not open the console.");
 
-    // The solution has one project, so it is the default one without anything being asked.
-    terminal.sendText(
-      `Get-Package | ForEach-Object { "$($_.ProjectName) $($_.Id) $($_.Version)" } | Set-Content -LiteralPath '${listed}'`
+    // The solution has one project, so it is the default one without anything being asked. A cmdlet that
+    // fails says why in the file, since nothing here can read what the terminal shows.
+    await typed(
+      terminal,
+      `$(try { Get-Package | ForEach-Object { "$($_.ProjectName) $($_.Id) $($_.Version)" } } catch { "failed: $_" }) | Set-Content -LiteralPath '${listed}'`,
+      listed,
+      "Get-Package to answer in the console"
     );
-    await until(() => existsSync(listed), "Get-Package to answer in the console");
     assert.strictEqual(readFileSync(listed, "utf8").trim(), "App Alpha 1.0.0");
 
-    terminal.sendText(`Uninstall-Package Alpha; 'done' | Set-Content -LiteralPath '${removed}'`);
-    await until(() => existsSync(removed), "Uninstall-Package to finish in the console");
+    await typed(
+      terminal,
+      `$(try { Uninstall-Package Alpha; 'done' } catch { "failed: $_" }) | Set-Content -LiteralPath '${removed}'`,
+      removed,
+      "Uninstall-Package to finish in the console"
+    );
     assert.ok(!readFileSync(project, "utf8").includes("Alpha"), "Uninstall-Package did not edit the project.");
 
     // Opening again shows the same terminal.
@@ -163,6 +170,36 @@ describe("the extension in the editor", () => {
     terminal.dispose();
   });
 });
+
+/**
+ * Types a command in the terminal and waits for the file it writes. The command is typed again every so
+ * often: what is sent before the shell shows its prompt may be lost, and nothing tells when the prompt is
+ * there. The commands used here can run more than once. A failure says whether the shell is still running.
+ */
+async function typed(terminal: vscode.Terminal, command: string, file: string, what: string): Promise<void> {
+  const deadline = Date.now() + TIMEOUT;
+  let attempts = 0;
+  while (!existsSync(file)) {
+    if (terminal.exitStatus !== undefined) {
+      assert.fail(`The shell of the console ended with code ${terminal.exitStatus.code} while waiting for ${what}.`);
+    }
+
+    if (Date.now() > deadline) {
+      assert.fail(`Timed out waiting for ${what}, after typing the command ${attempts} times; the shell is running.`);
+    }
+
+    terminal.sendText(command);
+    attempts++;
+    const retry = Date.now() + 15_000;
+    while (!existsSync(file) && Date.now() < retry && terminal.exitStatus === undefined) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+
+  if (attempts > 1) {
+    console.log(`The console answered after the command was typed ${attempts} times (${what}).`);
+  }
+}
 
 /** The major and minor of the `pwsh` in the PATH; undefined when there is none. */
 function powershellVersion(): [number, number] | undefined {
