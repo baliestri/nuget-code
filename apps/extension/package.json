@@ -30,6 +30,7 @@
   "dependencies": {
     "@nuget-code/backend-client": "workspace:*",
     "@nuget-code/bridge": "workspace:*",
+    "@nuget-code/console-protocol": "workspace:*",
     "@nuget-code/protocol": "workspace:*"
   },
   "devDependencies": {
