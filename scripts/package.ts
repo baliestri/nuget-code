@@ -7,9 +7,10 @@
  * target's own operating system. With it, an executable published elsewhere is packaged as it is.
  */
 import { spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { delimiter, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildConsoleModule, MODULE_FILES } from "./console-module";
 import { findTarget, TARGETS, type Target } from "./targets";
 
 const repository = fileURLToPath(new URL("../", import.meta.url));
@@ -72,6 +73,29 @@ const packaged = join(bin, target.vsce, target.executable);
 copyFileSync(backend, packaged);
 if (process.platform !== "win32") {
   chmodSync(packaged, 0o755);
+}
+
+// The module of the Package Manager Console is the same for every target: PowerShell loads it, and brings
+// its own runtime. The folder is replaced, so the VSIX carries only what was built now.
+const consoleModule = join(extension, "console");
+try {
+  buildConsoleModule(repository, consoleModule, "Release");
+} catch (error) {
+  fail(error instanceof Error ? error.message : String(error));
+}
+
+for (const file of [...MODULE_FILES, "version.json"]) {
+  if (!existsSync(join(consoleModule, file))) {
+    fail(`The console module was not built: ${join(consoleModule, file)} is missing.`);
+  }
+}
+
+// PowerShell's own assemblies are only compiled against; shipping one would shadow the one PowerShell has.
+const strays = readdirSync(consoleModule).filter(
+  (file) => file.endsWith(".dll") && !MODULE_FILES.includes(file as never)
+);
+if (strays.length > 0) {
+  fail(`The console module carries assemblies that are not its own: ${strays.join(", ")}`);
 }
 
 const production = { ...process.env, NODE_ENV: "production" };

@@ -48,12 +48,13 @@ jobs:
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
 
-      # Everything but musl: build and test on the runner itself.
-
+      # On every runner: the module of the console is built on the runner itself, for musl too. It is the
+      # same for every target.
       - uses: actions/setup-dotnet@v6
-        if: ${{ !matrix.alpine }}
         with:
           global-json-file: backend/global.json
+
+      # Everything but musl: build and test on the runner itself.
 
       - name: Install the native toolchain (Linux)
         if: ${{ !matrix.alpine && runner.os == 'Linux' }}
@@ -82,6 +83,24 @@ jobs:
       - name: Client contract tests against the published binary
         if: ${{ !matrix.alpine }}
         run: pnpm --filter @nuget-code/backend-client test
+
+      # The tests of the cmdlets run in a real PowerShell, and are skipped where there is none new enough.
+      # Installing it the way the extension offers to tests that way too.
+      - name: Install the PowerShell the console module is built for
+        if: ${{ !matrix.alpine }}
+        run: |
+          version="$(sed -n 's/.*Include="System.Management.Automation" Version="\([^"]*\)".*/\1/p' backend/Directory.Packages.props)"
+          dotnet tool install --global PowerShell --version "$version"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            echo "$USERPROFILE\\.dotnet\\tools" >> "$GITHUB_PATH"
+          else
+            echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+          fi
+
+      - name: Console module tests
+        if: ${{ !matrix.alpine }}
+        working-directory: backend
+        run: dotnet test --project tests/NuGet.VisualStudioCode.Console.Tests
 
       # musl: the same steps, inside an Alpine container. See scripts/ci/alpine.sh.
 

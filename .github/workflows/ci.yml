@@ -50,6 +50,8 @@ jobs:
 
       - run: pnpm --filter @nuget-code/bridge test
 
+      - run: pnpm --filter @nuget-code/console-protocol test
+
       - run: pnpm --filter @nuget-code/webview test
 
       - run: pnpm --filter nuget-code test
@@ -98,21 +100,34 @@ jobs:
           name: vsix-${{ matrix.target }}
           path: release-artifacts
 
-      # A VSIX is a zip: the binary is taken out of the very file that would be installed.
-      - name: Take the backend out of the VSIX
+      # A VSIX is a zip: the binary and the module of the console are taken out of the very file that would
+      # be installed.
+      - name: Take the backend and the console module out of the VSIX
         run: |
           vsix="$(ls release-artifacts/*.vsix)"
           mkdir -p vsix
           if [ "$RUNNER_OS" = "Windows" ]; then
             # The tar that ships with Windows reads zip archives. The unzip of the runner's shell does not
             # match the entry names of the archive.
-            "$SYSTEMROOT/System32/tar.exe" -xf "$vsix" -C vsix extension/bin
+            "$SYSTEMROOT/System32/tar.exe" -xf "$vsix" -C vsix extension/bin extension/console
           else
-            unzip -o "$vsix" "extension/bin/*" -d vsix
+            unzip -o "$vsix" "extension/bin/*" "extension/console/*" -d vsix
           fi
-          rm -rf apps/extension/bin
+          rm -rf apps/extension/bin apps/extension/console
           cp -R vsix/extension/bin apps/extension/bin
+          cp -R vsix/extension/console apps/extension/console
           chmod -R +x apps/extension/bin
+
+      # The smoke test of the console is skipped where there is no PowerShell new enough for the module.
+      - name: Install the PowerShell the console module is built for
+        run: |
+          version="$(sed -n 's/.*Include="System.Management.Automation" Version="\([^"]*\)".*/\1/p' backend/Directory.Packages.props)"
+          dotnet tool install --global PowerShell --version "$version"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            echo "$USERPROFILE\\.dotnet\\tools" >> "$GITHUB_PATH"
+          else
+            echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+          fi
 
       - name: Smoke tests in the editor
         env:

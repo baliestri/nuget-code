@@ -37,6 +37,9 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "Microsoft.Extensions.*"
         update-types: ["version-update:semver-major"]
+      # Its version is the PowerShell the Package Manager Console requires at least, and the one the extension
+      # offers to install: raising it changes what users must have. It is raised by hand.
+      - dependency-name: "System.Management.Automation"
 
   # The .NET SDK is not watched here. backend/global.json pins it to 10.0.403, with roll-forward to the latest
   # patch, and it is raised by hand: a new SDK is a decision about the backend, not a routine update.

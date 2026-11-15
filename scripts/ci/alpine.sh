@@ -31,6 +31,8 @@ export NUGET_VSCODE_BACKEND_PATH
   cd backend
   dotnet test --project tests/NuGet.VisualStudioCode.Tests
   dotnet test --project tests/NuGet.VisualStudioCode.AotTests
+  # The image has no PowerShell: the tests of the cmdlets say so and are skipped; the others run.
+  dotnet test --project tests/NuGet.VisualStudioCode.Console.Tests
 )
 pnpm --filter @nuget-code/backend-client test
 

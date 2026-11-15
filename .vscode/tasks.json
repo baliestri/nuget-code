@@ -57,8 +57,21 @@
       "group": { "kind": "build", "isDefault": true }
     },
     {
+      // The PowerShell module of the Package Manager Console, put where the extension looks for it.
+      "label": "console: build the module for the extension host",
+      "type": "shell",
+      "command": "pnpm console-module",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": "$msCompile",
+      "presentation": { "reveal": "silent" }
+    },
+    {
       "label": "extension: prepare",
-      "dependsOn": ["backend: build for the extension host", "js: build"],
+      "dependsOn": [
+        "backend: build for the extension host",
+        "console: build the module for the extension host",
+        "js: build"
+      ],
       "dependsOrder": "parallel",
       "problemMatcher": []
     },
