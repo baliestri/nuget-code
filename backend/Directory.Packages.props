@@ -12,6 +12,8 @@
     <PackageVersion Include="NuGet.Packaging" Version="8.0.0" />
     <PackageVersion Include="NuGet.ProjectModel" Version="8.0.0" />
     <PackageVersion Include="NuGet.Protocol" Version="8.0.0" />
+    <!-- Also the PowerShell the console requires at least, and the one the extension offers to install. -->
+    <PackageVersion Include="System.Management.Automation" Version="7.6.0" />
     <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.15" />
     <PackageVersion Include="xunit.v3.mtp-v2" Version="4.0.3" />
   </ItemGroup>

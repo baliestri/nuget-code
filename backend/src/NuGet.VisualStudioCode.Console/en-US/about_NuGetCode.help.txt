@@ -1,0 +1,46 @@
+TOPIC
+    about_NuGetCode
+
+SHORT DESCRIPTION
+    The NuGet Package Manager Console of NuGet Manager for VS Code.
+
+LONG DESCRIPTION
+    This shell was opened by the editor for the solution that is open in it.
+    The cmdlets below ask the editor, which asks the same NuGet backend the
+    NuGet view uses: what one changes, the other shows.
+
+    The prompt names the default project, the one a cmdlet acts on when
+    -ProjectName is not given. Set-Project changes it.
+
+    Cmdlet                  Description
+    ------------------      --------------------------------------------------
+    Get-Project             Returns the default project, the projects named,
+                            or every project with -All.
+
+    Set-Project             Changes the default project: to the one named, or
+                            to the one chosen in the list the editor shows.
+
+    Get-Package             Returns the packages of the project. -Updates
+                            keeps the ones with a newer version, -Transitive
+                            adds the ones that come with other packages, and
+                            -Vulnerable keeps the ones with known
+                            vulnerabilities.
+
+    Find-Package            Searches the package sources for a keyword, or
+                            looks up one package with -ExactMatch.
+
+WHAT IS NOT HERE
+    The Entity Framework Core commands of the Visual Studio console
+    (Add-Migration, Update-Database and the others) are not available: they
+    need the project object of Visual Studio. Use the dotnet ef tool.
+
+    Add-BindingRedirect does not exist: it applies to .NET Framework projects,
+    and only PackageReference projects are supported.
+
+    Packages do not run install or init scripts.
+
+SEE ALSO
+    Get-Project
+    Set-Project
+    Get-Package
+    Find-Package
