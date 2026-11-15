@@ -2,25 +2,37 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Run Extension",
+      // A development window with the extension; open any folder with a solution in it.
+      "name": "Extension",
       "type": "extensionHost",
       "request": "launch",
-      "args": [
-        "--extensionDevelopmentPath=${workspaceFolder}/packages/extension"
-      ],
-      "outFiles": ["${workspaceFolder}/packages/extension/dist/**/*.js"],
-      "preLaunchTask": "turbo: compile"
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}/apps/extension", "--disable-extensions"],
+      "outFiles": ["${workspaceFolder}/apps/extension/dist/**/*.js"],
+      "sourceMaps": true,
+      "preLaunchTask": "extension: prepare"
     },
     {
-      "name": "Extension Tests",
+      // The same, opened on the small solution the smoke tests use.
+      "name": "Extension (sample workspace)",
       "type": "extensionHost",
       "request": "launch",
       "args": [
-        "--extensionDevelopmentPath=${workspaceFolder}/packages/extension",
-        "--extensionTestsPath=${workspaceFolder}/packages/extension/out/test"
+        "--extensionDevelopmentPath=${workspaceFolder}/apps/extension",
+        "--disable-extensions",
+        "${workspaceFolder}/apps/extension/.vscode-test/workspace"
       ],
-      "outFiles": ["${workspaceFolder}/packages/extension/dist/**/*.js"],
-      "preLaunchTask": "turbo: compile"
+      "outFiles": ["${workspaceFolder}/apps/extension/dist/**/*.js"],
+      "sourceMaps": true,
+      "preLaunchTask": "extension: prepare with the sample workspace"
+    },
+    {
+      // Without building first: for relaunching while "js: watch" runs.
+      "name": "Extension (no build)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}/apps/extension", "--disable-extensions"],
+      "outFiles": ["${workspaceFolder}/apps/extension/dist/**/*.js"],
+      "sourceMaps": true
     }
   ]
 }

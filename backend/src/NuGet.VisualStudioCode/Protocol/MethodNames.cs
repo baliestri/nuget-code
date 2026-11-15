@@ -1,0 +1,47 @@
+// Copyright (c) Bruno Sales <me@baliestri.dev>. Licensed under the zlib/libpng License.
+// See the LICENSE file in the repository root for full license text.
+
+namespace NuGet.VisualStudioCode.Protocol;
+
+internal static class MethodNames {
+  public const string INITIALIZE = "initialize";
+  public const string SHUTDOWN = "shutdown";
+
+  public const string SOLUTION_OPEN = "solution/open";
+  public const string SOLUTION_CLOSE = "solution/close";
+
+  public const string SOLUTION_DID_CHANGE = "solution/didChange";
+
+  public const string PACKAGES_INSTALLED = "packages/installed";
+  public const string PACKAGES_UPDATES = "packages/updates";
+  public const string PACKAGES_PLAN = "packages/plan";
+  public const string PACKAGES_INSTALL = "packages/install";
+  public const string PACKAGES_UPDATE = "packages/update";
+  public const string PACKAGES_REMOVE = "packages/remove";
+  public const string OPERATION_PROGRESS = "operation/progress";
+  public const string PACKAGES_SEARCH = "packages/search";
+  public const string PACKAGES_DETAILS = "packages/details";
+  public const string PACKAGES_VULNERABILITIES = "packages/vulnerabilities";
+
+  public const string RESTORE_RUN = "restore/run";
+  public const string RESTORE_DID_FINISH = "restore/didFinish";
+  public const string OPERATIONS_CANCEL = "operations/cancel";
+  public const string CONFIGURATION_DID_CHANGE = "configuration/didChange";
+
+  public const string SOURCES_LIST = "sources/list";
+  public const string SOURCES_ADD = "sources/add";
+  public const string SOURCES_UPDATE = "sources/update";
+  public const string SOURCES_REMOVE = "sources/remove";
+  public const string SOURCES_SET_PROPERTY = "sources/setProperty";
+  public const string FOLDERS_LIST = "folders/list";
+  public const string FOLDERS_SIZE = "folders/size";
+  public const string FOLDERS_CLEAR = "folders/clear";
+
+  public const string WORKSPACE_DID_CHANGE_FILES = "workspace/didChangeFiles";
+
+  public const string LOG_ENTRY = "log/entry";
+  public const string PROGRESS = "progress";
+
+  public const string CREDENTIALS_REQUEST = "credentials/request";
+  public const string CREDENTIALS_RESET = "credentials/reset";
+}

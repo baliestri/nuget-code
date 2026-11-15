@@ -1,0 +1,69 @@
+TOPIC
+    about_NuGetCode
+
+SHORT DESCRIPTION
+    The NuGet Package Manager Console of NuGet Manager for VS Code.
+
+LONG DESCRIPTION
+    This shell was opened by the editor for the solution that is open in it.
+    The cmdlets below ask the editor, which asks the same NuGet backend the
+    NuGet view uses: what one changes, the other shows.
+
+    The prompt names the default project, the one a cmdlet acts on when
+    -ProjectName is not given. Set-Project changes it.
+
+    Cmdlet                  Description
+    ------------------      --------------------------------------------------
+    Get-Project             Returns the default project, the projects named,
+                            or every project with -All.
+
+    Set-Project             Changes the default project: to the one named, or
+                            to the one chosen in the list the editor shows.
+
+    Get-Package             Returns the packages of the project. -Updates
+                            keeps the ones with a newer version, -Transitive
+                            adds the ones that come with other packages, and
+                            -Vulnerable keeps the ones with known
+                            vulnerabilities.
+
+    Find-Package            Searches the package sources for a keyword, or
+                            looks up one package with -ExactMatch.
+
+    Install-Package         Installs a package in the project: the version
+                            given, or the newest.
+
+    Uninstall-Package       Removes a package from the project.
+
+    Update-Package          Updates one package, or every package of the
+                            project when no id is given. -ToHighestMinor and
+                            -ToHighestPatch (or -Safe) keep the update within
+                            the major, or the major and minor, installed.
+                            -Reinstall restores the project again.
+
+    Sync-Package            Takes the version the project has of a package to
+                            the other projects that have it.
+
+    The four cmdlets that change packages take -WhatIf, which shows the edits
+    that would be made and makes none, and -Confirm. A change is applied at
+    once, as in the NuGet view. Ctrl+C asks the backend to cancel the change
+    that is running; files already edited stay edited.
+
+WHAT IS NOT HERE
+    The Entity Framework Core commands of the Visual Studio console
+    (Add-Migration, Update-Database and the others) are not available: they
+    need the project object of Visual Studio. Use the dotnet ef tool.
+
+    Add-BindingRedirect does not exist: it applies to .NET Framework projects,
+    and only PackageReference projects are supported.
+
+    Packages do not run install or init scripts.
+
+SEE ALSO
+    Get-Project
+    Set-Project
+    Get-Package
+    Find-Package
+    Install-Package
+    Uninstall-Package
+    Update-Package
+    Sync-Package

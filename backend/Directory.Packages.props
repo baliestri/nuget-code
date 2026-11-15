@@ -1,0 +1,20 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageVersion Include="Meziantou.Analyzer" Version="3.0.339" />
+    <PackageVersion Include="Microsoft.VisualStudio.SolutionPersistence" Version="1.0.52" />
+    <PackageVersion Include="NuGet.Commands" Version="8.0.0" />
+    <PackageVersion Include="NuGet.Credentials" Version="8.0.0" />
+    <PackageVersion Include="NuGet.Packaging" Version="8.0.0" />
+    <PackageVersion Include="NuGet.ProjectModel" Version="8.0.0" />
+    <PackageVersion Include="NuGet.Protocol" Version="8.0.0" />
+    <!-- Also the PowerShell the console requires at least, and the one the extension offers to install. -->
+    <PackageVersion Include="System.Management.Automation" Version="7.6.0" />
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.15" />
+    <PackageVersion Include="xunit.v3.mtp-v2" Version="4.0.3" />
+  </ItemGroup>
+</Project>

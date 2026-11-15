@@ -1,0 +1,212 @@
+# Contributing
+
+## Backend
+
+The backend lives in `backend/` and is a .NET 10 console application published with NativeAOT. All commands below run from `backend/`.
+
+### Prerequisites
+
+- .NET SDK 10.0.403 or a later 10.0.4xx patch (`global.json` pins it).
+- A native toolchain for NativeAOT publishing. On Windows this is the Visual Studio "Desktop development with C++" workload. `vswhere.exe` must be reachable: if publishing fails with `'vswhere.exe' is not recognized`, add `C:\Program Files (x86)\Microsoft Visual Studio\Installer` to `PATH`. The test harness does this for its own publish.
+- JetBrains command line tools (`jb`) on `PATH`.
+
+The backend has only been built, published and tested on Windows x64. Publishing for Linux, macOS, musl and ARM has not been verified.
+
+### Build and test
+
+```powershell
+dotnet build NuGet.VisualStudioCode.slnx
+dotnet test --project tests/NuGet.VisualStudioCode.Tests
+dotnet test --project tests/NuGet.VisualStudioCode.AotTests
+dotnet test --project tests/NuGet.VisualStudioCode.Console.Tests
+```
+
+Tests run on Microsoft.Testing.Platform. Filter with `--filter-class` or `--filter-method`; VSTest filter syntax does not work.
+
+`NuGet.VisualStudioCode.AotTests` publishes the backend with NativeAOT once per run and talks to the binary over stdio, so a run takes longer than the unit tests. It needs no network: it uses folder feeds and a local HTTP server that speaks the NuGet V3 and V2 protocols. Three environment variables change how it runs:
+
+| Variable                        | Effect                                                               |
+| ------------------------------- | -------------------------------------------------------------------- |
+| `NUGET_VSCODE_BACKEND_PATH`     | Use an already published binary instead of publishing.               |
+| `NUGET_VSCODE_BACKEND_MODE=jit` | Run the backend on the JIT runtime instead of the AOT binary.        |
+| `NUGET_VSCODE_ONLINE_TESTS=1`   | Also run the tests that reach nuget.org. They are skipped otherwise. |
+
+Tests that restore use `TestWorkspace`, whose `NuGet.config` clears the inherited sources and points `globalPackagesFolder` inside the test's temporary directory, so nothing is read from or written to the machine's package folder. A test that clears a folder must check that the folder is inside its workspace before asking for it to be cleared.
+
+When an AOT test fails, run it again with `NUGET_VSCODE_BACKEND_MODE=jit`. A test that fails in both modes is failing because of the code or the test fixture. A test that passes on the JIT runtime and fails against the AOT binary is failing because of trimming.
+
+### Rules for backend changes
+
+- Every JSON-RPC method needs a test in `NuGet.VisualStudioCode.AotTests`. NuGet.Client is not fully annotated for trimming, so a code path that is not exercised against the AOT binary is not known to work.
+- Every type that crosses the protocol is registered in `ProtocolJsonContext`. Reflection-based serialization is disabled.
+- Assemblies that must survive trimming are listed in `src/NuGet.VisualStudioCode/Trimming.props`, each group with the reason it is there. `IL2026` is turned off for the native compiler only, because NuGet.Protocol reports its own Newtonsoft.Json call sites; the C# compiler still fails the build on `IL2026` and `IL3050` in this project's code.
+- Methods that change state run through `OperationQueue`. Anything a handler must send after its own answer, such as a notification about work it started, is registered with `RpcConnection.AfterResponse`.
+- A test that waits for log output waits for a line the backend writes at the end of the work, not for a delay: the log is delivered on its own and may arrive after the answer.
+- Package versions live in `Directory.Packages.props`. Editing it by hand keeps its line endings; `dotnet add package` rewrites the file with CRLF.
+- New C# files start with the license header from `backend/.editorconfig`.
+
+### The console module
+
+`src/NuGet.VisualStudioCode.Console` is the PowerShell module of the [Package Manager Console](wiki/package-manager-console.md). It is not part of the backend process: PowerShell loads it, and it asks the extension, not the backend, through a local channel.
+
+```powershell
+dotnet test --project tests/NuGet.VisualStudioCode.Console.Tests
+```
+
+The tests of the cmdlets start a real `pwsh` with the module, against a fake of the extension's side of the channel. They are skipped, saying why, where there is no PowerShell as new as the module needs. The other tests of the project need none.
+
+- `System.Management.Automation` is referenced only to compile: PowerShell brings its own. Its version in `Directory.Packages.props` is the least PowerShell the module loads in and the one the extension offers to install, so raising it changes what users must have. The manifest, `NuGetCode.psd1`, states the same major and minor; a test fails when they differ.
+- The module references no NuGet library, so that nothing of it can clash with what PowerShell has loaded. Versions are compared by `PackageVersion`.
+- JSON is serialized with the source generator, through `WireJsonContext`, as in the backend.
+- The names of the requests exist in `Channel/ConsoleRequestNames.cs` and in `packages/console-protocol`; a test fails when they differ.
+- A cmdlet and its parameters are used by PowerShell through reflection, which the inspection cannot see. Each cmdlet class says so with `[SuppressMessage("ReSharper", ...)]` and the justification of `Justifications.cs`.
+
+### Before committing C# changes
+
+```powershell
+jb cleanupcode --profile="Built-in: Full Cleanup" NuGet.VisualStudioCode.slnx
+jb inspectcode NuGet.VisualStudioCode.slnx --stdout --format=Text
+dotnet build NuGet.VisualStudioCode.slnx
+```
+
+Review the cleanup diff and resolve the inspection findings, then run the tests. If an inspection finding contradicts the code, such as a type reported as unused that tests do use, run the inspection again with `--swea` and a fresh `--caches-home` before changing anything: a stale cache produces such findings.
+
+## Extension
+
+The JavaScript side is a pnpm workspace:
+
+| Package                     | What it is                                                                              |
+| --------------------------- | --------------------------------------------------------------------------------------- |
+| `packages/protocol`         | The backend contract in TypeScript: types, method names, error codes.                   |
+| `packages/backend-client`   | Starts the backend, talks JSON-RPC to it and restarts it. Does not import `vscode`.     |
+| `packages/bridge`           | The typed requests and events between the view and the extension host.                  |
+| `packages/console-protocol` | What the Package Manager Console may ask of the extension, and the check of its params. |
+| `apps/webview`              | The view: React and Tailwind, bundled into `apps/extension/dist/webview`.               |
+| `apps/extension`            | The VS Code extension, bundled by rolldown into `dist/extension.js`.                    |
+
+The workspace packages are consumed as TypeScript source and have no build step of their own. The view has one, because the extension ships its bundle.
+
+### Prerequisites
+
+- Node.js, the version in `.node-version`, and pnpm, the version in `packageManager`.
+- The .NET SDK, as for the backend: the tests start it.
+
+### Build and test
+
+All commands run from the repository root.
+
+```powershell
+pnpm install
+pnpm lint
+pnpm format:check
+pnpm typecheck
+pnpm test
+pnpm --filter nuget-code test:integration
+```
+
+`pnpm test` runs the unit tests and the contract tests of `packages/backend-client`. The contract tests start a real backend: the Debug build, which they build first, or the binary named by `NUGET_VSCODE_BACKEND_PATH`. They call every method of the protocol and fail when an answer has a field the TypeScript types do not declare, which is what keeps the types and the backend from drifting apart. `packages/protocol` has a test that compares its constants with the C# source.
+
+`test:integration` runs a few smoke tests inside a real editor, which it downloads to `apps/extension/.vscode-test/` the first time. It opens a workspace it generates there. With `NUGET_VSCODE_BACKEND_BUNDLED=1` the extension finds the backend under `apps/extension/bin/<target>/`, as an installed package does; otherwise it uses the Debug build or `NUGET_VSCODE_BACKEND_PATH`.
+
+The extension looks for the module of the console in `apps/extension/console/`, which Git ignores. `pnpm console-module` builds it there, with the version of PowerShell it was built for; `test:integration` and `pnpm package` do the same on their own. Run it once before opening the console from an Extension Development Host. The last smoke test opens the console and lists and removes a package through it; it is skipped where there is no PowerShell 7.6 or newer in the `PATH`.
+
+To run the extension by hand, open the repository in VS Code and start one of the launch configurations of `.vscode/launch.json`: **Extension** builds the Debug backend into `apps/extension/bin/<target>/`, builds the JavaScript and opens an Extension Development Host; **Extension (sample workspace)** opens it on the workspace of the smoke tests. The folder name of the backend task assumes x64 on Windows and Linux and arm64 on macOS. These configurations were tried on Windows x64 only.
+
+The view can be looked at without the editor, over a fake host with sample data:
+
+```powershell
+pnpm --filter @nuget-code/webview dev:page
+```
+
+It serves http://127.0.0.1:5199. `?theme=light` switches the theme, `?state=starting`, `stopped`, `none` or `nosdk` shows the states without a backend or a solution, and `?prefs=<json>` starts from stored preferences, such as `{"tab":"log"}`. The page imitates the editor's theme variables; how the view looks in a real theme is only seen in the editor.
+
+### Rules for extension changes
+
+- A module that decides something is written without importing `vscode` and has unit tests. The modules that touch the editor API stay thin; the smoke tests cover them.
+- A change to the protocol is made in three places together: the C# records, `packages/protocol`, and the contract test of the method.
+- The view reaches the backend only through the methods listed in `packages/bridge/src/backendMethods.ts`, and the editor only through the requests of `messages.ts`. The host checks the params of every host request: they come from a page.
+- The view's content security policy allows no inline style markup and no `data:` addresses. Icons are files of the bundle or codicons.
+- Components of the view use the colour tokens of `apps/webview/src/styles.css`, which map to the editor's theme, never literal colours. Their tests find elements by role and name.
+- The console reaches the extension only through the requests of `packages/console-protocol`, each with the token the terminal was given. Their params come from another process and are checked there; a project they name must be of the open solution.
+- Do not pass an explicit `undefined` cancellation token to `vscode-jsonrpc`'s `sendRequest`: it takes it for a second parameter and sends the params as an array.
+
+### Packaging
+
+```powershell
+pnpm package win32-x64
+```
+
+This publishes the backend with NativeAOT, builds the module of the console, bundles the extension and writes `release-artifacts/nuget-code-<target>-<version>.vsix`. NativeAOT does not compile from one operating system to another, so a target can only be built on its own system; `--backend <executable>` packages a binary that was published elsewhere.
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on pushes to `main` and `develop` and on pull requests: lint, format, types and unit tests; then, for each of the eight targets, on a runner of that system and architecture, the NativeAOT publish, the backend tests and the contract tests against the published binary, the tests of the console module, and the VSIX, which is kept as an artifact; then the smoke tests in the editor on Windows, Linux and macOS, with the binary and the console module taken out of the VSIX. Before the tests of the console, the PowerShell the module is built for is installed as a .NET tool, the way the extension offers to. The two musl targets are built and tested in an Alpine container (`scripts/ci/alpine.sh`).
+
+### Releasing
+
+A release is started from the Actions page, or from the command line, with the version and nothing else:
+
+```powershell
+gh workflow run prepare-release.yml -f version=3.0.0 -f dry_run=true
+gh workflow run prepare-release.yml -f version=3.0.0
+```
+
+With `dry_run` it only prepares the candidate and shows, in the summary of the run, the version change and the new section of the changelog; nothing is pushed. Run it first.
+
+`.github/workflows/prepare-release.yml` does what `git flow release` would, with a check in the middle:
+
+1. **Prepare.** From the tip of `develop` it writes the version to `apps/extension/package.json` and prepends the section of the version to `CHANGELOG.md`, commits both as `chore(release): prepare for v<version>` and pushes the branch `release/v<version>`. That commit is the candidate.
+2. **Validate.** The whole CI runs on the candidate.
+3. **Promote.** If `main` and `develop` did not move meanwhile, the candidate is merged into both, tagged `v<version>`, and the three are pushed together or not at all.
+4. **Publish.** `release.yml` is started on the tag.
+5. **Clean up.** The release branch is deleted.
+
+`.github/workflows/release.yml` is the only workflow that publishes. It runs on a `v<version>` tag that matches the version of `apps/extension/package.json`: pushed by hand, or by dispatch on the tag, which is how `prepare-release.yml` starts it, because a tag pushed by a workflow does not start another one. It builds the eight VSIX files again, attaches them to a GitHub release whose notes are the section of the version in the changelog, and publishes them. A version with a pre-release suffix, such as `3.0.0-alpha.0`, only gets the GitHub release: neither marketplace accepts such a version, and `prepare-release.yml` does not take one.
+
+| What went wrong                                        | What to do                                                                                          |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| The version or the refs were refused                   | Nothing changed. Fix the input and run again.                                                       |
+| The candidate failed validation                        | `main`, `develop` and the tags are untouched. Fix on `develop` and run again with the same version. |
+| `main` or `develop` moved during validation            | Nothing was pushed. Run again.                                                                      |
+| `release.yml` failed for a passing reason              | Run `release.yml` again on the same tag.                                                            |
+| `release.yml` failed for a defect validation missed    | The version is already merged and tagged. Fix on `develop` and release the next patch version.      |
+| The release branch was left behind, changed by someone | It is kept on purpose. Look at it, then delete it by hand.                                          |
+
+Publishing stores no long-lived secret. Both the Visual Studio Marketplace and Open VSX are published with trusted publishing: the job's OIDC token is exchanged for a short-lived publishing token. The trusted publisher configured on each marketplace names this repository and the workflow file, so renaming `release.yml` breaks publishing.
+
+`CHANGELOG.md` is written by [git-cliff](https://git-cliff.org) from the commit messages, as configured in `cliff.toml`, and is not edited by hand. `cliff.toml` passes every message through [typos](https://github.com/crate-ci/typos), so both tools are needed to generate it locally. The packaging script copies the changelog into the VSIX.
+
+Neither `prepare-release.yml` nor the dispatch of `release.yml` has run yet. Whether the marketplaces accept a `release.yml` run that was started by dispatch on a tag is not verified either: check the trusted publisher of each one before the first release.
+
+### Dependencies
+
+Dependabot (`.github/dependabot.yml`) opens weekly pull requests against `develop` for the npm packages, the NuGet packages and the GitHub Actions. Its commits are `chore(deps)`, which the changelog leaves out.
+
+Four things are left out of it and raised by hand:
+
+- The .NET SDK. `backend/global.json` pins it to 10.0.403, with roll-forward to the latest patch.
+- The next major of the NuGet packages that are versioned with the .NET runtime (`System.*`, `Microsoft.Extensions.*`), which is for the next .NET.
+- `@types/vscode`, which follows `engines.vscode` of the extension: `vsce` refuses to package with newer types.
+- `System.Management.Automation`, whose version is the PowerShell the console requires and installs.
+
+`.github/workflows/audit.yml` runs `pnpm audit` and `dotnet list package --vulnerable --include-transitive` every week, on demand, and on pull requests that change a lock file. It is apart from the CI so that an advisory published today does not fail a pull request that has nothing to do with it. The restore of the backend audits too: with warnings as errors, a vulnerable NuGet package breaks the build.
+
+`pnpm-workspace.yaml` overrides a few transitive versions that have advisories and that the editor's test runner still asks for. None of them is in the VSIX. Remove an override when the package that asks for the old version is updated.
+
+Dependabot alerts and security updates are switched on in the settings of the repository, not in a file.
+
+What has been verified so far: before the view was added, the whole workflow passed in CI, the eight targets and the editor smoke tests on Windows, Linux and macOS. The view itself has only been run locally on Windows x64: its tests, the smoke tests in the editor and the packaging of the `win32-x64` VSIX. It has not been through CI yet, and has not been looked at in an editor on Linux or macOS. The Package Manager Console was run on Windows x64 too, and the tests of its module also passed on Linux x64 in a container, where the channel is a Unix socket. The steps of the workflows that install PowerShell and test the console have not run yet.
+
+To run what the CI runs for the musl targets on a local machine, start the same container with Docker or Podman from the repository root:
+
+```powershell
+podman run --rm -v "${PWD}:/work" -w /work mcr.microsoft.com/dotnet/sdk:10.0-alpine sh scripts/ci/alpine.sh linux-musl-x64
+```
+
+It works on a copy inside the container and leaves only `alpine-out/`, which Git ignores.
+
+Tests that depend on what only one system does are skipped elsewhere with `Assert.SkipUnless` or `Assert.SkipWhen`, with the reason: Windows refuses to delete an open file, Unix refuses to delete from a directory without write permission, and a privileged process, such as the root user of the container, is not held back by permissions at all.
+
+## Commits
+
+Commits follow [Conventional Commits](https://www.conventionalcommits.org/). Branches are managed with git-flow: `main` holds releases and `develop` is the integration branch.

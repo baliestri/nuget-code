@@ -1,0 +1,57 @@
+# Weekly update pull requests against develop, the default branch. Minor and patch updates of an ecosystem
+# come together; a major one comes on its own. The commits are chore(deps), which the changelog leaves out.
+# A version is only proposed some days after it is published.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 5
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # The types of the editor's API follow engines.vscode of the extension, the oldest editor it supports:
+      # vsce refuses to package with newer types. They are raised by hand, together with engines.vscode.
+      - dependency-name: "@types/vscode"
+
+  - package-ecosystem: nuget
+    directory: /backend
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 5
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # These packages are versioned with the .NET runtime, and the backend stays on the .NET 10 SDK: their
+      # next major is for the next .NET. Updates within the major still come.
+      - dependency-name: "System.*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Microsoft.Extensions.*"
+        update-types: ["version-update:semver-major"]
+      # Its version is the PowerShell the Package Manager Console requires at least, and the one the extension
+      # offers to install: raising it changes what users must have. It is raised by hand.
+      - dependency-name: "System.Management.Automation"
+
+  # The .NET SDK is not watched here. backend/global.json pins it to 10.0.403, with roll-forward to the latest
+  # patch, and it is raised by hand: a new SDK is a decision about the backend, not a routine update.
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 5
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      actions:
+        patterns: ["*"]

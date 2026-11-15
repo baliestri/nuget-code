@@ -1,14 +1,9 @@
 {
+  "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "lib": ["es2023"],
     "types": ["node"],
-    "strict": true,
-    "noEmit": true,
-    "allowImportingTsExtensions": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true
+    "noEmit": true
   },
-  "include": ["**/*.ts"]
+  "include": ["**/*.ts", "../vitest.shared.ts"]
 }

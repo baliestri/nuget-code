@@ -1,0 +1,13 @@
+/*
+ * Icons that are files of the bundle. Appended to the built style sheet as it is, so the addresses stay
+ * relative to that style sheet. The package icon is one colour, drawn as a mask so it takes the colour of
+ * the text around it.
+ */
+.asset-package {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  background-color: currentColor;
+  -webkit-mask: url("./assets/package.svg") center / contain no-repeat;
+  mask: url("./assets/package.svg") center / contain no-repeat;
+}

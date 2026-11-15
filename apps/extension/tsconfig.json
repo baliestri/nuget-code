@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["es2023"],
+    "types": ["node", "vscode", "mocha"],
+    "noEmit": true
+  },
+  "include": ["src", "test", "rolldown.config.ts", "rolldown.integration.config.ts", "vitest.config.ts"]
+}

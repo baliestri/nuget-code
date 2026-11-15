@@ -1,29 +1,19 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
-    "compile": {
-      "dependsOn": ["^typecheck", "^lint", "^compile"],
-      "outputs": ["dist/**", "out/**"]
-    },
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", "out/**"]
+      "outputs": ["dist/**"]
     },
     "dev": {
-      "cache": false
-    },
-    "lint": {
-      "dependsOn": ["^lint"]
-    },
-    "format": {
-      "dependsOn": ["^format"]
+      "cache": false,
+      "persistent": true
     },
     "typecheck": {
       "dependsOn": ["^typecheck"]
     },
     "test": {
-      "dependsOn": ["build"],
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/vitest.shared.ts"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/backend/src/**"],
       "outputs": []
     }
   }

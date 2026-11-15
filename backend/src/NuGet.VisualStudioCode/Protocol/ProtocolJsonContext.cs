@@ -1,0 +1,53 @@
+// Copyright (c) Bruno Sales <me@baliestri.dev>. Licensed under the zlib/libpng License.
+// See the LICENSE file in the repository root for full license text.
+
+using System.Text.Json.Serialization;
+
+namespace NuGet.VisualStudioCode.Protocol;
+
+[JsonSourceGenerationOptions(
+  PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+  DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+)]
+[JsonSerializable(typeof(Empty))]
+[JsonSerializable(typeof(InitializeParams))]
+[JsonSerializable(typeof(InitializeResult))]
+[JsonSerializable(typeof(LogEntry))]
+[JsonSerializable(typeof(SolutionOpenParams))]
+[JsonSerializable(typeof(SolutionOpenResult))]
+[JsonSerializable(typeof(DidChangeFilesParams))]
+[JsonSerializable(typeof(SolutionDidChangeParams))]
+[JsonSerializable(typeof(PackagesInstalledResult))]
+[JsonSerializable(typeof(CredentialsRequestParams))]
+[JsonSerializable(typeof(CredentialsRequestResult))]
+[JsonSerializable(typeof(CredentialsResetParams))]
+[JsonSerializable(typeof(PackagesPlanParams))]
+[JsonSerializable(typeof(PackagesPlanResult))]
+[JsonSerializable(typeof(PackagesInstallParams))]
+[JsonSerializable(typeof(PackagesUpdateParams))]
+[JsonSerializable(typeof(PackagesRemoveParams))]
+[JsonSerializable(typeof(OperationProgressParams))]
+[JsonSerializable(typeof(RestoreDidFinishParams))]
+[JsonSerializable(typeof(RestoreRunParams))]
+[JsonSerializable(typeof(OperationResult))]
+[JsonSerializable(typeof(ConfigurationParams))]
+[JsonSerializable(typeof(PackagesUpdatesParams))]
+[JsonSerializable(typeof(PackagesUpdatesResult))]
+[JsonSerializable(typeof(ProgressParams))]
+[JsonSerializable(typeof(PackagesSearchParams))]
+[JsonSerializable(typeof(PackagesSearchResult))]
+[JsonSerializable(typeof(PackagesDetailsParams))]
+[JsonSerializable(typeof(PackageDetailsResult))]
+[JsonSerializable(typeof(PackagesVulnerabilitiesParams))]
+[JsonSerializable(typeof(PackagesVulnerabilitiesResult))]
+[JsonSerializable(typeof(SourcesListResult))]
+[JsonSerializable(typeof(SourceWriteParams))]
+[JsonSerializable(typeof(SourceRemoveParams))]
+[JsonSerializable(typeof(SourceSetPropertyParams))]
+[JsonSerializable(typeof(FeedInfo))]
+[JsonSerializable(typeof(FoldersListResult))]
+[JsonSerializable(typeof(FoldersClearParams))]
+[JsonSerializable(typeof(FoldersClearResult))]
+[JsonSerializable(typeof(FolderSizeParams))]
+[JsonSerializable(typeof(FolderSizeResult))]
+internal sealed partial class ProtocolJsonContext : JsonSerializerContext;

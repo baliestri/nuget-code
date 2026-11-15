@@ -1,0 +1,326 @@
+import { posix, win32 } from "node:path";
+import {
+  BackendRestartedError,
+  BackendStoppedError,
+  ResponseError,
+  type BackendApi,
+  type BackendState
+} from "@nuget-code/backend-client";
+import {
+  BridgeError,
+  type BackendMethod,
+  type BackendMethods,
+  type BridgeHandlers,
+  type HostRequests,
+  type MeasuredSize,
+  type SessionState
+} from "@nuget-code/bridge";
+import type { InitializeResult, SolutionOpenResult } from "@nuget-code/protocol";
+import { Commands, type SolutionState } from "./statusBar";
+
+type Call<M extends BackendMethod> = (api: BackendApi, params: BackendMethods[M]["params"]) => Promise<unknown>;
+
+/*
+ * One entry per method the view may call. The call is written out, not looked up by name on the client: a
+ * method that takes no parameters must be called with none, or the empty params object would be taken for
+ * its cancellation token.
+ */
+const calls: { readonly [M in BackendMethod]: Call<M> } = {
+  installedPackages: (api) => api.installedPackages(),
+  packageUpdates: (api, params) => api.packageUpdates(params),
+  packageVulnerabilities: (api, params) => api.packageVulnerabilities(params),
+  searchPackages: (api, params) => api.searchPackages(params),
+  packageDetails: (api, params) => api.packageDetails(params),
+  planPackages: (api, params) => api.planPackages(params),
+  installPackage: (api, params) => api.installPackage(params),
+  updatePackages: (api, params) => api.updatePackages(params),
+  removePackage: (api, params) => api.removePackage(params),
+  restore: (api, params) => api.restore(params),
+  cancelOperation: (api) => api.cancelOperation(),
+  listSources: (api) => api.listSources(),
+  addSource: (api, params) => api.addSource(params),
+  updateSource: (api, params) => api.updateSource(params),
+  removeSource: (api, params) => api.removeSource(params),
+  setSourceProperty: (api, params) => api.setSourceProperty(params),
+  listFolders: (api) => api.listFolders(),
+  folderSize: (api, params) => api.folderSize(params),
+  clearFolders: (api, params) => api.clearFolders(params)
+};
+
+/** Forwards the view's backend requests to the backend client, turning its failures into bridge errors. */
+export function createBackendHandler(api: BackendApi): BridgeHandlers["backend"] {
+  return async (method, params) => {
+    try {
+      return await (calls[method] as Call<BackendMethod>)(api, params as never);
+    } catch (error) {
+      throw toBridgeError(error);
+    }
+  };
+}
+
+function toBridgeError(error: unknown): BridgeError {
+  if (error instanceof ResponseError) {
+    return new BridgeError({
+      kind: "backend",
+      code: error.code,
+      message: error.message,
+      ...(typeof error.data === "string" ? { data: error.data } : {})
+    });
+  }
+
+  if (error instanceof BackendStoppedError) {
+    return new BridgeError({ kind: "stopped", message: error.message });
+  }
+
+  if (error instanceof BackendRestartedError) {
+    return new BridgeError({ kind: "restarted", message: error.message });
+  }
+
+  return new BridgeError({ kind: "host", message: error instanceof Error ? error.message : String(error) });
+}
+
+/** What the host handler needs from the editor; each is one editor call in the extension. */
+export interface HostDeps {
+  /** Whether the path is one of the folders the backend lists. Only those are shown in the file manager. */
+  isKnownFolder(path: string): Promise<boolean>;
+  revealFolder(path: string): Promise<void>;
+  openSettings(query: string | undefined): Promise<void>;
+  pickFolder(title: string): Promise<string | undefined>;
+  openExternal(url: string): Promise<void>;
+  /** Stores the credential; false when the source is not an HTTP URL. */
+  saveCredential(source: string, username: string, password: string): Promise<boolean>;
+  /** Lets the backend ask again for the credentials of the source. */
+  resetCredentials(source: string): Promise<void>;
+  runCommand(command: string): Promise<void>;
+  /** Shows the notification; must not wait for the user to answer it. */
+  notifyWarnings(title: string, messages: readonly string[]): void;
+  /** Shows the notification; must not wait for the user to answer it. */
+  notify(kind: "info" | "warning", messages: readonly string[]): void;
+  /** What the extension stored as folder sizes, for every workspace of this machine; whatever is there. */
+  readFolderSizes(): unknown;
+  writeFolderSizes(sizes: Readonly<Record<string, MeasuredSize>>): Promise<void>;
+  /** The time, in milliseconds since the epoch. */
+  now(): number;
+  /** The global packages folder, where restored packages are kept; undefined when it is not known. */
+  packagesFolder(): Promise<string | undefined>;
+  folderExists(path: string): boolean;
+  copyText(text: string): Promise<void>;
+  /** `process.platform`: decides how paths are compared. */
+  platform: string;
+}
+
+/** Whether `child` is a folder somewhere under `parent`, and not `parent` itself. Both are absolute paths. */
+export function isInside(parent: string, child: string, platform: string): boolean {
+  const paths = platform === "win32" ? win32 : posix;
+  if (!paths.isAbsolute(parent) || !paths.isAbsolute(child)) {
+    return false;
+  }
+
+  // Resolving first takes any `..` out of the way, so a path cannot climb back out of the parent.
+  const relative = paths.relative(paths.resolve(parent), paths.resolve(child));
+  return relative !== "" && !relative.startsWith("..") && !paths.isAbsolute(relative);
+}
+
+/** The longest text the view may put on the clipboard: a package name, with room to spare. */
+const CLIPBOARD_LIMIT = 500;
+
+/** A measured folder size is shown for this long; after it the folder counts as not measured. */
+export const FOLDER_SIZE_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** The stored sizes that are well formed and young enough to be shown. */
+export function freshFolderSizes(stored: unknown, now: number): Record<string, MeasuredSize> {
+  const kept: Record<string, MeasuredSize> = {};
+  const entries = typeof stored === "object" && stored !== null && !Array.isArray(stored) ? Object.entries(stored) : [];
+  for (const [path, value] of entries) {
+    const size = value as Partial<MeasuredSize> | null;
+    if (
+      typeof size === "object" &&
+      size !== null &&
+      typeof size.exists === "boolean" &&
+      typeof size.bytes === "number" &&
+      typeof size.at === "number" &&
+      now - size.at < FOLDER_SIZE_LIFETIME_MS
+    ) {
+      kept[path] = { exists: size.exists, bytes: size.bytes, at: size.at };
+    }
+  }
+
+  return kept;
+}
+
+function sentences(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((message): message is string => typeof message === "string" && message !== "")
+    : [];
+}
+
+/** The one line a notification shows for the warnings of an operation: the first, and how many more. */
+export function warningNotice(messages: readonly string[]): string {
+  const [first = "", ...rest] = messages;
+  return rest.length === 0 ? first : `${first} And ${rest.length} more; see the log.`;
+}
+
+type HostCall<M extends keyof HostRequests> = (
+  deps: HostDeps,
+  params: HostRequests[M]["params"]
+) => Promise<HostRequests[M]["result"]>;
+
+const hostCalls: { readonly [M in keyof HostRequests]: HostCall<M> } = {
+  openFolder: async (deps, params) => {
+    const path = text(params.path, "path");
+    // One of the folders the backend lists, or the folder of a package inside the global packages folder.
+    if (!(await deps.isKnownFolder(path))) {
+      const packages = await deps.packagesFolder();
+      if (packages === undefined || !isInside(packages, path, deps.platform)) {
+        throw hostError("That folder is not one of the NuGet folders.");
+      }
+    }
+
+    if (!deps.folderExists(path)) {
+      throw hostError(`The folder does not exist: ${path}. A package has no folder until it is restored.`);
+    }
+
+    await deps.revealFolder(path);
+    return {};
+  },
+  copyText: async (deps, params) => {
+    const value = text(params.text, "text");
+    if (value.length > CLIPBOARD_LIMIT) {
+      throw hostError("The text is too long to copy.");
+    }
+
+    await deps.copyText(value);
+    return {};
+  },
+  openSettings: async (deps, params) => {
+    await deps.openSettings(typeof params.query === "string" ? params.query : undefined);
+    return {};
+  },
+  pickFolder: async (deps, params) => {
+    const path = await deps.pickFolder(text(params.title, "title"));
+    return path === undefined ? {} : { path };
+  },
+  openExternal: async (deps, params) => {
+    const url = text(params.url, "url");
+    // Links come from package metadata, which is written by third parties.
+    if (!isWebAddress(url)) {
+      throw hostError("Only http and https addresses can be opened.");
+    }
+
+    await deps.openExternal(url);
+    return {};
+  },
+  saveCredential: async (deps, params) => {
+    const source = text(params.source, "source");
+    if (!(await deps.saveCredential(source, text(params.username, "username"), text(params.password, "password")))) {
+      throw hostError("Credentials can only be saved for an http or https source.");
+    }
+
+    await deps.resetCredentials(source);
+    return {};
+  },
+  selectSolution: async (deps) => {
+    await deps.runCommand(Commands.selectSolution);
+    return {};
+  },
+  showLog: async (deps) => {
+    await deps.runCommand(Commands.showLog);
+    return {};
+  },
+  restartBackend: async (deps) => {
+    await deps.runCommand(Commands.restartBackend);
+    return {};
+  },
+  openConsole: async (deps) => {
+    await deps.runCommand(Commands.openConsole);
+    return {};
+  },
+  notifyWarnings: (deps, params) => {
+    const messages = sentences(params.messages);
+    if (messages.length > 0) {
+      deps.notifyWarnings(text(params.title, "title"), messages);
+    }
+
+    return Promise.resolve({});
+  },
+  notify: (deps, params) => {
+    const messages = sentences(params.messages);
+    if (messages.length > 0) {
+      // Anything that is not a warning is shown as plain information.
+      deps.notify(params.kind === "warning" ? "warning" : "info", messages);
+    }
+
+    return Promise.resolve({});
+  },
+  folderSizes: (deps) => Promise.resolve({ sizes: freshFolderSizes(deps.readFolderSizes(), deps.now()) }),
+  saveFolderSize: async (deps, params) => {
+    const path = text(params.path, "path");
+    if (typeof params.exists !== "boolean" || typeof params.bytes !== "number" || !(params.bytes >= 0)) {
+      throw hostError("'exists' must be a boolean and 'bytes' a number that is not negative.");
+    }
+
+    // Only the folders the backend lists have a size worth keeping.
+    if (!(await deps.isKnownFolder(path))) {
+      throw hostError("That folder is not one of the NuGet folders.");
+    }
+
+    const now = deps.now();
+    const size: MeasuredSize = { exists: params.exists, bytes: params.bytes, at: now };
+    // Written with what is still fresh, so the sizes that are too old are dropped on the way.
+    await deps.writeFolderSizes({ ...freshFolderSizes(deps.readFolderSizes(), now), [path]: size });
+    return { size };
+  }
+};
+
+/** Answers the view's requests for what only the host can do. The params come from the view and are checked. */
+export function createHostHandler(deps: HostDeps): BridgeHandlers["host"] {
+  return (method, params) => {
+    const given = typeof params === "object" && params !== null ? params : {};
+    return (hostCalls[method] as HostCall<keyof HostRequests>)(deps, given as never);
+  };
+}
+
+function text(value: unknown, name: string): string {
+  if (typeof value !== "string" || value === "") {
+    throw hostError(`'${name}' must be a non-empty string.`);
+  }
+
+  return value;
+}
+
+function isWebAddress(url: string): boolean {
+  try {
+    const protocol = new URL(url).protocol;
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function hostError(message: string): BridgeError {
+  return new BridgeError({ kind: "host", message });
+}
+
+/** The session as the view is told about it. */
+export function toSessionState(input: {
+  backend: BackendState;
+  solution: SolutionState;
+  opened: SolutionOpenResult | undefined;
+  initialized: InitializeResult | undefined;
+  audit: boolean;
+  console: boolean;
+}): SessionState {
+  const solution: SessionState["solution"] =
+    input.solution.kind === "open" && input.opened !== undefined
+      ? { kind: "open", name: input.solution.name, path: input.opened.path, projects: input.opened.projects }
+      : input.solution.kind === "open"
+        ? { kind: "opening" }
+        : { kind: input.solution.kind };
+  return {
+    backend: input.backend,
+    solution,
+    hasSdk: input.initialized?.sdk !== undefined,
+    audit: input.audit,
+    console: input.console
+  };
+}

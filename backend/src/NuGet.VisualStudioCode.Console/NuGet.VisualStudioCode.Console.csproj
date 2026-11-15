@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>NuGet.VisualStudioCode.Console</RootNamespace>
+    <!-- PowerShell loads the module; nothing here runs on its own. -->
+    <GenerateRuntimeConfigurationFiles>false</GenerateRuntimeConfigurationFiles>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="NuGet.VisualStudioCode.Console.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Only to compile against: PowerShell brings its own, and that is the one the cmdlets must run on. -->
+    <PackageReference Include="System.Management.Automation">
+      <PrivateAssets>all</PrivateAssets>
+      <ExcludeAssets>runtime; native</ExcludeAssets>
+    </PackageReference>
+    <!--
+      System.Management.Automation 7.6.0 asks for a version of this package with known vulnerabilities.
+      Nothing of it is shipped, but the restore is audited: it is raised to the version of the solution.
+    -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs">
+      <PrivateAssets>all</PrivateAssets>
+      <ExcludeAssets>runtime; native</ExcludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="NuGetCode.psd1" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="NuGetCode.Prompt.ps1" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="NuGetCode.format.ps1xml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="en-US\about_NuGetCode.help.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
