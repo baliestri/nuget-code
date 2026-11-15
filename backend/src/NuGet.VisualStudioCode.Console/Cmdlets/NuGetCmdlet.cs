@@ -18,10 +18,10 @@ public abstract class NuGetCmdlet : PSCmdlet, IDisposable {
     => OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
   /// <summary>Cancelled when the user stops the cmdlet.</summary>
-  protected CancellationToken StopToken => _stop.Token;
+  private CancellationToken StopToken => _stop.Token;
 
   public void Dispose() {
-    Dispose(true);
+    _stop.Dispose();
     GC.SuppressFinalize(this);
   }
 
@@ -43,12 +43,6 @@ public abstract class NuGetCmdlet : PSCmdlet, IDisposable {
 
   protected override void StopProcessing()
     => _stop.Cancel();
-
-  protected virtual void Dispose(bool disposing) {
-    if (disposing) {
-      _stop.Dispose();
-    }
-  }
 
   internal TResult Ask<TResult>(string method, JsonTypeInfo<TResult> result)
     => Client.Request(method, result, StopToken);

@@ -10,14 +10,14 @@ internal static class Solution {
   public const string APP = "/work/App/App.csproj";
   public const string LIB = "/work/Lib/Lib.csproj";
 
-  public const string PROJECTS = $$"""
+  private const string PROJECTS = $$"""
     {"projects":[
       {"name":"App","path":"{{APP}}","frameworks":["net10.0"]},
       {"name":"Lib","path":"{{LIB}}","frameworks":["net8.0","net10.0"]}
     ]}
     """;
 
-  public const string INSTALLED = $$"""
+  private const string INSTALLED = $$"""
     {"projects":[
       {"projectPath":"{{APP}}",
        "packages":[

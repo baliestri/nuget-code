@@ -14,7 +14,7 @@ internal static class Pwsh {
   private readonly static Lazy<string?> Unavailable = new(Probe);
 
   /// <summary>The manifest of the module, beside the assembly the tests were built with.</summary>
-  private static string Manifest
+  public static string Manifest
     => Path.Combine(Path.GetDirectoryName(typeof(ConsoleSession).Assembly.Location)!, "NuGetCode.psd1");
 
   /// <summary>

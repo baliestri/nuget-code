@@ -29,6 +29,25 @@ LONG DESCRIPTION
     Find-Package            Searches the package sources for a keyword, or
                             looks up one package with -ExactMatch.
 
+    Install-Package         Installs a package in the project: the version
+                            given, or the newest.
+
+    Uninstall-Package       Removes a package from the project.
+
+    Update-Package          Updates one package, or every package of the
+                            project when no id is given. -ToHighestMinor and
+                            -ToHighestPatch (or -Safe) keep the update within
+                            the major, or the major and minor, installed.
+                            -Reinstall restores the project again.
+
+    Sync-Package            Takes the version the project has of a package to
+                            the other projects that have it.
+
+    The four cmdlets that change packages take -WhatIf, which shows the edits
+    that would be made and makes none, and -Confirm. A change is applied at
+    once, as in the NuGet view. Ctrl+C asks the backend to cancel the change
+    that is running; files already edited stay edited.
+
 WHAT IS NOT HERE
     The Entity Framework Core commands of the Visual Studio console
     (Add-Migration, Update-Database and the others) are not available: they
@@ -44,3 +63,7 @@ SEE ALSO
     Set-Project
     Get-Package
     Find-Package
+    Install-Package
+    Uninstall-Package
+    Update-Package
+    Sync-Package

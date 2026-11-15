@@ -13,7 +13,11 @@
     'Find-Package'
     'Get-Package'
     'Get-Project'
+    'Install-Package'
     'Set-Project'
+    'Sync-Package'
+    'Uninstall-Package'
+    'Update-Package'
   )
   FunctionsToExport    = @()
   AliasesToExport      = @()
