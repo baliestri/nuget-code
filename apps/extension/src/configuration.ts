@@ -17,6 +17,10 @@ export interface Settings {
   backendPath: string;
   /** Whether packages are checked for known vulnerabilities. */
   audit: boolean;
+  /** Whether the Package Manager Console can be opened. */
+  consoleEnabled: boolean;
+  /** The PowerShell the console runs in; empty to look for one. */
+  powershellPath: string;
 }
 
 export const SECTION = "nuget";
@@ -28,7 +32,9 @@ export const DEFAULTS: Settings = {
   feedTimeoutSeconds: 30,
   logLevel: LogLevels.info,
   backendPath: "",
-  audit: true
+  audit: true,
+  consoleEnabled: true,
+  powershellPath: ""
 };
 
 /** Reads the settings through `get`, which looks a key up in the `nuget` section. An invalid value is replaced by its default. */
@@ -40,7 +46,9 @@ export function readSettings(get: (key: string) => unknown): Settings {
     feedTimeoutSeconds: positive(get("feedTimeoutSeconds"), DEFAULTS.feedTimeoutSeconds),
     logLevel: oneOf(get("log.level"), Object.values(LogLevels), DEFAULTS.logLevel),
     backendPath: text(get("backend.path"), DEFAULTS.backendPath),
-    audit: flag(get("audit.enabled"), DEFAULTS.audit)
+    audit: flag(get("audit.enabled"), DEFAULTS.audit),
+    consoleEnabled: flag(get("console.enabled"), DEFAULTS.consoleEnabled),
+    powershellPath: text(get("console.powershellPath"), DEFAULTS.powershellPath)
   };
 }
 

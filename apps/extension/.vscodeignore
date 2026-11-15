@@ -5,6 +5,7 @@
 !dist/webview/codicon.ttf
 !dist/webview/assets/**
 !bin/**
+!console/**
 !package.json
 !README.md
 !CHANGELOG.md

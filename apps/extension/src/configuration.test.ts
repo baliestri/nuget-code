@@ -27,7 +27,9 @@ describe("readSettings", () => {
         feedTimeoutSeconds: 12.9,
         "log.level": "debug",
         "backend.path": "/dev/backend.dll",
-        "audit.enabled": false
+        "audit.enabled": false,
+        "console.enabled": false,
+        "console.powershellPath": " /opt/pwsh/pwsh "
       })
     ).toEqual({
       dotnetPath: "/opt/dotnet/dotnet",
@@ -36,7 +38,9 @@ describe("readSettings", () => {
       feedTimeoutSeconds: 12,
       logLevel: "debug",
       backendPath: "/dev/backend.dll",
-      audit: false
+      audit: false,
+      consoleEnabled: false,
+      powershellPath: "/opt/pwsh/pwsh"
     });
   });
 
@@ -45,6 +49,8 @@ describe("readSettings", () => {
     ["restore.engine", 3, "restoreEngine"],
     ["restore.onOpen", "yes", "restoreOnOpen"],
     ["audit.enabled", "no", "audit"],
+    ["console.enabled", "no", "consoleEnabled"],
+    ["console.powershellPath", 7, "powershellPath"],
     ["feedTimeoutSeconds", -1, "feedTimeoutSeconds"],
     ["feedTimeoutSeconds", 0, "feedTimeoutSeconds"],
     ["feedTimeoutSeconds", "30", "feedTimeoutSeconds"],
@@ -89,6 +95,9 @@ describe("what a change requires", () => {
     [{ restoreOnOpen: false }, false, true],
     [{ audit: false }, false, true],
     [{ logLevel: "debug" }, false, false],
+    // The console is the extension's own: the backend is not told about it.
+    [{ consoleEnabled: false }, false, false],
+    [{ powershellPath: "/opt/pwsh/pwsh" }, false, false],
     [{}, false, false]
   ] as const)("%j: restart %s, notification %s", (change, restart, notification) => {
     const after = { ...DEFAULTS, ...change } as Settings;

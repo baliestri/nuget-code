@@ -9,7 +9,8 @@
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "test": "vitest run --dir scripts && turbo test",
-    "package": "tsx scripts/package.ts"
+    "package": "tsx scripts/package.ts",
+    "console-module": "tsx scripts/console-module.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

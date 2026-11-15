@@ -3,6 +3,9 @@
 bin/
 obj/
 
+# The PowerShell module of the console, built into the extension by scripts/console-module.ts
+/apps/extension/console/
+
 # Common node modules locations
 /node_modules
 /wwwroot/node_modules
