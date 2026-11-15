@@ -4,7 +4,7 @@ The **NuGet** view is where the packages of a solution are managed: what is inst
 
 The view lives in the panel, beside Terminal and Output. To open it, select the **NuGet** tab of the panel, click the NuGet item of the [status bar](extension.md#status-bar), or run **NuGet: Open** from the Command Palette.
 
-It has four tabs: [Packages](#packages-tab), [Sources](#sources-tab), [Folders](#folders-tab) and [Log](#log-tab). The name of the open solution is shown at the right of the tab names; clicking it selects another one. What is chosen in the view, such as the tab, the target, the feed and the log columns, is remembered for the workspace.
+It has four tabs: [Packages](#packages-tab), [Sources](#sources-tab), [Folders](#folders-tab) and [Log](#log-tab). After them, **PMC** opens the [Package Manager Console](package-manager-console.md) in a terminal of the editor; it is a button, not a tab, and is hidden when `nuget.console.enabled` is off. The name of the open solution is shown at the right of the tab names; clicking it selects another one. What is chosen in the view, such as the tab, the target, the feed and the log columns, is remembered for the workspace.
 
 Every tab has a column of buttons on its left, the side bar. It always starts with **Restore** and ends with **NuGet Settings** and **Help**; the buttons in between belong to the tab.
 
@@ -192,9 +192,9 @@ A line is `time|context|level| message`. The context is `NUGET` for the NuGet li
 
 The view is modelled on the NuGet window of JetBrains Rider. Some of what that window has is not here:
 
-- There is no Package Manager Console tab.
+- The Package Manager Console is not a tab of the view: the **PMC** button opens it as a terminal of the editor. It has no Entity Framework Core commands. See [Package Manager Console](package-manager-console.md#what-is-not-here).
 - There is no button that upgrades every package of the solution at once; ticking every package in **Packages to Update** and pressing **Update** does the same.
 - The context menu of a package has no documentation popup, no assembly explorer and no search for the code that depends on it.
 - Nothing offers to move a vulnerable package to its nearest safe version; the list of versions shows which ones are affected.
-- Restore has no "force" variant in the view.
+- Restore has no "force" variant in the view; `Update-Package -Reinstall`, in the console, is one.
 - The available packages are shown in the order the feeds return them.

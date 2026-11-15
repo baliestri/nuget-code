@@ -46,6 +46,24 @@ What NuGet and the backend are doing, as it happens, coloured by level and filte
 
 ![The Log tab](https://raw.githubusercontent.com/baliestri/nuget-code/main/wiki/images/view-log.png)
 
+## Package Manager Console
+
+Prefer typing? **PMC** opens a PowerShell terminal with the cmdlets you know from Visual Studio and Rider, for the solution that is open.
+
+```powershell
+PM [App]> Get-Package -Updates
+PM [App]> Update-Package Serilog -ToHighestMinor
+PM [App]> Install-Package Polly -ProjectName Lib
+PM [App]> Set-Project
+```
+
+- `Get-Project`, `Get-Package`, `Find-Package`, `Install-Package`, `Uninstall-Package`, `Update-Package` and `Sync-Package`.
+- A **default project**, shown in the prompt and chosen from a list; `Set-Project` changes it.
+- `-WhatIf` shows the edits a change would make, and makes none.
+- What the console changes, the view shows, and the other way round.
+
+It needs **PowerShell 7.6 or newer**. If you have none, the extension offers to install it as a .NET tool. The Entity Framework Core commands of the Visual Studio console (`Add-Migration` and the others) are not part of it: use `dotnet ef`.
+
 ## Restore
 
 The solution is restored when it is opened and after every change. Choose the engine in `nuget.restore.engine`:
@@ -69,6 +87,7 @@ With several solutions in the workspace, run **NuGet: Select Solution**; the cho
 - Visual Studio Code 1.100 or newer, or an editor built from it.
 - A .NET SDK. `dotnet` is looked for in the `nuget.dotnetPath` setting, then in `DOTNET_ROOT`, then on `PATH`.
 - A trusted workspace: reading projects runs MSBuild, which executes code from the repository.
+- PowerShell 7.6 or newer, for the Package Manager Console only.
 
 Works on Windows, Linux (glibc and musl) and macOS, on x64 and arm64, and in Remote SSH, WSL and containers, where it runs beside your files.
 
@@ -83,14 +102,17 @@ Works on Windows, Linux (glibc and musl) and macOS, on x64 and arm64, and in Rem
 | `nuget.log.level`                       | `info`     | The least severe level written to the **NuGet** output channel. |
 | `nuget.notifications.operationWarnings` | `true`     | Tell you when a change reached further than what you asked for. |
 | `nuget.audit.enabled`                   | `true`     | Check the packages for known vulnerabilities.                   |
+| `nuget.console.enabled`                 | `true`     | Offer the Package Manager Console and its **PMC** button.       |
+| `nuget.console.powershellPath`          | empty      | The PowerShell 7 executable the console runs in.                |
 
 ## Commands
 
-**NuGet: Open**, **NuGet: Select Solution**, **NuGet: Restore**, **NuGet: Restart Backend**, **NuGet: Show Log** and **NuGet: Clear Saved Credentials**.
+**NuGet: Open**, **NuGet: Select Solution**, **NuGet: Restore**, **NuGet: Open Package Manager Console**, **NuGet: Restart Backend**, **NuGet: Show Log** and **NuGet: Clear Saved Credentials**.
 
 ## More
 
 - [Every tab and control of the view](https://github.com/baliestri/nuget-code/blob/main/wiki/nuget-view.md)
+- [The Package Manager Console and its cmdlets](https://github.com/baliestri/nuget-code/blob/main/wiki/package-manager-console.md)
 - [How the extension behaves](https://github.com/baliestri/nuget-code/blob/main/wiki/extension.md)
 - [Report a problem](https://github.com/baliestri/nuget-code/issues)
 

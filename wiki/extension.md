@@ -1,6 +1,6 @@
 # Extension
 
-The extension hosts the [backend](backend-protocol.md) inside VS Code and VSCodium. This page describes how it behaves today: the package manager view in the panel, the status bar item, the output channel, credential prompts and a few commands.
+The extension hosts the [backend](backend-protocol.md) inside VS Code and VSCodium. This page describes how it behaves today: the package manager view in the panel, the Package Manager Console, the status bar item, the output channel, credential prompts and a few commands.
 
 ## Activation
 
@@ -48,16 +48,21 @@ One item, on the left, that says the state of the backend. Its tooltip says it i
 
 The **NuGet** view lives in the panel, beside Terminal and Output. It has four tabs: Packages, Sources, Folders and Log. Its tabs and controls are described in [NuGet view](nuget-view.md).
 
+## The console
+
+The **PMC** button of the view, and the command below, open the [Package Manager Console](package-manager-console.md): a PowerShell terminal with cmdlets such as `Get-Package`, `Install-Package` and `Update-Package` for the open solution. Its cmdlets ask the extension through a local channel that only that terminal knows, and the extension asks the backend.
+
 ## Commands
 
-| Command                          | What it does                                                                          |
-| -------------------------------- | ------------------------------------------------------------------------------------- |
-| `NuGet: Open`                    | Shows the view.                                                                       |
-| `NuGet: Select Solution`         | Lists the solutions of the workspace.                                                 |
-| `NuGet: Restore`                 | Restores the open solution. The notification can cancel it.                           |
-| `NuGet: Restart Backend`         | Stops the backend process and starts a new one.                                       |
-| `NuGet: Show Log`                | Shows the NuGet output channel.                                                       |
-| `NuGet: Clear Saved Credentials` | Deletes the credentials the extension stored and lets the backend ask for them again. |
+| Command                               | What it does                                                                                                  |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `NuGet: Open`                         | Shows the view.                                                                                               |
+| `NuGet: Select Solution`              | Lists the solutions of the workspace.                                                                         |
+| `NuGet: Restore`                      | Restores the open solution. The notification can cancel it.                                                   |
+| `NuGet: Restart Backend`              | Stops the backend process and starts a new one.                                                               |
+| `NuGet: Show Log`                     | Shows the NuGet output channel.                                                                               |
+| `NuGet: Clear Saved Credentials`      | Deletes the credentials the extension stored and lets the backend ask for them again.                         |
+| `NuGet: Open Package Manager Console` | Opens the [Package Manager Console](package-manager-console.md) in a terminal, or shows the one that is open. |
 
 A restore that succeeds shows a short message in the status bar. One that fails for some project shows how many failed and offers the log. A cancelled one shows nothing.
 
@@ -74,11 +79,14 @@ A restore that succeeds shows a short message in the status bar. One that fails 
 | `nuget.notifications.operationWarnings` | `true`     | Show a notification when a package change did more than was asked.                                                                                         |
 | `nuget.audit.enabled`                   | `true`     | Check the packages of the solution, transitive ones included, for known vulnerabilities. See [Known vulnerabilities](nuget-view.md#known-vulnerabilities). |
 
+| `nuget.console.enabled` | `true` | Offer the [Package Manager Console](package-manager-console.md). When off, its button and its command are hidden and no console is opened. |
+| `nuget.console.powershellPath` | empty | The PowerShell 7 executable the console runs in. When empty, `pwsh` is looked for in `PATH` and then among the .NET global tools. |
+
 A package change can do more than was asked: updating a version that `Directory.Packages.props` shares changes it for every project that uses it, for example. The sentences that say so are always written to the output channel. A notification shows the first one, and how many more there are, with **Show Log** and **Don't Show Again**; the latter turns `nuget.notifications.operationWarnings` off in the user settings.
 
-A change to `nuget.restore.engine` or `nuget.restore.onOpen` is sent to the running backend and applies from the next restore. A change to `nuget.audit.enabled` is sent to it too, and the view shows or hides the warnings at once. A change to `nuget.dotnetPath`, `nuget.feedTimeoutSeconds` or `nuget.backend.path` restarts the backend, because it reads them only when it starts. `nuget.log.level` is applied by the extension.
+A change to `nuget.restore.engine` or `nuget.restore.onOpen` is sent to the running backend and applies from the next restore. A change to `nuget.audit.enabled` is sent to it too, and the view shows or hides the warnings at once. A change to `nuget.dotnetPath`, `nuget.feedTimeoutSeconds` or `nuget.backend.path` restarts the backend, because it reads them only when it starts. `nuget.log.level` is applied by the extension. So are the two settings of the console, which the backend is not told about: `nuget.console.enabled` shows or hides the button of the view at once, and `nuget.console.powershellPath` is read each time a console is opened.
 
-`nuget.dotnetPath` and `nuget.backend.path` name executables, so they are machine settings that a workspace may override only in a trusted workspace.
+`nuget.dotnetPath`, `nuget.backend.path` and `nuget.console.powershellPath` name executables, so they are machine settings that a workspace may override only in a trusted workspace.
 
 ## File changes
 

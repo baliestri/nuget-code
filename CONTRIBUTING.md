@@ -18,6 +18,7 @@ The backend has only been built, published and tested on Windows x64. Publishing
 dotnet build NuGet.VisualStudioCode.slnx
 dotnet test --project tests/NuGet.VisualStudioCode.Tests
 dotnet test --project tests/NuGet.VisualStudioCode.AotTests
+dotnet test --project tests/NuGet.VisualStudioCode.Console.Tests
 ```
 
 Tests run on Microsoft.Testing.Platform. Filter with `--filter-class` or `--filter-method`; VSTest filter syntax does not work.
@@ -44,6 +45,22 @@ When an AOT test fails, run it again with `NUGET_VSCODE_BACKEND_MODE=jit`. A tes
 - Package versions live in `Directory.Packages.props`. Editing it by hand keeps its line endings; `dotnet add package` rewrites the file with CRLF.
 - New C# files start with the license header from `backend/.editorconfig`.
 
+### The console module
+
+`src/NuGet.VisualStudioCode.Console` is the PowerShell module of the [Package Manager Console](wiki/package-manager-console.md). It is not part of the backend process: PowerShell loads it, and it asks the extension, not the backend, through a local channel.
+
+```powershell
+dotnet test --project tests/NuGet.VisualStudioCode.Console.Tests
+```
+
+The tests of the cmdlets start a real `pwsh` with the module, against a fake of the extension's side of the channel. They are skipped, saying why, where there is no PowerShell as new as the module needs. The other tests of the project need none.
+
+- `System.Management.Automation` is referenced only to compile: PowerShell brings its own. Its version in `Directory.Packages.props` is the least PowerShell the module loads in and the one the extension offers to install, so raising it changes what users must have. The manifest, `NuGetCode.psd1`, states the same major and minor; a test fails when they differ.
+- The module references no NuGet library, so that nothing of it can clash with what PowerShell has loaded. Versions are compared by `PackageVersion`.
+- JSON is serialized with the source generator, through `WireJsonContext`, as in the backend.
+- The names of the requests exist in `Channel/ConsoleRequestNames.cs` and in `packages/console-protocol`; a test fails when they differ.
+- A cmdlet and its parameters are used by PowerShell through reflection, which the inspection cannot see. Each cmdlet class says so with `[SuppressMessage("ReSharper", ...)]` and the justification of `Justifications.cs`.
+
 ### Before committing C# changes
 
 ```powershell
@@ -58,13 +75,14 @@ Review the cleanup diff and resolve the inspection findings, then run the tests.
 
 The JavaScript side is a pnpm workspace:
 
-| Package                   | What it is                                                                          |
-| ------------------------- | ----------------------------------------------------------------------------------- |
-| `packages/protocol`       | The backend contract in TypeScript: types, method names, error codes.               |
-| `packages/backend-client` | Starts the backend, talks JSON-RPC to it and restarts it. Does not import `vscode`. |
-| `packages/bridge`         | The typed requests and events between the view and the extension host.              |
-| `apps/webview`            | The view: React and Tailwind, bundled into `apps/extension/dist/webview`.           |
-| `apps/extension`          | The VS Code extension, bundled by rolldown into `dist/extension.js`.                |
+| Package                     | What it is                                                                              |
+| --------------------------- | --------------------------------------------------------------------------------------- |
+| `packages/protocol`         | The backend contract in TypeScript: types, method names, error codes.                   |
+| `packages/backend-client`   | Starts the backend, talks JSON-RPC to it and restarts it. Does not import `vscode`.     |
+| `packages/bridge`           | The typed requests and events between the view and the extension host.                  |
+| `packages/console-protocol` | What the Package Manager Console may ask of the extension, and the check of its params. |
+| `apps/webview`              | The view: React and Tailwind, bundled into `apps/extension/dist/webview`.               |
+| `apps/extension`            | The VS Code extension, bundled by rolldown into `dist/extension.js`.                    |
 
 The workspace packages are consumed as TypeScript source and have no build step of their own. The view has one, because the extension ships its bundle.
 
@@ -90,6 +108,8 @@ pnpm --filter nuget-code test:integration
 
 `test:integration` runs a few smoke tests inside a real editor, which it downloads to `apps/extension/.vscode-test/` the first time. It opens a workspace it generates there. With `NUGET_VSCODE_BACKEND_BUNDLED=1` the extension finds the backend under `apps/extension/bin/<target>/`, as an installed package does; otherwise it uses the Debug build or `NUGET_VSCODE_BACKEND_PATH`.
 
+The extension looks for the module of the console in `apps/extension/console/`, which Git ignores. `pnpm console-module` builds it there, with the version of PowerShell it was built for; `test:integration` and `pnpm package` do the same on their own. Run it once before opening the console from an Extension Development Host. The last smoke test opens the console and lists and removes a package through it; it is skipped where there is no PowerShell 7.6 or newer in the `PATH`.
+
 To run the extension by hand, open the repository in VS Code and start one of the launch configurations of `.vscode/launch.json`: **Extension** builds the Debug backend into `apps/extension/bin/<target>/`, builds the JavaScript and opens an Extension Development Host; **Extension (sample workspace)** opens it on the workspace of the smoke tests. The folder name of the backend task assumes x64 on Windows and Linux and arm64 on macOS. These configurations were tried on Windows x64 only.
 
 The view can be looked at without the editor, over a fake host with sample data:
@@ -107,6 +127,7 @@ It serves http://127.0.0.1:5199. `?theme=light` switches the theme, `?state=star
 - The view reaches the backend only through the methods listed in `packages/bridge/src/backendMethods.ts`, and the editor only through the requests of `messages.ts`. The host checks the params of every host request: they come from a page.
 - The view's content security policy allows no inline style markup and no `data:` addresses. Icons are files of the bundle or codicons.
 - Components of the view use the colour tokens of `apps/webview/src/styles.css`, which map to the editor's theme, never literal colours. Their tests find elements by role and name.
+- The console reaches the extension only through the requests of `packages/console-protocol`, each with the token the terminal was given. Their params come from another process and are checked there; a project they name must be of the open solution.
 - Do not pass an explicit `undefined` cancellation token to `vscode-jsonrpc`'s `sendRequest`: it takes it for a second parameter and sends the params as an array.
 
 ### Packaging
@@ -115,11 +136,11 @@ It serves http://127.0.0.1:5199. `?theme=light` switches the theme, `?state=star
 pnpm package win32-x64
 ```
 
-This publishes the backend with NativeAOT, bundles the extension and writes `release-artifacts/nuget-code-<target>-<version>.vsix`. NativeAOT does not compile from one operating system to another, so a target can only be built on its own system; `--backend <executable>` packages a binary that was published elsewhere.
+This publishes the backend with NativeAOT, builds the module of the console, bundles the extension and writes `release-artifacts/nuget-code-<target>-<version>.vsix`. NativeAOT does not compile from one operating system to another, so a target can only be built on its own system; `--backend <executable>` packages a binary that was published elsewhere.
 
 ### Continuous integration
 
-`.github/workflows/ci.yml` runs on pushes to `main` and `develop` and on pull requests: lint, format, types and unit tests; then, for each of the eight targets, on a runner of that system and architecture, the NativeAOT publish, the backend tests and the contract tests against the published binary, and the VSIX, which is kept as an artifact; then the smoke tests in the editor on Windows, Linux and macOS, with the binary taken out of the VSIX. The two musl targets are built and tested in an Alpine container (`scripts/ci/alpine.sh`).
+`.github/workflows/ci.yml` runs on pushes to `main` and `develop` and on pull requests: lint, format, types and unit tests; then, for each of the eight targets, on a runner of that system and architecture, the NativeAOT publish, the backend tests and the contract tests against the published binary, the tests of the console module, and the VSIX, which is kept as an artifact; then the smoke tests in the editor on Windows, Linux and macOS, with the binary and the console module taken out of the VSIX. Before the tests of the console, the PowerShell the module is built for is installed as a .NET tool, the way the extension offers to. The two musl targets are built and tested in an Alpine container (`scripts/ci/alpine.sh`).
 
 ### Releasing
 
@@ -161,11 +182,12 @@ Neither `prepare-release.yml` nor the dispatch of `release.yml` has run yet. Whe
 
 Dependabot (`.github/dependabot.yml`) opens weekly pull requests against `develop` for the npm packages, the NuGet packages and the GitHub Actions. Its commits are `chore(deps)`, which the changelog leaves out.
 
-Three things are left out of it and raised by hand:
+Four things are left out of it and raised by hand:
 
 - The .NET SDK. `backend/global.json` pins it to 10.0.403, with roll-forward to the latest patch.
 - The next major of the NuGet packages that are versioned with the .NET runtime (`System.*`, `Microsoft.Extensions.*`), which is for the next .NET.
 - `@types/vscode`, which follows `engines.vscode` of the extension: `vsce` refuses to package with newer types.
+- `System.Management.Automation`, whose version is the PowerShell the console requires and installs.
 
 `.github/workflows/audit.yml` runs `pnpm audit` and `dotnet list package --vulnerable --include-transitive` every week, on demand, and on pull requests that change a lock file. It is apart from the CI so that an advisory published today does not fail a pull request that has nothing to do with it. The restore of the backend audits too: with warnings as errors, a vulnerable NuGet package breaks the build.
 
@@ -173,7 +195,7 @@ Three things are left out of it and raised by hand:
 
 Dependabot alerts and security updates are switched on in the settings of the repository, not in a file.
 
-What has been verified so far: before the view was added, the whole workflow passed in CI, the eight targets and the editor smoke tests on Windows, Linux and macOS. The view itself has only been run locally on Windows x64: its tests, the smoke tests in the editor and the packaging of the `win32-x64` VSIX. It has not been through CI yet, and has not been looked at in an editor on Linux or macOS.
+What has been verified so far: before the view was added, the whole workflow passed in CI, the eight targets and the editor smoke tests on Windows, Linux and macOS. The view itself has only been run locally on Windows x64: its tests, the smoke tests in the editor and the packaging of the `win32-x64` VSIX. It has not been through CI yet, and has not been looked at in an editor on Linux or macOS. The Package Manager Console was run on Windows x64 too, and the tests of its module also passed on Linux x64 in a container, where the channel is a Unix socket. The steps of the workflows that install PowerShell and test the console have not run yet.
 
 To run what the CI runs for the musl targets on a local machine, start the same container with Docker or Podman from the repository root:
 

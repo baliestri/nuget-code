@@ -21,6 +21,7 @@ The screenshots were taken from the development page of the view, with sample da
 
 - **Packages.** The installed packages of the whole solution or of one project, the ones with a newer version, and a search of the feeds. Install, change version and remove per project, or update several packages at once. A click applies the change; nothing asks first.
 - **Transitive packages and known vulnerabilities.** The packages that come with the ones you reference are listed too, and any package with a known vulnerability, as the feeds publish them, is marked, with the advisories one click away.
+- **Package Manager Console.** A PowerShell terminal with `Get-Package`, `Find-Package`, `Install-Package`, `Update-Package`, `Uninstall-Package` and `Sync-Package` for the open solution, with a default project you choose from a list.
 - **Sources.** The feeds of every `NuGet.config` NuGet reads, and of all of them combined: add, edit, enable, disable and remove. The global and local packages folders.
 - **Folders.** Where NuGet keeps packages and caches, how much each folder holds, and a way to clear the caches.
 - **Log.** What NuGet and the backend are doing, as it happens.
@@ -33,6 +34,7 @@ The screenshots were taken from the development page of the view, with sample da
 - Visual Studio Code 1.100 or newer, or an editor built from it, such as VSCodium.
 - A .NET SDK. The extension looks for `dotnet` in the `nuget.dotnetPath` setting, then in `DOTNET_ROOT`, then on `PATH`. Without one it can list sources and search packages, but cannot open a solution.
 - A trusted workspace: reading projects runs MSBuild, which executes code from the repository.
+- For the Package Manager Console only, PowerShell 7.6 or newer. When there is none, the extension offers to install it as a .NET tool.
 
 The backend is a native executable, so the extension is packaged for each platform:
 
@@ -57,6 +59,7 @@ Open a folder that has a solution or a project. The extension starts its backend
 | Install a package        | Find it in **Discover**, pick a version, press `+` beside a project.           |
 | Add a private feed       | **Sources**, then the `+` of the last row; the user and password are optional. |
 | Free disk space          | **Folders**, select the caches, **Clear Selected Caches**.                     |
+| Use cmdlets instead      | **PMC** in the view, or run **NuGet: Open Package Manager Console**.           |
 
 ## Troubleshooting
 
@@ -73,6 +76,7 @@ Open a folder that has a solution or a project. The extension starts its backend
 ## Documentation
 
 - [NuGet view](wiki/nuget-view.md): every tab and control.
+- [Package Manager Console](wiki/package-manager-console.md): the cmdlets, the default project and which PowerShell runs them.
 - [Extension](wiki/extension.md): activation, solution selection, settings, credentials, what happens when the backend stops.
 - [Backend protocol](wiki/backend-protocol.md): the JSON-RPC methods the backend answers and how it edits project files.
 - [Changelog](CHANGELOG.md).
