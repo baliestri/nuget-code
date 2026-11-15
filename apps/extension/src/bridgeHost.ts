@@ -231,6 +231,10 @@ const hostCalls: { readonly [M in keyof HostRequests]: HostCall<M> } = {
     await deps.runCommand(Commands.restartBackend);
     return {};
   },
+  openConsole: async (deps) => {
+    await deps.runCommand(Commands.openConsole);
+    return {};
+  },
   notifyWarnings: (deps, params) => {
     const messages = sentences(params.messages);
     if (messages.length > 0) {
@@ -304,6 +308,7 @@ export function toSessionState(input: {
   opened: SolutionOpenResult | undefined;
   initialized: InitializeResult | undefined;
   audit: boolean;
+  console: boolean;
 }): SessionState {
   const solution: SessionState["solution"] =
     input.solution.kind === "open" && input.opened !== undefined
@@ -311,5 +316,11 @@ export function toSessionState(input: {
       : input.solution.kind === "open"
         ? { kind: "opening" }
         : { kind: input.solution.kind };
-  return { backend: input.backend, solution, hasSdk: input.initialized?.sdk !== undefined, audit: input.audit };
+  return {
+    backend: input.backend,
+    solution,
+    hasSdk: input.initialized?.sdk !== undefined,
+    audit: input.audit,
+    console: input.console
+  };
 }

@@ -1,5 +1,5 @@
 import type { SessionState } from "@nuget-code/bridge";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { createFakeBridge, createMemoryStorage, READY } from "../../test/fakeBridge";
@@ -9,7 +9,8 @@ const OPEN: SessionState = {
   backend: "ready",
   solution: { kind: "open", name: "Sample.slnx", path: "/work/Sample.slnx", projects: [] },
   hasSdk: true,
-  audit: true
+  audit: true,
+  console: true
 };
 
 function open(session: SessionState | null = READY, stored?: unknown) {
@@ -59,6 +60,26 @@ describe("the shell", () => {
     await user.click(await screen.findByRole("button", { name: /Sample\.slnx/ }));
 
     await waitFor(() => expect(fake.callsOf("selectSolution")).toHaveLength(1));
+  });
+
+  it("the PMC button asks the host to open the console, and is not one of the tabs", async () => {
+    const { fake, user } = open(OPEN);
+
+    await user.click(await screen.findByRole("button", { name: "Package Manager Console" }));
+
+    await waitFor(() => expect(fake.callsOf("openConsole")).toEqual([{}]));
+    expect(within(screen.getByRole("tablist", { name: "NuGet" })).getAllByRole("tab")).toHaveLength(4);
+  });
+
+  it("with the console turned off there is no PMC button", async () => {
+    const { fake } = open({ ...OPEN, console: false });
+    await screen.findByRole("button", { name: /Sample\.slnx/ });
+
+    expect(screen.queryByRole("button", { name: "Package Manager Console" })).not.toBeInTheDocument();
+
+    fake.emit("session", OPEN);
+
+    expect(await screen.findByRole("button", { name: "Package Manager Console" })).toBeInTheDocument();
   });
 });
 

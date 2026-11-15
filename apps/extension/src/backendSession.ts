@@ -86,7 +86,20 @@ export class BackendSession {
     return this.settings.audit;
   }
 
-  /** Fires when the state of the backend or of the solution changes, or the audit is turned on or off. */
+  /** Whether the Package Manager Console can be opened: the setting, as it is now. */
+  get consoleEnabled(): boolean {
+    return this.settings.consoleEnabled;
+  }
+
+  /** The PowerShell the console runs in, as the setting says; empty to look for one. */
+  get powershellPath(): string {
+    return this.settings.powershellPath;
+  }
+
+  /**
+   * Fires when the state of the backend or of the solution changes, or the audit or the console is turned
+   * on or off.
+   */
   onDidChange(listener: () => void): Disposable {
     return this.changed.on(listener);
   }
@@ -143,7 +156,8 @@ export class BackendSession {
     }
 
     // The view shows or hides the vulnerability warnings by it, and asks again once the backend knows.
-    if (before.audit !== settings.audit) {
+    // And it shows or hides the button of the console.
+    if (before.audit !== settings.audit || before.consoleEnabled !== settings.consoleEnabled) {
       this.changed.fire();
     }
   }

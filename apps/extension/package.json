@@ -92,8 +92,31 @@
         "command": "nuget.showLog",
         "title": "Show Log",
         "category": "NuGet"
+      },
+      {
+        "command": "nuget.openConsole",
+        "title": "Open Package Manager Console",
+        "category": "NuGet",
+        "icon": "$(terminal)"
       }
     ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "nuget.openConsole",
+          "when": "config.nuget.console.enabled"
+        }
+      ]
+    },
+    "terminal": {
+      "profiles": [
+        {
+          "id": "nuget.console",
+          "title": "NuGet Package Manager Console",
+          "icon": "package"
+        }
+      ]
+    },
     "configuration": {
       "title": "NuGet",
       "properties": {
@@ -157,6 +180,18 @@
           "scope": "window",
           "description": "Show a notification when a package change did more than was asked, such as changing a version that other projects share. The details are written to the NuGet log either way."
         },
+        "nuget.console.enabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "markdownDescription": "Offer the Package Manager Console: a PowerShell terminal with the NuGet cmdlets (`Get-Package`, `Install-Package`, `Update-Package` and the others) for the open solution. When off, the PMC button and the command are hidden and no console is opened."
+        },
+        "nuget.console.powershellPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "markdownDescription": "Path to the PowerShell 7 executable (`pwsh`) the Package Manager Console runs in. When empty, `pwsh` is looked for in `PATH` and then among the .NET global tools."
+        },
         "nuget.backend.path": {
           "type": "string",
           "default": "",
@@ -167,6 +202,7 @@
     }
   },
   "activationEvents": [
+    "onTerminalProfile:nuget.console",
     "workspaceContains:**/*.csproj",
     "workspaceContains:**/*.fsproj",
     "workspaceContains:**/*.sln",

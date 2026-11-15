@@ -25,6 +25,8 @@ export interface HostRequests {
   selectSolution: { params: Empty; result: Empty };
   showLog: { params: Empty; result: Empty };
   restartBackend: { params: Empty; result: Empty };
+  /** Opens the Package Manager Console in a terminal, or shows the one that is open. */
+  openConsole: { params: Empty; result: Empty };
   /**
    * Tells the user what a change did beyond what was asked, as a notification of the editor that can be
    * silenced. `title` is the operation; each message is one sentence. Answers without waiting for the user.
@@ -61,6 +63,7 @@ const hostRequests: { readonly [M in HostRequest]: true } = {
   selectSolution: true,
   showLog: true,
   restartBackend: true,
+  openConsole: true,
   notifyWarnings: true,
   notify: true,
   folderSizes: true,
@@ -84,6 +87,8 @@ export interface SessionState {
   hasSdk: boolean;
   /** Whether packages are checked for known vulnerabilities: the `nuget.audit.enabled` setting. */
   audit: boolean;
+  /** Whether the Package Manager Console can be opened: the `nuget.console.enabled` setting. */
+  console: boolean;
 }
 
 /** What the host tells the view without being asked. */

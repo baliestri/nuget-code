@@ -38,7 +38,8 @@ export const SESSION: SessionState = {
   backend: "ready",
   solution: { kind: "open", name: "SampleLibrary.slnx", path: `${ROOT}\\SampleLibrary.slnx`, projects: PROJECTS },
   hasSdk: true,
-  audit: true
+  audit: true,
+  console: true
 };
 
 function pkg(id: string, version: string, extra: Partial<InstalledPackage> = {}): InstalledPackage {

@@ -1,5 +1,6 @@
 import * as assert from "node:assert";
-import { existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as vscode from "vscode";
 import type { ExtensionApi } from "../../src/extension";
@@ -116,9 +117,59 @@ describe("the extension in the editor", () => {
       "nuget.restore",
       "nuget.restartBackend",
       "nuget.showLog",
-      "nuget.clearCredentials"
+      "nuget.clearCredentials",
+      "nuget.openConsole"
     ]) {
       assert.ok(commands.includes(command), `${command} is not registered.`);
     }
   });
+
+  // Last: it removes the package the tests above rely on.
+  it("the Package Manager Console opens in a terminal and its cmdlets reach the backend", async function () {
+    const version = powershellVersion();
+    if (version === undefined || version[0] < 7 || (version[0] === 7 && version[1] < 6)) {
+      // Without a PowerShell the module loads in, the command would wait on a notification nobody answers.
+      console.log("Skipped: there is no PowerShell 7.6 or newer in the PATH.");
+      this.skip();
+    }
+
+    const workspace = vscode.workspace.workspaceFolders![0]!.uri.fsPath;
+    const listed = join(workspace, "console-listed.txt");
+    const removed = join(workspace, "console-removed.txt");
+    const project = join(workspace, "App", "App.csproj");
+    assert.ok(readFileSync(project, "utf8").includes("Alpha"), "The project does not reference Alpha any more.");
+
+    await vscode.commands.executeCommand("nuget.openConsole");
+    const terminal = vscode.window.terminals.find((item) => item.name === "NuGet Package Manager Console");
+    assert.ok(terminal, "The command did not open the console.");
+
+    // The solution has one project, so it is the default one without anything being asked.
+    terminal.sendText(
+      `Get-Package | ForEach-Object { "$($_.ProjectName) $($_.Id) $($_.Version)" } | Set-Content -LiteralPath '${listed}'`
+    );
+    await until(() => existsSync(listed), "Get-Package to answer in the console");
+    assert.strictEqual(readFileSync(listed, "utf8").trim(), "App Alpha 1.0.0");
+
+    terminal.sendText(`Uninstall-Package Alpha; 'done' | Set-Content -LiteralPath '${removed}'`);
+    await until(() => existsSync(removed), "Uninstall-Package to finish in the console");
+    assert.ok(!readFileSync(project, "utf8").includes("Alpha"), "Uninstall-Package did not edit the project.");
+
+    // Opening again shows the same terminal.
+    await vscode.commands.executeCommand("nuget.openConsole");
+    assert.strictEqual(
+      vscode.window.terminals.filter((item) => item.name === "NuGet Package Manager Console").length,
+      1
+    );
+    terminal.dispose();
+  });
 });
+
+/** The major and minor of the `pwsh` in the PATH; undefined when there is none. */
+function powershellVersion(): [number, number] | undefined {
+  try {
+    const match = /(\d+)\.(\d+)/.exec(execFileSync("pwsh", ["--version"], { encoding: "utf8" }));
+    return match === null ? undefined : [Number(match[1]), Number(match[2])];
+  } catch {
+    return undefined;
+  }
+}

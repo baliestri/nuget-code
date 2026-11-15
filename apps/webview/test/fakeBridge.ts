@@ -40,7 +40,13 @@ export interface FakeBridge {
   readyCount(): number;
 }
 
-export const READY: SessionState = { backend: "ready", solution: { kind: "none" }, hasSdk: true, audit: true };
+export const READY: SessionState = {
+  backend: "ready",
+  solution: { kind: "none" },
+  hasSdk: true,
+  audit: true,
+  console: true
+};
 
 /**
  * A bridge whose host side is in the same process: the real client and server, over a channel in memory,

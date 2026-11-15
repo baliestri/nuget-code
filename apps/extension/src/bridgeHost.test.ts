@@ -238,7 +238,8 @@ describe("createHostHandler", () => {
   it.each([
     ["selectSolution", "nuget.selectSolution"],
     ["showLog", "nuget.showLog"],
-    ["restartBackend", "nuget.restartBackend"]
+    ["restartBackend", "nuget.restartBackend"],
+    ["openConsole", "nuget.openConsole"]
   ] as const)("%s runs the command %s", async (request, command) => {
     const { deps, calls } = fakeDeps();
 
@@ -389,14 +390,16 @@ describe("toSessionState", () => {
       solution: { kind: "open", name: "Sample.slnx" },
       opened,
       initialized: withSdk,
-      audit: true
+      audit: true,
+      console: true
     });
 
     expect(state).toEqual({
       backend: "ready",
       solution: { kind: "open", name: "Sample.slnx", path: opened.path, projects: opened.projects },
       hasSdk: true,
-      audit: true
+      audit: true,
+      console: true
     });
   });
 
@@ -406,7 +409,8 @@ describe("toSessionState", () => {
       solution: { kind },
       opened: undefined,
       initialized: withSdk,
-      audit: true
+      audit: true,
+      console: true
     });
 
     expect(state.solution).toEqual({ kind });
@@ -418,10 +422,11 @@ describe("toSessionState", () => {
       solution: { kind: "none" },
       opened: undefined,
       initialized: undefined,
-      audit: true
+      audit: true,
+      console: true
     });
 
-    expect(state).toEqual({ backend, solution: { kind: "none" }, hasSdk: false, audit: true });
+    expect(state).toEqual({ backend, solution: { kind: "none" }, hasSdk: false, audit: true, console: true });
   });
 
   it("no SDK in the answer of initialize means hasSdk is false", () => {
@@ -430,21 +435,24 @@ describe("toSessionState", () => {
       solution: { kind: "none" },
       opened: undefined,
       initialized: { protocolVersion: 1, backendVersion: "1.0.0" },
-      audit: true
+      audit: true,
+      console: true
     });
 
     expect(state.hasSdk).toBe(false);
   });
 
-  it("the audit setting is passed on as it is", () => {
+  it("the audit and console settings are passed on as they are", () => {
     const state = toSessionState({
       backend: "ready",
       solution: { kind: "none" },
       opened: undefined,
       initialized: withSdk,
-      audit: false
+      audit: false,
+      console: false
     });
 
     expect(state.audit).toBe(false);
+    expect(state.console).toBe(false);
   });
 });

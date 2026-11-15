@@ -21,7 +21,7 @@ export function App(): ReactNode {
   const session = useSession();
   const { preferences, set } = usePreferences();
   const tab = preferences.tab;
-  const host = (request: "selectSolution" | "showLog" | "restartBackend"): void =>
+  const host = (request: "selectSolution" | "showLog" | "restartBackend" | "openConsole"): void =>
     void bridge.host(request, {}).catch(() => {});
 
   return (
@@ -44,6 +44,19 @@ export function App(): ReactNode {
             </button>
           ))}
         </div>
+        {/* Not a tab: the console is a terminal of the editor, which this opens. Hidden when it is turned off. */}
+        {session?.console === true ? (
+          <button
+            type="button"
+            title="Open the Package Manager Console in a terminal"
+            aria-label="Package Manager Console"
+            onClick={() => host("openConsole")}
+            className="hover:bg-hover flex items-center gap-1 rounded px-2 py-0.5"
+          >
+            <i className="codicon codicon-terminal" aria-hidden="true" />
+            PMC
+          </button>
+        ) : null}
         <div className="flex-1" />
         {session?.solution.kind === "open" ? (
           <button

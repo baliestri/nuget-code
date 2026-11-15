@@ -25,7 +25,8 @@ const SESSION: SessionState = {
   backend: "ready",
   solution: { kind: "open", name: "Sample.slnx", path: "/work/Sample.slnx", projects: PROJECTS },
   hasSdk: true,
-  audit: true
+  audit: true,
+  console: true
 };
 
 function pkg(id: string, version: string, extra: Partial<InstalledPackage> = {}): InstalledPackage {

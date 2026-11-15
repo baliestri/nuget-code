@@ -8,7 +8,8 @@ export const Commands = {
   restore: "nuget.restore",
   restartBackend: "nuget.restartBackend",
   showLog: "nuget.showLog",
-  clearCredentials: "nuget.clearCredentials"
+  clearCredentials: "nuget.clearCredentials",
+  openConsole: "nuget.openConsole"
 } as const;
 
 export interface StatusText {

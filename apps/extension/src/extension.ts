@@ -5,6 +5,7 @@ import { BackendSession } from "./backendSession";
 import { createBackendHandler, createHostHandler, warningNotice } from "./bridgeHost";
 import { clearCredentialsCommand, restoreCommand } from "./commands";
 import { readSettings, SECTION, type Settings } from "./configuration";
+import { registerConsole } from "./console/consoleHost";
 import { createCredentialStore } from "./credentials";
 import { FileWatcher } from "./fileWatcher";
 import { LogChannel } from "./logChannel";
@@ -153,6 +154,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     vscode.commands.registerCommand(Commands.clearCredentials, () => clearCredentialsCommand(session, credentials)),
     vscode.commands.registerCommand(Commands.showLog, () => log.show()),
     vscode.commands.registerCommand(Commands.restartBackend, () => start(session, log, () => session.restart())),
+    ...registerConsole(context, session, log),
     vscode.workspace.onDidChangeConfiguration((change) => {
       if (!change.affectsConfiguration(SECTION)) {
         return;

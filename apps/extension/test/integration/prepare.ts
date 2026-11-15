@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { createPackage } from "../../../../packages/backend-client/test/support/testPackages";
 import { backendProject, resolveTestBackend } from "../../../../packages/backend-client/test/support/testBackend";
 import { project } from "../../../../packages/backend-client/test/support/testWorkspace";
+import { buildConsoleModule } from "../../../../scripts/console-module";
 
 const workspace = fileURLToPath(new URL("../../.vscode-test/workspace/", import.meta.url));
 
@@ -27,6 +28,12 @@ const bundled = (process.env["NUGET_VSCODE_BACKEND_BUNDLED"] ?? "") !== "";
 const backend = resolveTestBackend();
 if (!bundled && backend.command === "dotnet") {
   execFileSync("dotnet", ["build", backendProject, "-c", "Debug", "-nologo", "-v:q"], { stdio: "inherit" });
+}
+
+// The module of the console, where the extension looks for it. A packaged extension already has it.
+if (!bundled) {
+  const repository = fileURLToPath(new URL("../../../../", import.meta.url));
+  buildConsoleModule(repository, join(repository, "apps", "extension", "console"), "Debug");
 }
 
 write(
