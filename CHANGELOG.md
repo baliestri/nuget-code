@@ -1,5 +1,18 @@
 # NuGet Manager for VSCode Changelog
 
+## [3.1.0](https://github.com/baliestri/nuget-code/compare/v3.0.0..v3.1.0) - 2026-11-17
+
+### ⛰️  Features
+
+- *(extension)* Ask for a GitHub star after fifteen days of use - ([1c443ec](https://github.com/baliestri/nuget-code/commit/1c443ec7b359513e78f46403cb969b35e74de5bd))
+- *(extension)* Ask for a rating after five days of use - ([1e3d56a](https://github.com/baliestri/nuget-code/commit/1e3d56ab76b982cc580a10878523d7ad9f26b420))
+
+### 📚 Documentation
+
+- *(readme)* Link the published v3 in both stores - ([c4d9c11](https://github.com/baliestri/nuget-code/commit/c4d9c11121f33f255a73351daeb05de25ae74d69))
+- *(wiki)* Describe the rating and star notifications - ([c015a66](https://github.com/baliestri/nuget-code/commit/c015a66a3ac0621f440b01cf6095623828b9e48c))
+- *(wiki)* Describe the rating notification - ([edcff9e](https://github.com/baliestri/nuget-code/commit/edcff9e80d5053793c91d17d8df0bc08fec58ee1))
+
 ## [3.0.0](https://github.com/baliestri/nuget-code/compare/v2.0.0..v3.0.0) - 2026-11-15
 
 ### ⛰️  Features
