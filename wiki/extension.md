@@ -114,6 +114,18 @@ The **NuGet** output channel receives the backend's log, the backend process's e
 
 The second bracket is where the line comes from: `NUGET` for the NuGet libraries and the external restore engines, `VSCODE` for the backend itself, `HOST` for the extension and for what the backend process prints to its error stream.
 
+## Rating
+
+Each calendar day on which the extension activates counts as one day of use; several windows on the same day count once. After 5 days of use, about two minutes after activation, an information notification asks for a rating, with **Rate**, **Later** and **Don't Show Again**.
+
+| Choice                   | What happens                                                           |
+| :----------------------- | :--------------------------------------------------------------------- |
+| **Rate**                 | Opens the reviews of the store, and the notification never returns.    |
+| **Don't Show Again**     | The notification never returns.                                        |
+| **Later**, or closing it | It may return after 14 more days of use, and is shown at most 3 times. |
+
+The store is chosen from the editor: Visual Studio Code, stable or Insiders, links to the Visual Studio Marketplace; any other editor, such as VSCodium or Cursor, to Open VSX. The notification shows at most once per session and never in a development or test host. The answer is kept in the global state and travels with Settings Sync.
+
 ## When the backend stops
 
 If the backend process ends on its own, the extension starts it again and reopens the solution that was open. Requests that were waiting for an answer fail.
