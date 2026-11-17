@@ -114,6 +114,24 @@ The **NuGet** output channel receives the backend's log, the backend process's e
 
 The second bracket is where the line comes from: `NUGET` for the NuGet libraries and the external restore engines, `VSCODE` for the backend itself, `HOST` for the extension and for what the backend process prints to its error stream.
 
+## Rating and GitHub star
+
+Each calendar day on which the extension activates counts as one day of use; several windows on the same day count once. Two information notifications depend on that count. At most one of them shows per session, about two minutes after activation, and neither shows in a development or test host.
+
+After 5 days of use, a notification asks for a rating, with **Rate**, **Later** and **Don't Show Again**.
+
+| Choice                   | What happens                                                           |
+| :----------------------- | :--------------------------------------------------------------------- |
+| **Rate**                 | Opens the reviews of the store, and the notification never returns.    |
+| **Don't Show Again**     | The notification never returns.                                        |
+| **Later**, or closing it | It may return after 14 more days of use, and is shown at most 3 times. |
+
+The store is chosen from the editor: Visual Studio Code, stable or Insiders, links to the Visual Studio Marketplace; any other editor, such as VSCodium or Cursor, to Open VSX.
+
+After 15 days of use, a notification asks for a star on GitHub, with **Star on GitHub** and **Don't Show Again**. It shows once: **Star on GitHub** opens the repository, and any answer, closing it included, ends it. When both notifications are due in the same session, the rating goes first and the star waits for a later session.
+
+The answers are kept in the global state and travel with Settings Sync.
+
 ## When the backend stops
 
 If the backend process ends on its own, the extension starts it again and reopens the solution that was open. Requests that were waiting for an answer fail.
