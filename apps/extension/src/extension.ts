@@ -11,6 +11,7 @@ import { FileWatcher } from "./fileWatcher";
 import { LogChannel } from "./logChannel";
 import { NugetViewProvider, VIEW_ID } from "./nugetView";
 import { systemPath } from "./paths";
+import { registerRatingPrompt } from "./rating";
 import { samePath } from "./solutionCandidates";
 import { SolutionSelector } from "./solutionSelector";
 import { Commands, StatusBar } from "./statusBar";
@@ -155,6 +156,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     vscode.commands.registerCommand(Commands.showLog, () => log.show()),
     vscode.commands.registerCommand(Commands.restartBackend, () => start(session, log, () => session.restart())),
     ...registerConsole(context, session, log),
+    registerRatingPrompt(context),
     vscode.workspace.onDidChangeConfiguration((change) => {
       if (!change.affectsConfiguration(SECTION)) {
         return;
