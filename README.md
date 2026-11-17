@@ -1,9 +1,11 @@
 # NuGet Manager for VS Code
 
+[![Visual Studio Marketplace version](https://badgen.net/vs-marketplace/v/baliestri.nuget-code?label=VS%20Marketplace&color=0078d4&icon=https://code.visualstudio.com/favicon.ico)](https://marketplace.visualstudio.com/items?itemName=baliestri.nuget-code)
+[![Open VSX version](https://badgen.net/open-vsx/version/baliestri/nuget-code?label=Open%20VSX&color=a60ee5&icon=https://open-vsx.org/favicon.ico)](https://open-vsx.org/extension/baliestri/nuget-code)
+
 Manage the NuGet packages of a .NET solution without leaving the editor: see what is installed and what has updates, search the feeds, install, update and remove packages per project, edit package sources and clear the NuGet caches. The view is modelled on the NuGet window of **JetBrains Rider**, and a native .NET backend built on the NuGet client libraries does the work, so the answers are the ones `dotnet` itself would give.
 
-> [!NOTE]
-> This describes version 3, a rewrite that is not released yet. The extension published today is version 2, which works differently. Until version 3 is published, [build it from source](#build-from-source) to try it.
+Install it from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=baliestri.nuget-code) or [Open VSX](https://open-vsx.org/extension/baliestri/nuget-code), or search for **NuGet Manager for VS Code** in the Extensions view. Version 3 is a rewrite: it replaces version 2 and works differently.
 
 ## What it looks like
 
