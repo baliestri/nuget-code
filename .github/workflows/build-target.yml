@@ -10,6 +10,12 @@ on:
         description: The commit to build; the ref of the calling run when empty.
         type: string
         default: ""
+      package_windows:
+        # A release signs the Windows backends first, so it packages them after the signing. The unsigned
+        # executables are kept as artifacts for that.
+        description: Package the VSIX of the Windows targets here, not after signing.
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -111,10 +117,20 @@ jobs:
             sh scripts/ci/alpine.sh ${{ matrix.rid }}
           echo "NUGET_VSCODE_BACKEND_PATH=${{ github.workspace }}/alpine-out/NuGet.VisualStudioCode" >> "$GITHUB_ENV"
 
+      - name: Keep the unsigned Windows backend for signing
+        if: ${{ runner.os == 'Windows' && !inputs.package_windows }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-unsigned-${{ matrix.target }}
+          path: ${{ env.NUGET_VSCODE_BACKEND_PATH }}
+          if-no-files-found: error
+
       - name: Package the VSIX
+        if: ${{ inputs.package_windows || runner.os != 'Windows' }}
         run: pnpm package ${{ matrix.target }} --backend "$NUGET_VSCODE_BACKEND_PATH" --out release-artifacts
 
       - uses: actions/upload-artifact@v7
+        if: ${{ inputs.package_windows || runner.os != 'Windows' }}
         with:
           name: vsix-${{ matrix.target }}
           path: release-artifacts/*.vsix
