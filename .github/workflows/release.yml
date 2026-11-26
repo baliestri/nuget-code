@@ -36,10 +36,70 @@ jobs:
     name: Targets
     needs: verify
     uses: ./.github/workflows/build-target.yml
+    with:
+      package_windows: false
+
+  # The Windows backends are Authenticode-signed before they go into their VSIX, so a signing failure
+  # leaves no release behind. The approval of the release-signing environment is asked here.
+  sign:
+    name: Sign Windows backends
+    needs: targets
+    uses: ./.github/workflows/sign.yml
+    secrets: inherit
+
+  package-windows:
+    name: Package ${{ matrix.target }} with the signed backend
+    needs: sign
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [win32-x64, win32-arm64]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: backend/global.json
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: backend-signed-${{ matrix.target }}
+          path: signed
+
+      - name: Package the VSIX with the signed backend
+        run: pnpm package ${{ matrix.target }} --backend "$GITHUB_WORKSPACE/signed/${{ matrix.target }}.exe" --out release-artifacts
+
+      # The binary that ships must be the one that was signed, byte for byte.
+      - name: Check the packaged backend is the signed one
+        run: |
+          set -euo pipefail
+          vsix="$(ls release-artifacts/*.vsix)"
+          packaged="$(unzip -p "$vsix" "extension/bin/${{ matrix.target }}/NuGet.VisualStudioCode.exe" | sha256sum | cut -d' ' -f1)"
+          signed="$(sha256sum "signed/${{ matrix.target }}.exe" | cut -d' ' -f1)"
+          [[ "$packaged" == "$signed" ]] || {
+            echo 'The VSIX does not carry the signed backend.' >&2
+            exit 1
+          }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: vsix-${{ matrix.target }}
+          path: release-artifacts/*.vsix
+          if-no-files-found: error
 
   publish:
     name: Publish
-    needs: targets
+    needs: [targets, package-windows]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

@@ -1,5 +1,15 @@
 # NuGet Manager for VSCode Changelog
 
+## [3.1.1](https://github.com/baliestri/nuget-code/compare/v3.1.0..v3.1.1) - 2026-11-26
+
+### 📚 Documentation
+
+- *(contributing)* Describe the signing of the Windows backends - ([4db2a76](https://github.com/baliestri/nuget-code/commit/4db2a7635f2df24b33d3aa91701bc90cc07f9aee))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Sign the Windows backends with SSL.com eSigner - ([cf81da3](https://github.com/baliestri/nuget-code/commit/cf81da38f5d3ab7685dd503fc698211f2e8eb0d0))
+
 ## [3.1.0](https://github.com/baliestri/nuget-code/compare/v3.0.0..v3.1.0) - 2026-11-17
 
 ### ⛰️  Features

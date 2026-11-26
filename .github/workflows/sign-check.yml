@@ -1,0 +1,28 @@
+name: Rehearse backend signing
+
+# Builds the backend of the Windows targets and signs it exactly as a release would, but creates no tag,
+# branch or release. The signed executables stay as run artifacts. Dispatch it from develop: the
+# release-signing environment accepts only develop and version tags.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-sign-check
+  cancel-in-progress: false
+
+jobs:
+  targets:
+    name: Targets
+    uses: ./.github/workflows/build-target.yml
+    with:
+      package_windows: false
+
+  sign:
+    name: Sign Windows backends
+    needs: targets
+    uses: ./.github/workflows/sign.yml
+    secrets: inherit
