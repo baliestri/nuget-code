@@ -5,7 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageVersion Include="Meziantou.Analyzer" Version="3.0.339" />
+    <PackageVersion Include="Meziantou.Analyzer" Version="3.0.342" />
     <PackageVersion Include="Microsoft.VisualStudio.SolutionPersistence" Version="1.0.52" />
     <PackageVersion Include="NuGet.Commands" Version="8.0.0" />
     <PackageVersion Include="NuGet.Credentials" Version="8.0.0" />
